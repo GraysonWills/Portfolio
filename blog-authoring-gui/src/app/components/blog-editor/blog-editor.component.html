@@ -1,0 +1,144 @@
+<div class="blog-editor-container">
+  <p-card class="editor-card">
+    <div class="editor-header">
+      <h2>{{ initialData ? 'Edit Blog Post' : 'Create New Blog Post' }}</h2>
+    </div>
+
+    <form [formGroup]="blogForm" class="editor-form">
+      <!-- Title -->
+      <div class="form-group">
+        <label for="title">Title *</label>
+        <input 
+          type="text" 
+          id="title" 
+          formControlName="title"
+          pInputText
+          placeholder="Enter blog post title"
+          class="full-width">
+        <small *ngIf="blogForm.get('title')?.invalid && blogForm.get('title')?.touched" class="error-message">
+          Title is required
+        </small>
+      </div>
+
+      <!-- Summary -->
+      <div class="form-group">
+        <label for="summary">Summary *</label>
+        <textarea 
+          id="summary" 
+          formControlName="summary"
+          rows="3"
+          placeholder="Enter a brief summary"
+          class="full-width summary-textarea"
+          pInputText>
+        </textarea>
+        <small *ngIf="blogForm.get('summary')?.invalid && blogForm.get('summary')?.touched" class="error-message">
+          Summary is required
+        </small>
+      </div>
+
+      <!-- Content Editor -->
+      <div class="form-group">
+        <label for="content">Content *</label>
+        <p-editor 
+          formControlName="content"
+          [style]="{'height':'400px'}"
+          placeholder="Write your blog post content here...">
+        </p-editor>
+        <small *ngIf="blogForm.get('content')?.invalid && blogForm.get('content')?.touched" class="error-message">
+          Content is required
+        </small>
+      </div>
+
+      <!-- Image Upload -->
+      <div class="form-group">
+        <label>Featured Image</label>
+        <app-image-uploader 
+          (imageUploaded)="uploadedImage = $event"
+          [currentImage]="uploadedImage">
+        </app-image-uploader>
+      </div>
+
+      <!-- Tags -->
+      <div class="form-group">
+        <label>Tags</label>
+        <div class="tags-input">
+          <input 
+            type="text" 
+            [(ngModel)]="currentTag"
+            (keyup.enter)="addTag()"
+            pInputText
+            placeholder="Add tag and press Enter"
+            [ngModelOptions]="{standalone: true}"
+            class="tag-input">
+          <p-button 
+            label="Add Tag" 
+            icon="pi pi-plus"
+            (onClick)="addTag()"
+            styleClass="p-button-outlined">
+          </p-button>
+        </div>
+        <div class="tags-list" *ngIf="tags.length > 0">
+          <p-tag 
+            *ngFor="let tag of tags" 
+            [value]="tag"
+            styleClass="p-mr-1">
+            <span>{{ tag }}</span>
+            <i class="pi pi-times tag-remove" (click)="removeTag(tag)"></i>
+          </p-tag>
+        </div>
+      </div>
+
+      <!-- Publish Date and Status -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="publishDate">Publish Date</label>
+          <p-calendar 
+            formControlName="publishDate"
+            [showTime]="true"
+            dateFormat="mm/dd/yy"
+            inputId="publishDate">
+          </p-calendar>
+        </div>
+
+        <div class="form-group">
+          <label for="status">Status</label>
+          <p-dropdown 
+            formControlName="status"
+            [options]="['draft', 'scheduled', 'published']"
+            placeholder="Select status"
+            inputId="status">
+          </p-dropdown>
+        </div>
+      </div>
+
+      <!-- Category -->
+      <div class="form-group">
+        <label for="category">Category</label>
+        <input 
+          type="text" 
+          id="category" 
+          formControlName="category"
+          pInputText
+          placeholder="Enter category (optional)">
+      </div>
+
+      <!-- Actions -->
+      <div class="editor-actions">
+        <p-button 
+          label="Cancel" 
+          icon="pi pi-times"
+          (onClick)="cancel()"
+          styleClass="p-button-outlined">
+        </p-button>
+        <p-button 
+          label="Save Post" 
+          icon="pi pi-save"
+          (onClick)="savePost()"
+          [disabled]="blogForm.invalid || isSaving"
+          [loading]="isSaving"
+          styleClass="p-button-primary">
+        </p-button>
+      </div>
+    </form>
+  </p-card>
+</div>

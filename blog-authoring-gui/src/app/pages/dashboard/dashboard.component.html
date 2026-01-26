@@ -1,0 +1,87 @@
+<div class="dashboard-container">
+  <!-- Header -->
+  <div class="dashboard-header">
+    <h1>Blog Authoring Dashboard</h1>
+    <div class="header-actions">
+      <p-button 
+        label="Create New Post" 
+        icon="pi pi-plus"
+        (onClick)="createNewPost()"
+        styleClass="p-button-primary">
+      </p-button>
+      <p-button 
+        label="Logout" 
+        icon="pi pi-sign-out"
+        (onClick)="logout()"
+        styleClass="p-button-outlined">
+      </p-button>
+    </div>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="connection-status" *ngIf="isConnecting">
+    <i class="pi pi-spin pi-spinner"></i> Testing Redis connection...
+  </div>
+
+  <!-- Blog Posts List -->
+  <div class="posts-container" *ngIf="!showEditor">
+    <div *ngIf="blogPosts.length === 0" class="no-posts">
+      <p>No blog posts found. Create your first post!</p>
+    </div>
+
+    <div class="posts-grid" *ngIf="blogPosts.length > 0">
+      <p-card *ngFor="let post of blogPosts" class="post-card">
+        <div class="post-content">
+          <div class="post-header">
+            <h3>{{ getPostTitle(post) }}</h3>
+            <p-tag 
+              [value]="getPostStatus(post)" 
+              [severity]="getStatusSeverity(getPostStatus(post))">
+            </p-tag>
+          </div>
+          
+          <p class="post-summary">{{ getPostSummary(post) }}</p>
+          
+          <div class="post-meta">
+            <span class="post-date">
+              <i class="pi pi-calendar"></i>
+              {{ getPostDate(post) | date:'mediumDate' }}
+            </span>
+            <div class="post-tags" *ngIf="getPostTags(post).length > 0">
+              <p-tag 
+                *ngFor="let tag of getPostTags(post)" 
+                [value]="tag"
+                styleClass="p-mr-1">
+              </p-tag>
+            </div>
+          </div>
+
+          <div class="post-actions">
+            <p-button 
+              label="Edit" 
+              icon="pi pi-pencil"
+              (onClick)="editPost(post)"
+              styleClass="p-button-outlined p-button-sm">
+            </p-button>
+            <p-button 
+              label="Delete" 
+              icon="pi pi-trash"
+              (onClick)="deletePost(post)"
+              styleClass="p-button-outlined p-button-danger p-button-sm">
+            </p-button>
+          </div>
+        </div>
+      </p-card>
+    </div>
+  </div>
+
+  <!-- Blog Editor -->
+  <app-blog-editor 
+    *ngIf="showEditor"
+    [initialData]="selectedPost"
+    (saved)="onEditorSaved()"
+    (cancelled)="onEditorCancelled()">
+  </app-blog-editor>
+
+  <p-toast></p-toast>
+</div>

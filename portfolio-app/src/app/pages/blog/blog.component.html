@@ -1,0 +1,126 @@
+<div class="blog-page">
+  <div class="container">
+    <!-- Page Header -->
+    <section class="page-header">
+      <h1 class="page-title">Blog</h1>
+      <p class="page-subtitle">Insights, tutorials, and technical articles</p>
+    </section>
+
+    <!-- Search and Controls -->
+    <section class="controls-section">
+      <div class="search-container">
+        <input 
+          type="text" 
+          pInputText 
+          [(ngModel)]="searchQuery" 
+          (input)="filterPosts()"
+          placeholder="Search blog posts..."
+          class="search-input">
+        <i class="pi pi-search search-icon"></i>
+      </div>
+      <p-button 
+        [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
+        (onClick)="toggleLayout()"
+        [label]="layout === 'grid' ? 'List View' : 'Grid View'"
+        styleClass="p-button-outlined">
+      </p-button>
+    </section>
+
+    <!-- Blog Posts -->
+    <section class="posts-section">
+      <div [class]="'posts-' + layout">
+        <p-card *ngFor="let post of filteredPosts" class="blog-card">
+          <ng-container *ngTemplateOutlet="blogPostCard; context: {post: getPostData(post)}"></ng-container>
+        </p-card>
+      </div>
+      
+      <div *ngIf="filteredPosts.length === 0" class="no-posts">
+        <p>No blog posts found. Check back soon!</p>
+      </div>
+    </section>
+
+    <!-- Newsletter Subscription -->
+    <section class="subscription-section">
+      <p-card class="subscription-card">
+        <div class="subscription-content">
+          <h2 class="subscription-title">Subscribe to Newsletter</h2>
+          <p class="subscription-description">Get the latest updates, articles, and insights delivered to your inbox.</p>
+          <form [formGroup]="subscriptionForm" (ngSubmit)="subscribe()" class="subscription-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="firstName">First Name</label>
+                <input 
+                  type="text" 
+                  id="firstName" 
+                  pInputText 
+                  formControlName="firstName"
+                  placeholder="First Name">
+              </div>
+              <div class="form-group">
+                <label for="lastName">Last Name</label>
+                <input 
+                  type="text" 
+                  id="lastName" 
+                  pInputText 
+                  formControlName="lastName"
+                  placeholder="Last Name">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="email">Email *</label>
+              <input 
+                type="email" 
+                id="email" 
+                pInputText 
+                formControlName="email"
+                placeholder="your.email@example.com"
+                [class.ng-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched">
+              <small *ngIf="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched" class="error-message">
+                Please enter a valid email address
+              </small>
+            </div>
+            <p-button 
+              type="submit"
+              label="Subscribe"
+              icon="pi pi-send"
+              [disabled]="subscriptionForm.invalid || isSubmitting"
+              [loading]="isSubmitting">
+            </p-button>
+          </form>
+          <p class="privacy-notice">
+            <small>By subscribing, you agree to receive email updates. You can unsubscribe at any time.</small>
+          </p>
+        </div>
+      </p-card>
+    </section>
+  </div>
+</div>
+
+<ng-template #blogPostCard let-post="post">
+  <div class="blog-post-content">
+    <img *ngIf="post.image" [src]="post.image" [alt]="post.title" class="blog-image">
+    <div class="blog-details">
+      <div class="blog-meta">
+        <span *ngIf="post.publishDate" class="publish-date">
+          <i class="pi pi-calendar"></i>
+          {{ post.publishDate | date:'mediumDate' }}
+        </span>
+        <p-tag 
+          *ngFor="let tag of post.tags" 
+          [value]="tag"
+          severity="info"
+          class="blog-tag">
+        </p-tag>
+      </div>
+      <h3 class="blog-title">{{ post.title }}</h3>
+      <p class="blog-summary">{{ post.summary }}</p>
+      <div class="blog-actions">
+        <p-button 
+          label="Read More" 
+          icon="pi pi-arrow-right"
+          styleClass="p-button-text">
+        </p-button>
+      </div>
+    </div>
+  </div>
+</ng-template>

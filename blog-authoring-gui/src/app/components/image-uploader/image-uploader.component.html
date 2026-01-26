@@ -1,0 +1,35 @@
+<div class="image-uploader">
+  <div *ngIf="previewUrl || currentImage" class="image-preview">
+    <img [src]="previewUrl || currentImage" alt="Preview" class="preview-image">
+    <p-button 
+      icon="pi pi-times" 
+      (onClick)="removeImage()"
+      styleClass="p-button-rounded p-button-danger p-button-text remove-button"
+      [label]="''">
+    </p-button>
+  </div>
+
+  <div 
+    class="upload-area"
+    (dragover)="onDragOver($event)"
+    (drop)="onDrop($event)"
+    [class.uploading]="isUploading">
+    <p-fileUpload
+      mode="basic"
+      accept="image/*"
+      [maxFileSize]="5242880"
+      [auto]="false"
+      chooseLabel="Choose Image"
+      [showUploadButton]="false"
+      (onSelect)="onFileSelect($event)"
+      styleClass="custom-file-upload">
+    </p-fileUpload>
+    <p *ngIf="!previewUrl && !currentImage" class="upload-hint">
+      Drag and drop an image here, or click to select<br>
+      <small>Max size: 5MB</small>
+    </p>
+    <p *ngIf="isUploading" class="upload-status">
+      <i class="pi pi-spin pi-spinner"></i> Uploading...
+    </p>
+  </div>
+</div>

@@ -1,0 +1,30 @@
+<footer class="footer-container">
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Connect</h3>
+      <div class="social-links">
+        <a [href]="'mailto:' + contactInfo.email" class="social-link" aria-label="Email">
+          <i class="pi pi-envelope"></i>
+          <span>Email</span>
+        </a>
+        <a [href]="'https://' + contactInfo.linkedin" target="_blank" class="social-link" aria-label="LinkedIn">
+          <i class="pi pi-linkedin"></i>
+          <span>LinkedIn</span>
+        </a>
+        <a [href]="'https://' + contactInfo.website" target="_blank" class="social-link" aria-label="Website">
+          <i class="pi pi-globe"></i>
+          <span>Website</span>
+        </a>
+      </div>
+    </div>
+    <div class="footer-section">
+      <h3>Footer Icons</h3>
+      <div class="footer-icons">
+        <img *ngFor="let icon of getFooterIcons()" [src]="icon.Photo" [alt]="icon.Text || 'Footer Icon'" class="footer-icon" />
+      </div>
+    </div>
+    <div class="footer-section">
+      <p class="copyright">&copy; {{ currentYear }} Grayson Wills. All rights reserved.</p>
+    </div>
+  </div>
+</footer>

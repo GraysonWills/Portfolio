@@ -1,0 +1,152 @@
+# Root level .gitignore for Portfolio Site
+
+# ============================================
+# Environment and Configuration Files
+# ============================================
+.env
+.env.local
+.env.*.local
+*.env
+.env.example
+environment.local.ts
+environment.*.local.ts
+*.config.js
+*.config.local.js
+
+# ============================================
+# Secrets and Credentials
+# ============================================
+*.key
+*.pem
+*.p12
+*.ppk
+*.p8
+*.cert
+*.crt
+secrets/
+credentials/
+*.secret
+config.json
+user-credentials.json
+redis-credentials.json
+mailchimp-credentials.json
+
+# ============================================
+# Cloud Service Credentials
+# ============================================
+# AWS
+.aws/
+aws-credentials.json
+.aws/credentials
+
+# Google Cloud
+gcloud-key.json
+service-account*.json
+
+# Azure
+.azure/
+
+# ============================================
+# Build and Distribution Files
+# ============================================
+# Angular build outputs
+**/dist/
+**/tmp/
+**/out-tsc/
+**/bazel-out/
+**/.angular/cache/
+
+# Node.js
+**/node_modules/
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ============================================
+# Deployment Artifacts
+# ============================================
+deploy-*.sh
+deploy-*.ps1
+!scripts/deploy.ps1
+*.deploy
+deployment-config.json
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+**/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+testem.log
+libpeerconnection.log
+
+# ============================================
+# Local Backup Files
+# ============================================
+*-backup/
+backup/
+*.backup
+portfolio-backup-*/
+**/*-backup/
+
+# ============================================
+# IDE and Editor Files
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.history/
+
+# ============================================
+# OS Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ============================================
+# Testing and Coverage
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+.coveralls.yml
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+.cache/
+.sass-cache/
+connect.lock
+typings/
+
+# ============================================
+# Package Manager Locks (optional - uncomment if you want to ignore)
+# ============================================
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

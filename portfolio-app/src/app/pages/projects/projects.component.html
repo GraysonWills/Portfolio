@@ -1,0 +1,66 @@
+<div class="projects-page">
+  <div class="container">
+    <!-- Page Header -->
+    <section class="page-header">
+      <h1 class="page-title">Projects</h1>
+      <p class="page-subtitle">Portfolio of technical projects and solutions</p>
+    </section>
+
+    <!-- Controls -->
+    <section class="controls-section">
+      <div class="controls">
+        <p-button 
+          [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
+          (onClick)="toggleLayout()"
+          [label]="layout === 'grid' ? 'List View' : 'Grid View'"
+          styleClass="p-button-outlined">
+        </p-button>
+      </div>
+    </section>
+
+    <!-- Projects by Category -->
+    <section class="projects-section">
+      <div *ngFor="let category of categoryGroups" class="category-section">
+        <div class="category-header" *ngIf="getCategoryName(category)">
+          <img 
+            *ngIf="getCategoryPhoto(category)" 
+            [src]="getCategoryPhoto(category)" 
+            [alt]="getCategoryName(category)"
+            class="category-image">
+          <h2 class="category-title">{{ getCategoryName(category) }}</h2>
+        </div>
+        
+        <div [class]="'projects-' + layout">
+          <p-card *ngFor="let projectGroup of [category]" class="project-card">
+            <ng-container *ngTemplateOutlet="projectCard; context: {project: getProjectData(projectGroup)}"></ng-container>
+          </p-card>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<ng-template #projectCard let-project="project">
+  <div class="project-content">
+    <img *ngIf="project.photo" [src]="project.photo" [alt]="project.title || 'Project Image'" class="project-image">
+    <div class="project-details">
+      <h3 class="project-title">{{ project.title || 'Project' }}</h3>
+      <p class="project-description">{{ project.description || project.text }}</p>
+      <div class="project-tech-stack" *ngIf="project.techStack">
+        <p-chip 
+          *ngFor="let tech of project.techStack" 
+          [label]="tech"
+          class="tech-chip">
+        </p-chip>
+      </div>
+      <div class="project-actions" *ngIf="project.githubUrl">
+        <p-button 
+          label="View on GitHub" 
+          icon="pi pi-github"
+          (onClick)="openGitHub(project.githubUrl)"
+          styleClass="p-button-outlined">
+        </p-button>
+      </div>
+    </div>
+  </div>
+</ng-template>

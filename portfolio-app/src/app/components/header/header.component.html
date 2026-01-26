@@ -1,0 +1,23 @@
+<header class="header-container">
+  <p-menubar [model]="menuItems" class="navigation-menu">
+    <ng-template pTemplate="start">
+      <div class="logo-container">
+        <img *ngIf="getHeaderIcon()" [src]="getHeaderIcon()" alt="Logo" class="logo-image" />
+        <span class="logo-text">{{ getHeaderText() }}</span>
+      </div>
+    </ng-template>
+    <ng-template pTemplate="end">
+      <div class="contact-icons">
+        <a [href]="'mailto:' + contactInfo.email" class="contact-link" aria-label="Email">
+          <i class="pi pi-envelope"></i>
+        </a>
+        <a [href]="'https://' + contactInfo.linkedin" target="_blank" class="contact-link" aria-label="LinkedIn">
+          <i class="pi pi-linkedin"></i>
+        </a>
+        <a [href]="'https://' + contactInfo.website" target="_blank" class="contact-link" aria-label="Website">
+          <i class="pi pi-globe"></i>
+        </a>
+      </div>
+    </ng-template>
+  </p-menubar>
+</header>

@@ -1,0 +1,79 @@
+<div class="landing-page">
+  <!-- Hero Carousel Section -->
+  <section class="hero-section">
+    <p-carousel 
+      [value]="getCarouselImages()" 
+      [numVisible]="1" 
+      [numScroll]="1"
+      [circular]="true"
+      [autoplayInterval]="5000"
+      [showIndicators]="true"
+      class="hero-carousel">
+      <ng-template let-image pTemplate="item">
+        <div class="hero-image-container">
+          <img [src]="image" [alt]="'Hero Image'" class="hero-image" />
+          <div class="hero-overlay">
+            <div class="hero-content">
+              <h1 class="hero-title">Grayson Wills</h1>
+              <p class="hero-subtitle">Solution Architect & Data Specialist</p>
+              <div class="hero-actions">
+                <p-button 
+                  label="Contact Me" 
+                  icon="pi pi-envelope"
+                  (onClick)="contactInfo.email && openEmail(contactInfo.email)"
+                  styleClass="p-button-lg p-button-rounded">
+                </p-button>
+                <p-button 
+                  label="Download Resume" 
+                  icon="pi pi-download"
+                  (onClick)="downloadResume()"
+                  styleClass="p-button-lg p-button-rounded p-button-outlined">
+                </p-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-template>
+    </p-carousel>
+  </section>
+
+  <!-- Summary Section -->
+  <section class="summary-section">
+    <div class="container">
+      <div class="summary-content">
+        <h2 class="section-title">About Me</h2>
+        <p class="summary-text">{{ summary }}</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Skills Section -->
+  <section class="skills-section" *ngIf="topSkills.length > 0">
+    <div class="container">
+      <h2 class="section-title">Top Skills</h2>
+      <div class="skills-grid">
+        <p-chip 
+          *ngFor="let skill of topSkills" 
+          [label]="skill"
+          class="skill-chip">
+        </p-chip>
+      </div>
+    </div>
+  </section>
+
+  <!-- Certifications Section -->
+  <section class="certifications-section" *ngIf="certifications.length > 0">
+    <div class="container">
+      <h2 class="section-title">Certifications</h2>
+      <div class="certifications-grid">
+        <p-card *ngFor="let cert of certifications" class="cert-card">
+          <div class="cert-content">
+            <i class="pi pi-certificate cert-icon"></i>
+            <h3>{{ cert.name }}</h3>
+            <p>{{ cert.issuer }}</p>
+          </div>
+        </p-card>
+      </div>
+    </div>
+  </section>
+</div>
