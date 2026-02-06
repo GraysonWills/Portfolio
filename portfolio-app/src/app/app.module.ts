@@ -30,6 +30,7 @@ import { ProjectsComponent } from './pages/projects/projects.component';
 import { BlogComponent } from './pages/blog/blog.component';
 import { HeaderComponent } from './components/header/header.component';
 import { LandingComponent } from './pages/landing/landing.component';
+import { ScrollRevealDirective } from './directives/scroll-reveal.directive';
 
 @NgModule({
   declarations: [
@@ -39,7 +40,8 @@ import { LandingComponent } from './pages/landing/landing.component';
     ProjectsComponent,
     BlogComponent,
     HeaderComponent,
-    LandingComponent
+    LandingComponent,
+    ScrollRevealDirective
   ],
   imports: [
     BrowserModule,

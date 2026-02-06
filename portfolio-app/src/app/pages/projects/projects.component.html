@@ -1,64 +1,101 @@
 <div class="projects-page">
   <div class="container">
     <!-- Page Header -->
-    <section class="page-header">
+    <section class="page-header" appScrollReveal aria-label="Projects overview">
       <h1 class="page-title">Projects</h1>
       <p class="page-subtitle">Portfolio of technical projects and solutions</p>
     </section>
 
     <!-- Controls -->
-    <section class="controls-section">
+    <section class="controls-section" *ngIf="categoryGroups.length > 0">
       <div class="controls">
         <p-button 
           [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
           (onClick)="toggleLayout()"
           [label]="layout === 'grid' ? 'List View' : 'Grid View'"
-          styleClass="p-button-outlined">
+          styleClass="p-button-outlined"
+          ariaLabel="Toggle between grid and list view">
         </p-button>
       </div>
     </section>
 
+    <!-- Loading Skeleton -->
+    <section *ngIf="isLoading" class="loading-skeleton" aria-label="Loading projects">
+      <div class="skeleton-card" *ngFor="let i of [1,2,3]">
+        <div class="skeleton-image"></div>
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line short"></div>
+      </div>
+    </section>
+
     <!-- Projects by Category -->
-    <section class="projects-section">
-      <div *ngFor="let category of categoryGroups" class="category-section">
+    <section class="projects-section" *ngIf="!isLoading" aria-label="Project categories">
+      <div *ngFor="let category of categoryGroups; let i = index" 
+           class="category-section" 
+           appScrollReveal>
         <div class="category-header" *ngIf="getCategoryName(category)">
           <img 
             *ngIf="getCategoryPhoto(category)" 
             [src]="getCategoryPhoto(category)" 
-            [alt]="getCategoryName(category)"
-            class="category-image">
+            [alt]="getCategoryName(category) + ' category icon'"
+            class="category-image"
+            loading="lazy">
           <h2 class="category-title">{{ getCategoryName(category) }}</h2>
         </div>
         
-        <div [class]="'projects-' + layout">
-          <p-card *ngFor="let projectGroup of [category]" class="project-card">
+        <div [class]="'projects-' + layout" role="list" aria-label="Projects in this category">
+          <p-card *ngFor="let projectGroup of [category]" 
+                  class="project-card" 
+                  role="listitem">
             <ng-container *ngTemplateOutlet="projectCard; context: {project: getProjectData(projectGroup)}"></ng-container>
           </p-card>
         </div>
       </div>
+    </section>
+
+    <!-- Empty State -->
+    <section *ngIf="!isLoading && categoryGroups.length === 0" class="no-projects">
+      <i class="pi pi-folder-open empty-icon" aria-hidden="true"></i>
+      <p>No projects found. Check back soon!</p>
     </section>
   </div>
 </div>
 
 <ng-template #projectCard let-project="project">
   <div class="project-content">
-    <img *ngIf="project.photo" [src]="project.photo" [alt]="project.title || 'Project Image'" class="project-image">
+    <img *ngIf="project.photo" 
+         [src]="project.photo" 
+         [alt]="project.title ? project.title + ' project screenshot' : 'Project screenshot'" 
+         class="project-image"
+         loading="lazy">
     <div class="project-details">
       <h3 class="project-title">{{ project.title || 'Project' }}</h3>
       <p class="project-description">{{ project.description || project.text }}</p>
-      <div class="project-tech-stack" *ngIf="project.techStack">
+      <div class="project-tech-stack" *ngIf="project.techStack?.length" role="list" aria-label="Technologies used">
         <p-chip 
           *ngFor="let tech of project.techStack" 
           [label]="tech"
-          class="tech-chip">
+          class="tech-chip"
+          role="listitem">
         </p-chip>
       </div>
-      <div class="project-actions" *ngIf="project.githubUrl">
+      <div class="project-actions" *ngIf="project.githubUrl || project.liveUrl">
         <p-button 
+          *ngIf="project.githubUrl"
           label="View on GitHub" 
           icon="pi pi-github"
           (onClick)="openGitHub(project.githubUrl)"
-          styleClass="p-button-outlined">
+          styleClass="p-button-outlined"
+          ariaLabel="View project source code on GitHub">
+        </p-button>
+        <p-button 
+          *ngIf="project.liveUrl"
+          label="Live Demo" 
+          icon="pi pi-external-link"
+          (onClick)="openGitHub(project.liveUrl)"
+          styleClass="p-button-text"
+          ariaLabel="Open live demo of the project">
         </p-button>
       </div>
     </div>

@@ -1,19 +1,37 @@
 <div class="work-page">
   <div class="container">
     <!-- Page Header -->
-    <section class="page-header">
+    <section class="page-header" appScrollReveal aria-label="Work experience overview">
       <h1 class="page-title">Work Experience</h1>
       <p class="page-subtitle">Professional journey and career highlights</p>
     </section>
 
+    <!-- Loading State -->
+    <div *ngIf="isLoading" class="loading-section" aria-label="Loading work experience">
+      <div class="skeleton-section">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-bar"></div>
+      </div>
+      <div class="skeleton-section">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-timeline-item" *ngFor="let i of [1,2,3]"></div>
+      </div>
+    </div>
+
     <!-- Career Progress -->
-    <section class="progress-section">
+    <section class="progress-section" *ngIf="!isLoading" appScrollReveal aria-label="Career progress">
       <h2 class="section-title">Career Progress</h2>
-      <p-progressBar [value]="getCareerProgress()" [showValue]="true"></p-progressBar>
+      <p-progressBar [value]="getCareerProgress()" 
+                     [showValue]="true"
+                     aria-label="Career progress indicator">
+      </p-progressBar>
     </section>
 
     <!-- Timeline Section -->
-    <section class="timeline-section">
+    <section class="timeline-section" 
+             *ngIf="!isLoading && timelineEvents.length > 0" 
+             aria-label="Professional timeline" 
+             appScrollReveal>
       <h2 class="section-title">Professional Timeline</h2>
       <p-timeline [value]="timelineEvents" align="alternate" styleClass="custom-timeline">
         <ng-template let-event pTemplate="content">
@@ -23,25 +41,31 @@
     </section>
 
     <!-- Skills Section -->
-    <section class="skills-section" *ngIf="topSkills.length > 0">
+    <section class="skills-section" 
+             *ngIf="!isLoading && topSkills.length > 0" 
+             aria-label="Technical skills" 
+             appScrollReveal>
       <h2 class="section-title">Technical Skills</h2>
-      <div class="skills-grid">
+      <div class="skills-grid" role="list" aria-label="List of technical skills">
         <p-chip 
           *ngFor="let skill of topSkills" 
           [label]="skill"
           class="skill-chip"
-          [style]="{'background-color': '#667eea', 'color': 'white'}">
+          role="listitem">
         </p-chip>
       </div>
     </section>
 
     <!-- Certifications Section -->
-    <section class="certifications-section" *ngIf="certifications.length > 0">
+    <section class="certifications-section" 
+             *ngIf="!isLoading && certifications.length > 0" 
+             aria-label="Professional certifications"
+             appScrollReveal>
       <h2 class="section-title">Certifications</h2>
-      <div class="certifications-grid">
-        <p-card *ngFor="let cert of certifications" class="cert-card">
+      <div class="certifications-grid" role="list">
+        <p-card *ngFor="let cert of certifications" class="cert-card" role="listitem">
           <div class="cert-content">
-            <i class="pi pi-certificate cert-icon"></i>
+            <i class="pi pi-verified cert-icon" aria-hidden="true"></i>
             <h3>{{ cert.name }}</h3>
             <p>{{ cert.issuer }}</p>
             <p-tag *ngIf="cert.date" [value]="cert.date" severity="success"></p-tag>

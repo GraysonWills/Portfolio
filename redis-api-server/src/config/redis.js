@@ -17,12 +17,8 @@ if (process.env.REDIS_ENDPOINT && !process.env.REDIS_HOST) {
 }
 
 // Redis connection configuration from environment variables
-// Default to TLS for Redis Cloud (port 15545 typically requires TLS)
-const requiresTLS = process.env.REDIS_TLS === 'true' || 
-                    redisPort === 15545 || 
-                    redisPort === '15545' ||
-                    redisHost.includes('cloud.redislabs.com') ||
-                    redisHost.includes('redis.uptrace.dev');
+// Only enable TLS when explicitly set in .env (REDIS_TLS=true)
+const requiresTLS = process.env.REDIS_TLS === 'true';
 
 const redisConfig = {
   socket: {

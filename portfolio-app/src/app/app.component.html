@@ -1,8 +1,9 @@
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-container">
   <app-header></app-header>
-  <main class="main-content">
+  <main id="main-content" class="main-content" role="main" tabindex="-1">
     <router-outlet></router-outlet>
   </main>
   <app-footer></app-footer>
-  <p-toast></p-toast>
+  <p-toast position="bottom-right" [life]="4000"></p-toast>
 </div>

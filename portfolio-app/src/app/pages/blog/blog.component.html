@@ -1,13 +1,13 @@
 <div class="blog-page">
   <div class="container">
     <!-- Page Header -->
-    <section class="page-header">
+    <section class="page-header" appScrollReveal aria-label="Blog overview">
       <h1 class="page-title">Blog</h1>
       <p class="page-subtitle">Insights, tutorials, and technical articles</p>
     </section>
 
     <!-- Search and Controls -->
-    <section class="controls-section">
+    <section class="controls-section" *ngIf="!isLoading">
       <div class="search-container">
         <input 
           type="text" 
@@ -15,37 +15,54 @@
           [(ngModel)]="searchQuery" 
           (input)="filterPosts()"
           placeholder="Search blog posts..."
-          class="search-input">
-        <i class="pi pi-search search-icon"></i>
+          class="search-input"
+          aria-label="Search blog posts">
+        <i class="pi pi-search search-icon" aria-hidden="true"></i>
       </div>
       <p-button 
         [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
         (onClick)="toggleLayout()"
         [label]="layout === 'grid' ? 'List View' : 'Grid View'"
-        styleClass="p-button-outlined">
+        styleClass="p-button-outlined"
+        ariaLabel="Toggle between grid and list view">
       </p-button>
     </section>
 
+    <!-- Loading Skeleton -->
+    <section *ngIf="isLoading" class="loading-skeleton" aria-label="Loading blog posts">
+      <div class="skeleton-card" *ngFor="let i of [1,2,3]">
+        <div class="skeleton-image"></div>
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line medium"></div>
+      </div>
+    </section>
+
     <!-- Blog Posts -->
-    <section class="posts-section">
-      <div [class]="'posts-' + layout">
-        <p-card *ngFor="let post of filteredPosts" class="blog-card">
+    <section class="posts-section" *ngIf="!isLoading" aria-label="Blog posts">
+      <div [class]="'posts-' + layout" role="list">
+        <p-card *ngFor="let post of filteredPosts; trackBy: trackByPost" 
+                class="blog-card" 
+                role="listitem"
+                appScrollReveal>
           <ng-container *ngTemplateOutlet="blogPostCard; context: {post: getPostData(post)}"></ng-container>
         </p-card>
       </div>
       
-      <div *ngIf="filteredPosts.length === 0" class="no-posts">
+      <div *ngIf="filteredPosts.length === 0" class="no-posts" appScrollReveal>
+        <i class="pi pi-inbox empty-icon" aria-hidden="true"></i>
         <p>No blog posts found. Check back soon!</p>
       </div>
     </section>
 
     <!-- Newsletter Subscription -->
-    <section class="subscription-section">
+    <section class="subscription-section" appScrollReveal aria-label="Newsletter subscription">
       <p-card class="subscription-card">
         <div class="subscription-content">
           <h2 class="subscription-title">Subscribe to Newsletter</h2>
           <p class="subscription-description">Get the latest updates, articles, and insights delivered to your inbox.</p>
-          <form [formGroup]="subscriptionForm" (ngSubmit)="subscribe()" class="subscription-form">
+          <form [formGroup]="subscriptionForm" (ngSubmit)="subscribe()" class="subscription-form" aria-label="Newsletter signup form">
             <div class="form-row">
               <div class="form-group">
                 <label for="firstName">First Name</label>
@@ -54,7 +71,8 @@
                   id="firstName" 
                   pInputText 
                   formControlName="firstName"
-                  placeholder="First Name">
+                  placeholder="First Name"
+                  autocomplete="given-name">
               </div>
               <div class="form-group">
                 <label for="lastName">Last Name</label>
@@ -63,7 +81,8 @@
                   id="lastName" 
                   pInputText 
                   formControlName="lastName"
-                  placeholder="Last Name">
+                  placeholder="Last Name"
+                  autocomplete="family-name">
               </div>
             </div>
             <div class="form-group">
@@ -74,8 +93,14 @@
                 pInputText 
                 formControlName="email"
                 placeholder="your.email@example.com"
-                [class.ng-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched">
-              <small *ngIf="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched" class="error-message">
+                autocomplete="email"
+                [class.ng-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched"
+                [attr.aria-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched"
+                aria-describedby="emailError">
+              <small id="emailError" 
+                     *ngIf="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched" 
+                     class="error-message"
+                     role="alert">
                 Please enter a valid email address
               </small>
             </div>
@@ -84,7 +109,8 @@
               label="Subscribe"
               icon="pi pi-send"
               [disabled]="subscriptionForm.invalid || isSubmitting"
-              [loading]="isSubmitting">
+              [loading]="isSubmitting"
+              ariaLabel="Submit newsletter subscription">
             </p-button>
           </form>
           <p class="privacy-notice">
@@ -98,12 +124,20 @@
 
 <ng-template #blogPostCard let-post="post">
   <div class="blog-post-content">
-    <img *ngIf="post.image" [src]="post.image" [alt]="post.title" class="blog-image">
+    <img *ngIf="post.image" 
+         [src]="post.image" 
+         [alt]="post.title + ' cover image'" 
+         class="blog-image"
+         loading="lazy">
     <div class="blog-details">
       <div class="blog-meta">
         <span *ngIf="post.publishDate" class="publish-date">
-          <i class="pi pi-calendar"></i>
+          <i class="pi pi-calendar" aria-hidden="true"></i>
           {{ post.publishDate | date:'mediumDate' }}
+        </span>
+        <span *ngIf="post.readTime" class="read-time">
+          <i class="pi pi-clock" aria-hidden="true"></i>
+          {{ post.readTime }} min read
         </span>
         <p-tag 
           *ngFor="let tag of post.tags" 
@@ -118,7 +152,8 @@
         <p-button 
           label="Read More" 
           icon="pi pi-arrow-right"
-          styleClass="p-button-text">
+          styleClass="p-button-text"
+          ariaLabel="Read full article: {{ post.title }}">
         </p-button>
       </div>
     </div>

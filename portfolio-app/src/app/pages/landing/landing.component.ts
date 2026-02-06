@@ -16,7 +16,8 @@ export class LandingComponent implements OnInit {
   summary: string = '';
   contactInfo: any = {};
   topSkills: string[] = [];
-  certifications: Array<{name: string; issuer: string}> = [];
+  certifications: Array<{name: string; issuer: string; date?: string}> = [];
+  education: Array<{degree: string; institution: string; location: string; graduationDate?: string}> = [];
 
   constructor(
     private redisService: RedisService,
@@ -41,12 +42,14 @@ export class LandingComponent implements OnInit {
         this.landingText = content.filter(
           item => item.PageContentID === PageContentID.LandingText
         );
-        
+
         // Extract summary from landing text
         const summaryContent = this.landingText.find(
           item => item.Metadata?.['type'] === 'summary'
         );
-        this.summary = summaryContent?.Text || '';
+        if (summaryContent?.Text) {
+          this.summary = summaryContent.Text;
+        }
       },
       error: (error) => {
         console.error('Error loading landing content:', error);
@@ -65,7 +68,10 @@ export class LandingComponent implements OnInit {
   private loadLinkedInData(): void {
     this.linkedInService.getLinkedInProfile().subscribe({
       next: (profile) => {
-        this.summary = profile.summary;
+        // Only use LinkedIn summary as fallback
+        if (!this.summary) {
+          this.summary = profile.summary;
+        }
         this.contactInfo = profile.contact;
         this.topSkills = profile.topSkills;
         this.certifications = profile.certifications;
@@ -74,13 +80,17 @@ export class LandingComponent implements OnInit {
         console.error('Error loading LinkedIn data:', error);
       }
     });
+
+    this.linkedInService.getEducation().subscribe({
+      next: (edu) => { this.education = edu; },
+      error: () => {}
+    });
   }
 
   /**
    * Download resume
    */
   downloadResume(): void {
-    // Implement resume download logic
     if (typeof window !== 'undefined') {
       window.open('/assets/resume.pdf', '_blank');
     }

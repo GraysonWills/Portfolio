@@ -1,29 +1,29 @@
-<footer class="footer-container">
+<footer class="footer-container" role="contentinfo">
   <div class="footer-content">
     <div class="footer-section">
       <h3>Connect</h3>
-      <div class="social-links">
-        <a [href]="'mailto:' + contactInfo.email" class="social-link" aria-label="Email">
-          <i class="pi pi-envelope"></i>
+      <nav class="social-links" aria-label="Social links">
+        <a [href]="'mailto:' + contactInfo.email" class="social-link" aria-label="Send email">
+          <i class="pi pi-envelope" aria-hidden="true"></i>
           <span>Email</span>
         </a>
-        <a [href]="'https://' + contactInfo.linkedin" target="_blank" class="social-link" aria-label="LinkedIn">
-          <i class="pi pi-linkedin"></i>
+        <a [href]="'https://' + contactInfo.linkedin" target="_blank" rel="noopener noreferrer" class="social-link" aria-label="LinkedIn profile">
+          <i class="pi pi-linkedin" aria-hidden="true"></i>
           <span>LinkedIn</span>
         </a>
-        <a [href]="'https://' + contactInfo.website" target="_blank" class="social-link" aria-label="Website">
-          <i class="pi pi-globe"></i>
+        <a [href]="'https://' + contactInfo.website" target="_blank" rel="noopener noreferrer" class="social-link" aria-label="Personal website">
+          <i class="pi pi-globe" aria-hidden="true"></i>
           <span>Website</span>
         </a>
-      </div>
+      </nav>
     </div>
-    <div class="footer-section">
-      <h3>Footer Icons</h3>
+    <div class="footer-section" *ngIf="getFooterIcons().length > 0">
+      <h3>Links</h3>
       <div class="footer-icons">
-        <img *ngFor="let icon of getFooterIcons()" [src]="icon.Photo" [alt]="icon.Text || 'Footer Icon'" class="footer-icon" />
+        <img *ngFor="let icon of getFooterIcons()" [src]="icon.Photo" [alt]="icon.Text || 'Footer icon'" class="footer-icon" loading="lazy" />
       </div>
     </div>
-    <div class="footer-section">
+    <div class="footer-section footer-copyright">
       <p class="copyright">&copy; {{ currentYear }} Grayson Wills. All rights reserved.</p>
     </div>
   </div>

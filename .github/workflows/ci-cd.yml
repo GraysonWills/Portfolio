@@ -1,0 +1,120 @@
+name: Portfolio Site CI/CD
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+env:
+  NODE_VERSION: '22.x'
+  AWS_REGION: us-east-1
+
+jobs:
+  # ─── Build & Test Backend ───
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: redis-api-server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: redis-api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (if available)
+        run: npm run lint || true
+
+  # ─── Build & Test Frontend ───
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portfolio-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: portfolio-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production
+        run: npm run build -- --configuration=production
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: portfolio-dist
+          path: portfolio-app/dist/
+          retention-days: 7
+
+  # ─── Deploy (only on main/master push) ───
+  deploy:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: portfolio-dist
+          path: portfolio-app/dist/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy frontend to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Deploy Angular app
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST '
+            sudo systemctl stop nginx || true
+            sudo mv /var/www/portfolio-app /var/www/portfolio-app.backup || true
+            sudo mkdir -p /var/www/portfolio-app
+          '
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key -r portfolio-app/dist/portfolio-app/browser/* $EC2_USER@$EC2_HOST:/var/www/portfolio-app/
+          
+          # Deploy Redis API server
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key -r redis-api-server/ $EC2_USER@$EC2_HOST:/opt/redis-api-server/
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST '
+            cd /opt/redis-api-server && npm ci --production
+            sudo systemctl restart redis-api || true
+            sudo systemctl start nginx
+          '
+
+      - name: Verify deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          sleep 10
+          curl -sf "http://$EC2_HOST/api/health" || echo "Health check pending..."

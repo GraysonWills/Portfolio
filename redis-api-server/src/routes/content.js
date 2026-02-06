@@ -60,6 +60,36 @@ router.get('/page/:pageId', async (req, res) => {
 });
 
 /**
+ * GET /api/content/page/:pageId/content/:contentId
+ * Get content by PageID and PageContentID
+ */
+router.get('/page/:pageId/content/:contentId', async (req, res) => {
+  try {
+    const pageId = parseInt(req.params.pageId);
+    const contentId = parseInt(req.params.contentId);
+    const keys = await redisClient.keys('content:*');
+    const contents = [];
+    
+    for (const key of keys) {
+      let content;
+      try {
+        content = await redisClient.json.get(key);
+      } catch (err) {
+        const str = await redisClient.get(key);
+        if (str) content = JSON.parse(str);
+      }
+      if (content && content.PageID === pageId && content.PageContentID === contentId) {
+        contents.push(content);
+      }
+    }
+    
+    res.json(contents);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/content/list-item/:listItemId
  * Get content by ListItemID
  */

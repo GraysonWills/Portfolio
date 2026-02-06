@@ -15,6 +15,7 @@ export class ProjectsComponent implements OnInit {
   layout: 'list' | 'grid' = 'grid';
   sortField: string = 'date';
   sortOrder: number = -1;
+  isLoading: boolean = true;
 
   constructor(
     private redisService: RedisService,
@@ -33,9 +34,11 @@ export class ProjectsComponent implements OnInit {
       next: (content: RedisContent[]) => {
         this.projectsContent = content;
         this.processProjectsContent();
+        this.isLoading = false;
       },
       error: (error) => {
         console.error('Error loading projects content:', error);
+        this.isLoading = false;
         this.messageService.add({
           severity: 'error',
           summary: 'Error',

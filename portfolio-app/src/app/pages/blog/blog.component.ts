@@ -18,6 +18,7 @@ export class BlogComponent implements OnInit {
   searchQuery: string = '';
   subscriptionForm: FormGroup;
   isSubmitting: boolean = false;
+  isLoading: boolean = true;
 
   constructor(
     private redisService: RedisService,
@@ -46,9 +47,11 @@ export class BlogComponent implements OnInit {
         this.blogPosts = posts;
         this.filteredPosts = posts;
         this.sortPostsByDate();
+        this.isLoading = false;
       },
       error: (error) => {
         console.error('Error loading blog posts:', error);
+        this.isLoading = false;
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
@@ -59,7 +62,7 @@ export class BlogComponent implements OnInit {
   }
 
   /**
-   * Sort posts by publish date
+   * Sort posts by publish date (newest first)
    */
   private sortPostsByDate(): void {
     this.filteredPosts.sort((a, b) => {
@@ -69,6 +72,15 @@ export class BlogComponent implements OnInit {
       const bDate = bMetadata?.publishDate ? new Date(bMetadata.publishDate).getTime() : 0;
       return bDate - aDate;
     });
+  }
+
+  /**
+   * Estimate reading time based on word count (~200 words per minute)
+   */
+  private estimateReadTime(text: string): number {
+    if (!text) return 1;
+    const words = text.trim().split(/\s+/).length;
+    return Math.max(1, Math.ceil(words / 200));
   }
 
   /**
@@ -96,22 +108,31 @@ export class BlogComponent implements OnInit {
   }
 
   /**
-   * Get blog post data
+   * Get blog post data with reading time
    */
   getPostData(post: ContentGroup): any {
     const textItem = post.items.find(item => item.Text);
     const imageItem = post.items.find(item => item.Photo);
     const metadata = post.metadata as BlogPostMetadata | undefined;
-    
+    const content = textItem?.Text || '';
+
     return {
       title: metadata?.title || 'Untitled',
-      summary: metadata?.summary || textItem?.Text?.substring(0, 150) || '',
-      content: textItem?.Text || '',
+      summary: metadata?.summary || content.substring(0, 150) || '',
+      content: content,
       image: imageItem?.Photo,
       publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : null,
       tags: metadata?.tags || [],
-      status: metadata?.status || 'published'
+      status: metadata?.status || 'published',
+      readTime: this.estimateReadTime(content)
     };
+  }
+
+  /**
+   * TrackBy function for ngFor performance
+   */
+  trackByPost(index: number, post: ContentGroup): string {
+    return post.listItemID || index.toString();
   }
 
   /**

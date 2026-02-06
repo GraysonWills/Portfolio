@@ -1,12 +1,16 @@
 /**
  * Production Environment Configuration
+ * 
+ * Values are replaced at build time via CI/CD pipeline.
+ * Set these in your deployment environment or GitHub Secrets.
+ * The build step should replace this file or inject values.
  */
 
 export const environment = {
   production: true,
-  redisApiUrl: process.env['REDIS_API_URL'] || '',
-  mailchimpApiKey: process.env['MAILCHIMP_API_KEY'] || '',
-  mailchimpListId: process.env['MAILCHIMP_LIST_ID'] || '',
+  redisApiUrl: 'https://api.grayson-wills.com/api',
+  mailchimpApiKey: '',
+  mailchimpListId: '',
   mailchimpScriptId: 'mcjs',
   linkedinProfile: {
     email: 'calvarygman@gmail.com',
@@ -14,8 +18,8 @@ export const environment = {
     website: 'www.grayson-wills.com'
   },
   aws: {
-    region: process.env['AWS_REGION'] || '',
-    ec2InstanceId: process.env['AWS_EC2_INSTANCE_ID'] || '',
-    bucketName: process.env['AWS_BUCKET_NAME'] || ''
+    region: 'us-east-1',
+    ec2InstanceId: '',
+    bucketName: ''
   }
 };

@@ -16,6 +16,8 @@ export class WorkComponent implements OnInit {
   topSkills: string[] = [];
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   experienceData: any[] = [];
+  isLoading: boolean = true;
+  private loadCount = 0;
 
   constructor(
     private redisService: RedisService,
@@ -36,9 +38,11 @@ export class WorkComponent implements OnInit {
       next: (content: RedisContent[]) => {
         this.workContent = content;
         this.processWorkContent();
+        this.checkLoaded();
       },
       error: (error) => {
         console.error('Error loading work content:', error);
+        this.checkLoaded();
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
@@ -98,9 +102,11 @@ export class WorkComponent implements OnInit {
         this.certifications = profile.certifications;
         this.experienceData = profile.experience;
         this.processExperienceData();
+        this.checkLoaded();
       },
       error: (error) => {
         console.error('Error loading LinkedIn data:', error);
+        this.checkLoaded();
       }
     });
   }
@@ -126,6 +132,16 @@ export class WorkComponent implements OnInit {
           ` : ''}
         `
       }));
+    }
+  }
+
+  /**
+   * Mark one data source as loaded; hide skeleton when both resolve
+   */
+  private checkLoaded(): void {
+    this.loadCount++;
+    if (this.loadCount >= 2) {
+      this.isLoading = false;
     }
   }
 

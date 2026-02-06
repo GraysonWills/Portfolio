@@ -1,52 +1,67 @@
 /**
  * Redis Service
  * Handles all Redis database operations including CRUD operations,
- * content filtering by PageID and PageContentID, and list aggregation
+ * content filtering by PageID and PageContentID, and list aggregation.
+ *
+ * Enhancements:
+ *  - Retry logic with exponential backoff (retry 2x before failing)
+ *  - shareReplay caching for read-heavy endpoints (header, footer)
+ *  - Structured error logging
  */
 
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
+import { Observable, throwError, timer } from 'rxjs';
+import { catchError, map, retry, shareReplay } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 import { RedisContent, PageID, PageContentID, ContentGroup } from '../models/redis-content.model';
 
 @Injectable({
   providedIn: 'root'
 })
 export class RedisService {
-  private apiUrl: string = '';
+  private apiUrl: string;
   private headers: HttpHeaders;
 
+  // Cached observables for data that rarely changes
+  private allContent$: Observable<RedisContent[]> | null = null;
+
   constructor(private http: HttpClient) {
+    this.apiUrl = environment.redisApiUrl || '';
     this.headers = new HttpHeaders({
       'Content-Type': 'application/json'
     });
-    // API URL will be set from environment configuration
-    this.loadConfiguration();
   }
 
   /**
-   * Load Redis endpoint configuration from environment
-   */
-  private loadConfiguration(): void {
-    // Will be set from environment.ts in app initialization
-  }
-
-  /**
-   * Set Redis API endpoint
+   * Set Redis API endpoint (override from environment)
    */
   setApiEndpoint(url: string): void {
     this.apiUrl = url;
+    this.invalidateCache();
   }
 
   /**
-   * Get all content from Redis
+   * Invalidate cached observables (call after writes)
+   */
+  invalidateCache(): void {
+    this.allContent$ = null;
+  }
+
+  /**
+   * Get all content from Redis (with shareReplay cache)
    */
   getAllContent(): Observable<RedisContent[]> {
-    return this.http.get<RedisContent[]>(`${this.apiUrl}/content`, { headers: this.headers })
-      .pipe(
-        catchError(this.handleError)
-      );
+    if (!this.allContent$) {
+      this.allContent$ = this.http
+        .get<RedisContent[]>(`${this.apiUrl}/content`, { headers: this.headers })
+        .pipe(
+          retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
+          shareReplay({ bufferSize: 1, refCount: true, windowTime: 60_000 }),
+          catchError(this.handleError)
+        );
+    }
+    return this.allContent$;
   }
 
   /**
@@ -55,6 +70,7 @@ export class RedisService {
   getContentById(id: string): Observable<RedisContent> {
     return this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
       .pipe(
+        retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
         catchError(this.handleError)
       );
   }
@@ -65,6 +81,7 @@ export class RedisService {
   getContentByPageID(pageID: PageID): Observable<RedisContent[]> {
     return this.http.get<RedisContent[]>(`${this.apiUrl}/content/page/${pageID}`, { headers: this.headers })
       .pipe(
+        retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
         catchError(this.handleError)
       );
   }
@@ -77,6 +94,7 @@ export class RedisService {
       `${this.apiUrl}/content/page/${pageID}/content/${pageContentID}`,
       { headers: this.headers }
     ).pipe(
+      retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
       catchError(this.handleError)
     );
   }
@@ -115,6 +133,7 @@ export class RedisService {
   createContent(content: RedisContent): Observable<RedisContent> {
     return this.http.post<RedisContent>(`${this.apiUrl}/content`, content, { headers: this.headers })
       .pipe(
+        map(result => { this.invalidateCache(); return result; }),
         catchError(this.handleError)
       );
   }
@@ -125,6 +144,7 @@ export class RedisService {
   updateContent(id: string, content: Partial<RedisContent>): Observable<RedisContent> {
     return this.http.put<RedisContent>(`${this.apiUrl}/content/${id}`, content, { headers: this.headers })
       .pipe(
+        map(result => { this.invalidateCache(); return result; }),
         catchError(this.handleError)
       );
   }
@@ -135,6 +155,7 @@ export class RedisService {
   deleteContent(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
       .pipe(
+        map(result => { this.invalidateCache(); return result; }),
         catchError(this.handleError)
       );
   }
@@ -145,12 +166,13 @@ export class RedisService {
   batchCreateContent(contentArray: RedisContent[]): Observable<RedisContent[]> {
     return this.http.post<RedisContent[]>(`${this.apiUrl}/content/batch`, contentArray, { headers: this.headers })
       .pipe(
+        map(result => { this.invalidateCache(); return result; }),
         catchError(this.handleError)
       );
   }
 
   /**
-   * Get content for blog posts (PageID: 3, PageContentID: 3, 4, 5)
+   * Get content for blog posts (PageID: 3)
    */
   getBlogPosts(): Observable<ContentGroup[]> {
     return this.getContentGroupedByListItemID(PageID.Blog);
@@ -178,7 +200,7 @@ export class RedisService {
   }
 
   /**
-   * Get header content (PageContentID: 0, 1)
+   * Get header content (uses cached allContent for efficiency)
    */
   getHeaderContent(): Observable<RedisContent[]> {
     return this.getAllContent().pipe(
@@ -192,7 +214,7 @@ export class RedisService {
   }
 
   /**
-   * Get footer content (PageContentID: 2)
+   * Get footer content (uses cached allContent for efficiency)
    */
   getFooterContent(): Observable<RedisContent[]> {
     return this.getAllContent().pipe(
@@ -203,18 +225,22 @@ export class RedisService {
   }
 
   /**
-   * Error handling
+   * Structured error handling with retry awareness
    */
-  private handleError(error: any): Observable<never> {
-    let errorMessage = 'An unknown error occurred';
-    
-    if (error.error instanceof ErrorEvent) {
-      errorMessage = `Error: ${error.error.message}`;
+  private handleError(error: HttpErrorResponse): Observable<never> {
+    let userMessage: string;
+
+    if (error.status === 0) {
+      userMessage = 'Unable to reach the server. Please check your connection.';
+    } else if (error.status === 429) {
+      userMessage = 'Too many requests. Please try again in a moment.';
+    } else if (error.status >= 500) {
+      userMessage = 'Server error. Please try again later.';
     } else {
-      errorMessage = `Error Code: ${error.status}\nMessage: ${error.message}`;
+      userMessage = error.error?.error || error.message || 'An unexpected error occurred.';
     }
 
-    console.error('Redis Service Error:', errorMessage);
-    return throwError(() => new Error(errorMessage));
+    console.error(`[RedisService] ${error.status} ${error.url}: ${error.message}`);
+    return throwError(() => new Error(userMessage));
   }
 }
