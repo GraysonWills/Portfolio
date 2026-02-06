@@ -417,12 +417,14 @@ async function seed() {
       
       try {
         await client.json.set(key, '$', record);
+        await client.sAdd('content:_index', item.ID);
         success++;
         console.log(`  [OK] ${key} — ${item.Text?.substring(0, 50) || item.Photo?.substring(0, 50) || '(content)'}...`);
       } catch (jsonErr) {
         // Fallback to string storage if RedisJSON is not available
         try {
           await client.set(key, JSON.stringify(record));
+          await client.sAdd('content:_index', item.ID);
           success++;
           console.log(`  [OK] ${key} (string fallback)`);
         } catch (strErr) {
@@ -433,7 +435,7 @@ async function seed() {
     }
 
     console.log(`\nSeed complete: ${success} inserted, ${failed} failed.`);
-    console.log(`Total content keys: ${(await client.keys('content:*')).length}`);
+    console.log(`Content index size: ${await client.sCard('content:_index')}`);
     
   } catch (error) {
     console.error('Failed to seed database:', error.message);

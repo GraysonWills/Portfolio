@@ -1,12 +1,21 @@
 /**
  * Content Routes
- * Handles all Redis content operations
+ * Handles all Redis content operations.
+ *
+ * Uses content-index (Redis Set) instead of KEYS for all reads.
+ * See utils/content-index.js for the rationale.
  */
 
 const express = require('express');
 const router = express.Router();
 const redisClient = require('../config/redis');
 const { v4: uuidv4 } = require('uuid');
+const {
+  addToIndex,
+  removeFromIndex,
+  getAllContent,
+  getContentWhere,
+} = require('../utils/content-index');
 
 /**
  * GET /api/content
@@ -14,16 +23,7 @@ const { v4: uuidv4 } = require('uuid');
  */
 router.get('/', async (req, res) => {
   try {
-    const keys = await redisClient.keys('content:*');
-    const contents = [];
-    
-    for (const key of keys) {
-      const content = await redisClient.json.get(key);
-      if (content) {
-        contents.push(content);
-      }
-    }
-    
+    const contents = await getAllContent();
     res.json(contents);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -37,22 +37,7 @@ router.get('/', async (req, res) => {
 router.get('/page/:pageId', async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
-    const keys = await redisClient.keys('content:*');
-    const contents = [];
-    
-    for (const key of keys) {
-      let content;
-      try {
-        content = await redisClient.json.get(key);
-      } catch (err) {
-        const str = await redisClient.get(key);
-        if (str) content = JSON.parse(str);
-      }
-      if (content && content.PageID === pageId) {
-        contents.push(content);
-      }
-    }
-    
+    const contents = await getContentWhere(item => item.PageID === pageId);
     res.json(contents);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -67,22 +52,9 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
     const contentId = parseInt(req.params.contentId);
-    const keys = await redisClient.keys('content:*');
-    const contents = [];
-    
-    for (const key of keys) {
-      let content;
-      try {
-        content = await redisClient.json.get(key);
-      } catch (err) {
-        const str = await redisClient.get(key);
-        if (str) content = JSON.parse(str);
-      }
-      if (content && content.PageID === pageId && content.PageContentID === contentId) {
-        contents.push(content);
-      }
-    }
-    
+    const contents = await getContentWhere(
+      item => item.PageID === pageId && item.PageContentID === contentId
+    );
     res.json(contents);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -96,22 +68,7 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
 router.get('/list-item/:listItemId', async (req, res) => {
   try {
     const listItemId = req.params.listItemId;
-    const keys = await redisClient.keys('content:*');
-    const contents = [];
-    
-    for (const key of keys) {
-      let content;
-      try {
-        content = await redisClient.json.get(key);
-      } catch (err) {
-        const str = await redisClient.get(key);
-        if (str) content = JSON.parse(str);
-      }
-      if (content && content.ListItemID === listItemId) {
-        contents.push(content);
-      }
-    }
-    
+    const contents = await getContentWhere(item => item.ListItemID === listItemId);
     res.json(contents);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -126,18 +83,18 @@ router.get('/:id', async (req, res) => {
   try {
     const key = `content:${req.params.id}`;
     let content;
-    
+
     try {
       content = await redisClient.json.get(key);
     } catch (err) {
       const str = await redisClient.get(key);
       if (str) content = JSON.parse(str);
     }
-    
+
     if (!content) {
       return res.status(404).json({ error: 'Content not found' });
     }
-    
+
     res.json(content);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -151,27 +108,25 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const content = req.body;
-    
-    // Generate ID if not provided
+
     if (!content.ID) {
       content.ID = uuidv4();
     }
-    
-    // Set timestamps
     if (!content.CreatedAt) {
       content.CreatedAt = new Date().toISOString();
     }
     content.UpdatedAt = new Date().toISOString();
-    
+
     const key = `content:${content.ID}`;
     try {
-      // Try Redis JSON first
       await redisClient.json.set(key, '$', content);
     } catch (err) {
-      // Fallback to string storage
       await redisClient.set(key, JSON.stringify(content));
     }
-    
+
+    // Maintain the index
+    await addToIndex(content.ID);
+
     res.status(201).json(content);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -186,28 +141,27 @@ router.post('/batch', async (req, res) => {
   try {
     const contents = Array.isArray(req.body) ? req.body : [req.body];
     const created = [];
-    
+
     for (const content of contents) {
-      // Generate ID if not provided
       if (!content.ID) {
         content.ID = uuidv4();
       }
-      
-      // Set timestamps
       if (!content.CreatedAt) {
         content.CreatedAt = new Date().toISOString();
       }
       content.UpdatedAt = new Date().toISOString();
-      
+
       const key = `content:${content.ID}`;
       try {
         await redisClient.json.set(key, '$', content);
       } catch (err) {
         await redisClient.set(key, JSON.stringify(content));
       }
+
+      await addToIndex(content.ID);
       created.push(content);
     }
-    
+
     res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -222,31 +176,34 @@ router.put('/:id', async (req, res) => {
   try {
     const key = `content:${req.params.id}`;
     let existing;
-    
+
     try {
       existing = await redisClient.json.get(key);
     } catch (err) {
       const str = await redisClient.get(key);
       if (str) existing = JSON.parse(str);
     }
-    
+
     if (!existing) {
       return res.status(404).json({ error: 'Content not found' });
     }
-    
+
     const updated = {
       ...existing,
       ...req.body,
-      ID: req.params.id, // Ensure ID doesn't change
+      ID: req.params.id,
       UpdatedAt: new Date().toISOString()
     };
-    
+
     try {
       await redisClient.json.set(key, '$', updated);
     } catch (err) {
       await redisClient.set(key, JSON.stringify(updated));
     }
-    
+
+    // Ensure index is current (idempotent)
+    await addToIndex(req.params.id);
+
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -261,12 +218,14 @@ router.delete('/:id', async (req, res) => {
   try {
     const key = `content:${req.params.id}`;
     const exists = await redisClient.exists(key);
-    
+
     if (!exists) {
       return res.status(404).json({ error: 'Content not found' });
     }
-    
+
     await redisClient.del(key);
+    await removeFromIndex(req.params.id);
+
     res.json({ message: 'Content deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -280,26 +239,18 @@ router.delete('/:id', async (req, res) => {
 router.delete('/list-item/:listItemId', async (req, res) => {
   try {
     const listItemId = req.params.listItemId;
-    const keys = await redisClient.keys('content:*');
+    const matching = await getContentWhere(item => item.ListItemID === listItemId);
     let deleted = 0;
-    
-    for (const key of keys) {
-      let content;
-      try {
-        content = await redisClient.json.get(key);
-      } catch (err) {
-        const str = await redisClient.get(key);
-        if (str) content = JSON.parse(str);
-      }
-      if (content && content.ListItemID === listItemId) {
-        await redisClient.del(key);
-        deleted++;
-      }
+
+    for (const item of matching) {
+      await redisClient.del(`content:${item.ID}`);
+      await removeFromIndex(item.ID);
+      deleted++;
     }
-    
-    res.json({ 
+
+    res.json({
       message: `Deleted ${deleted} content item(s)`,
-      deleted: deleted
+      deleted
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
