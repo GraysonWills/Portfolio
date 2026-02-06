@@ -3,11 +3,28 @@
   <div class="dashboard-header">
     <h1>Blog Authoring Dashboard</h1>
     <div class="header-actions">
+      <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
+        <i [ngClass]="getConnectionStatusIcon()"></i>
+        {{ connectionStatus === 'connected' ? 'Redis Connected' : connectionStatus === 'testing' ? 'Testing...' : 'Disconnected' }}
+      </span>
       <p-button 
         label="Create New Post" 
         icon="pi pi-plus"
         (onClick)="createNewPost()"
         styleClass="p-button-primary">
+      </p-button>
+      <p-button 
+        icon="pi pi-cog"
+        (onClick)="toggleSettings()"
+        styleClass="p-button-outlined p-button-rounded"
+        pTooltip="Settings">
+      </p-button>
+      <p-button 
+        icon="pi pi-list"
+        (onClick)="toggleTransactionLog()"
+        styleClass="p-button-outlined p-button-rounded"
+        pTooltip="Transaction Log"
+        [badge]="txLog.getEntries().length > 0 ? txLog.getEntries().length.toString() : ''">
       </p-button>
       <p-button 
         label="Logout" 
@@ -17,6 +34,59 @@
       </p-button>
     </div>
   </div>
+
+  <!-- Settings Panel -->
+  <p-card *ngIf="showSettings" class="settings-panel">
+    <div class="settings-header">
+      <h3>Redis Connection Settings</h3>
+    </div>
+    <div class="settings-body">
+      <div class="form-group">
+        <label for="endpoint">Redis API Endpoint</label>
+        <div class="endpoint-input">
+          <input 
+            type="text" 
+            id="endpoint" 
+            [(ngModel)]="redisEndpoint"
+            pInputText
+            placeholder="http://localhost:3000/api"
+            class="full-width">
+          <p-button 
+            label="Save & Test" 
+            icon="pi pi-check"
+            (onClick)="saveEndpoint()"
+            styleClass="p-button-sm">
+          </p-button>
+        </div>
+        <small class="help-text">
+          The URL of your Redis API server (e.g., http://localhost:3000/api)
+        </small>
+      </div>
+    </div>
+  </p-card>
+
+  <!-- Transaction Log Panel -->
+  <p-card *ngIf="showTransactionLog" class="transaction-log-panel">
+    <div class="log-header">
+      <h3>Transaction Log</h3>
+      <p-button 
+        label="Clear" 
+        icon="pi pi-trash"
+        (onClick)="clearTransactionLog()"
+        styleClass="p-button-text p-button-sm p-button-danger">
+      </p-button>
+    </div>
+    <div class="log-body">
+      <div *ngIf="txLog.getEntries().length === 0" class="no-logs">
+        No transactions recorded yet.
+      </div>
+      <div *ngFor="let entry of txLog.getEntries()" class="log-entry">
+        <span class="log-time">{{ entry.timestamp | date:'short' }}</span>
+        <span class="log-action" [ngClass]="'action-' + entry.action.toLowerCase()">{{ entry.action }}</span>
+        <span class="log-detail">{{ entry.detail }}</span>
+      </div>
+    </div>
+  </p-card>
 
   <!-- Connection Status -->
   <div class="connection-status" *ngIf="isConnecting">
@@ -84,4 +154,5 @@
   </app-blog-editor>
 
   <p-toast></p-toast>
+  <p-confirmDialog></p-confirmDialog>
 </div>

@@ -1,6 +1,9 @@
 <div class="image-uploader">
   <div *ngIf="previewUrl || currentImage" class="image-preview">
     <img [src]="previewUrl || currentImage" alt="Preview" class="preview-image">
+    <div class="image-info" *ngIf="compressedSize > 0">
+      <small>{{ formatBytes(compressedSize) }}</small>
+    </div>
     <p-button 
       icon="pi pi-times" 
       (onClick)="removeImage()"
@@ -13,11 +16,12 @@
     class="upload-area"
     (dragover)="onDragOver($event)"
     (drop)="onDrop($event)"
-    [class.uploading]="isUploading">
+    [class.uploading]="isUploading"
+    [class.compressing]="isCompressing">
     <p-fileUpload
       mode="basic"
       accept="image/*"
-      [maxFileSize]="5242880"
+      [maxFileSize]="10485760"
       [auto]="false"
       chooseLabel="Choose Image"
       [showUploadButton]="false"
@@ -26,9 +30,12 @@
     </p-fileUpload>
     <p *ngIf="!previewUrl && !currentImage" class="upload-hint">
       Drag and drop an image here, or click to select<br>
-      <small>Max size: 5MB</small>
+      <small>Max size: 10MB &mdash; images are auto-compressed and resized</small>
     </p>
-    <p *ngIf="isUploading" class="upload-status">
+    <p *ngIf="isCompressing" class="upload-status">
+      <i class="pi pi-spin pi-spinner"></i> Compressing...
+    </p>
+    <p *ngIf="isUploading && !isCompressing" class="upload-status">
       <i class="pi pi-spin pi-spinner"></i> Uploading...
     </p>
   </div>

@@ -1,7 +1,8 @@
 import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { BlogApiService } from '../../services/blog-api.service';
-import { MessageService } from 'primeng/api';
+import { TransactionLogService } from '../../services/transaction-log.service';
+import { MessageService, ConfirmationService } from 'primeng/api';
 import { BlogPostMetadata } from '../../models/redis-content.model';
 
 @Component({
@@ -24,7 +25,9 @@ export class BlogEditorComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private blogApi: BlogApiService,
-    private messageService: MessageService
+    private txLog: TransactionLogService,
+    private messageService: MessageService,
+    private confirmationService: ConfirmationService
   ) {
     this.blogForm = this.fb.group({
       title: ['', [Validators.required]],
@@ -102,46 +105,83 @@ export class BlogEditorComponent implements OnInit {
   }
 
   /**
-   * Save blog post
+   * Save blog post — with confirmation dialog
    */
   savePost(): void {
-    if (this.blogForm.valid) {
-      this.isSaving = true;
-      const formValue = this.blogForm.value;
+    if (!this.blogForm.valid) return;
 
-      this.blogApi.createBlogPost(
-        formValue.title,
-        formValue.content,
-        formValue.summary,
-        this.tags,
-        this.uploadedImage || undefined
-      ).subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'Blog post saved successfully'
-          });
-          this.isSaving = false;
-          this.saved.emit();
-        },
-        error: (error) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to save blog post'
-          });
-          this.isSaving = false;
-        }
-      });
-    }
+    const formValue = this.blogForm.value;
+    const statusLabel = formValue.status === 'published' ? 'publish' : `save as ${formValue.status}`;
+    const isEdit = !!this.initialData;
+
+    this.confirmationService.confirm({
+      message: `Are you sure you want to ${isEdit ? 'update' : statusLabel} "${formValue.title}"?`,
+      header: isEdit ? 'Confirm Update' : 'Confirm Publish',
+      icon: isEdit ? 'pi pi-pencil' : 'pi pi-upload',
+      acceptLabel: isEdit ? 'Update' : 'Publish',
+      rejectLabel: 'Cancel',
+      accept: () => {
+        this.executeSave(formValue, isEdit);
+      }
+    });
+  }
+
+  /**
+   * Execute the save operation after confirmation
+   */
+  private executeSave(formValue: any, isEdit: boolean): void {
+    this.isSaving = true;
+
+    this.blogApi.createBlogPost(
+      formValue.title,
+      formValue.content,
+      formValue.summary,
+      this.tags,
+      this.uploadedImage || undefined
+    ).subscribe({
+      next: () => {
+        const action = isEdit ? 'UPDATED' : 'CREATED';
+        this.txLog.log(action, `Blog post "${formValue.title}" — status: ${formValue.status}, tags: [${this.tags.join(', ')}]`);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
+        });
+        this.isSaving = false;
+        this.saved.emit();
+      },
+      error: (error) => {
+        this.txLog.log('SAVE_FAILED', `Failed to save "${formValue.title}" — ${error.message}`);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: `Failed to ${isEdit ? 'update' : 'save'} blog post`
+        });
+        this.isSaving = false;
+      }
+    });
   }
 
   /**
    * Cancel editing
    */
   cancel(): void {
-    this.cancelled.emit();
+    // If form is dirty, confirm cancel
+    if (this.blogForm.dirty) {
+      this.confirmationService.confirm({
+        message: 'You have unsaved changes. Are you sure you want to discard them?',
+        header: 'Discard Changes',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Discard',
+        rejectLabel: 'Keep Editing',
+        acceptButtonStyleClass: 'p-button-danger',
+        accept: () => {
+          this.cancelled.emit();
+        }
+      });
+    } else {
+      this.cancelled.emit();
+    }
   }
 
   /**

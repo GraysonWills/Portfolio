@@ -26,6 +26,13 @@ export class BlogApiService {
   }
 
   /**
+   * Get current Redis API endpoint
+   */
+  getApiEndpoint(): string {
+    return this.apiUrl;
+  }
+
+  /**
    * Create a new blog post
    */
   createBlogPost(

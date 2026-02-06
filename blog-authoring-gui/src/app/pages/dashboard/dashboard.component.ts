@@ -2,7 +2,8 @@ import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService } from '../../services/blog-api.service';
-import { MessageService } from 'primeng/api';
+import { TransactionLogService } from '../../services/transaction-log.service';
+import { MessageService, ConfirmationService } from 'primeng/api';
 import { RedisContent, ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 
 @Component({
@@ -16,12 +17,20 @@ export class DashboardComponent implements OnInit {
   isEditing: boolean = false;
   selectedPost: any = null;
   showEditor: boolean = false;
+  showSettings: boolean = false;
+  showTransactionLog: boolean = false;
   isConnecting: boolean = false;
+
+  // Settings
+  redisEndpoint: string = '';
+  connectionStatus: 'connected' | 'disconnected' | 'testing' = 'disconnected';
 
   constructor(
     private authService: AuthService,
     private blogApi: BlogApiService,
+    public txLog: TransactionLogService,
     private messageService: MessageService,
+    private confirmationService: ConfirmationService,
     private router: Router
   ) {}
 
@@ -30,6 +39,7 @@ export class DashboardComponent implements OnInit {
       this.router.navigate(['/login']);
       return;
     }
+    this.redisEndpoint = this.blogApi.getApiEndpoint();
     this.testConnection();
     this.loadBlogPosts();
   }
@@ -39,16 +49,19 @@ export class DashboardComponent implements OnInit {
    */
   testConnection(): void {
     this.isConnecting = true;
+    this.connectionStatus = 'testing';
     this.blogApi.testConnection().subscribe({
       next: (connected) => {
         this.isConnecting = false;
         if (connected) {
+          this.connectionStatus = 'connected';
           this.messageService.add({
             severity: 'success',
             summary: 'Connected',
             detail: 'Successfully connected to Redis'
           });
         } else {
+          this.connectionStatus = 'disconnected';
           this.messageService.add({
             severity: 'warn',
             summary: 'Connection Warning',
@@ -58,6 +71,7 @@ export class DashboardComponent implements OnInit {
       },
       error: () => {
         this.isConnecting = false;
+        this.connectionStatus = 'disconnected';
         this.messageService.add({
           severity: 'warn',
           summary: 'Connection Warning',
@@ -73,12 +87,11 @@ export class DashboardComponent implements OnInit {
   loadBlogPosts(): void {
     this.blogApi.getAllBlogPosts().subscribe({
       next: (posts: RedisContent[]) => {
-        // Group posts by ListItemID
         const groupedMap = new Map<string, ContentGroup>();
-        
+
         posts.forEach((post: RedisContent) => {
           const listItemID = post.ListItemID || `default-${post.ID}`;
-          
+
           if (!groupedMap.has(listItemID)) {
             groupedMap.set(listItemID, {
               listItemID: listItemID,
@@ -86,10 +99,10 @@ export class DashboardComponent implements OnInit {
               metadata: post.Metadata as any
             });
           }
-          
+
           groupedMap.get(listItemID)!.items.push(post);
         });
-        
+
         this.blogPosts = Array.from(groupedMap.values());
       },
       error: (error) => {
@@ -113,52 +126,71 @@ export class DashboardComponent implements OnInit {
   }
 
   /**
-   * Edit existing blog post
+   * Edit existing blog post — with confirmation
    */
   editPost(post: ContentGroup): void {
-    const textItem = post.items.find(item => item.Text);
-    const imageItem = post.items.find(item => item.Photo);
-    const metadata = post.metadata as any;
-    
-    this.selectedPost = {
-      listItemID: post.listItemID,
-      title: metadata?.title || '',
-      summary: metadata?.summary || textItem?.Text?.substring(0, 150) || '',
-      content: textItem?.Text || '',
-      image: imageItem?.Photo || null,
-      tags: metadata?.tags || [],
-      publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
-      status: metadata?.status || 'published',
-      category: metadata?.category || ''
-    };
-    
-    this.isEditing = true;
-    this.showEditor = true;
+    this.confirmationService.confirm({
+      message: `Open "${this.getPostTitle(post)}" for editing?`,
+      header: 'Edit Post',
+      icon: 'pi pi-pencil',
+      acceptLabel: 'Edit',
+      rejectLabel: 'Cancel',
+      accept: () => {
+        const textItem = post.items.find(item => item.Text);
+        const imageItem = post.items.find(item => item.Photo);
+        const metadata = post.metadata as any;
+
+        this.selectedPost = {
+          listItemID: post.listItemID,
+          title: metadata?.title || '',
+          summary: metadata?.summary || textItem?.Text?.substring(0, 150) || '',
+          content: textItem?.Text || '',
+          image: imageItem?.Photo || null,
+          tags: metadata?.tags || [],
+          publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
+          status: metadata?.status || 'published',
+          category: metadata?.category || ''
+        };
+
+        this.isEditing = true;
+        this.showEditor = true;
+      }
+    });
   }
 
   /**
-   * Delete blog post
+   * Delete blog post — with confirmation
    */
   deletePost(post: ContentGroup): void {
-    if (confirm('Are you sure you want to delete this blog post?')) {
-      this.blogApi.deleteBlogPost(post.listItemID).subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'Blog post deleted successfully'
-          });
-          this.loadBlogPosts();
-        },
-        error: (error) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to delete blog post'
-          });
-        }
-      });
-    }
+    this.confirmationService.confirm({
+      message: `Are you sure you want to permanently delete "${this.getPostTitle(post)}"? This action cannot be undone.`,
+      header: 'Confirm Delete',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => {
+        this.blogApi.deleteBlogPost(post.listItemID).subscribe({
+          next: () => {
+            this.txLog.log('DELETE', `Deleted blog post: ${this.getPostTitle(post)} (${post.listItemID})`);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: 'Blog post deleted successfully'
+            });
+            this.loadBlogPosts();
+          },
+          error: (error) => {
+            this.txLog.log('DELETE_FAILED', `Failed to delete: ${this.getPostTitle(post)} — ${error.message}`);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Failed to delete blog post'
+            });
+          }
+        });
+      }
+    });
   }
 
   /**
@@ -179,6 +211,43 @@ export class DashboardComponent implements OnInit {
   }
 
   /**
+   * Toggle settings panel
+   */
+  toggleSettings(): void {
+    this.showSettings = !this.showSettings;
+  }
+
+  /**
+   * Save Redis endpoint setting
+   */
+  saveEndpoint(): void {
+    if (this.redisEndpoint.trim()) {
+      this.blogApi.setApiEndpoint(this.redisEndpoint.trim());
+      this.txLog.log('CONFIG', `Redis endpoint changed to: ${this.redisEndpoint.trim()}`);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Endpoint Updated',
+        detail: 'Redis API endpoint has been updated'
+      });
+      this.testConnection();
+    }
+  }
+
+  /**
+   * Toggle transaction log panel
+   */
+  toggleTransactionLog(): void {
+    this.showTransactionLog = !this.showTransactionLog;
+  }
+
+  /**
+   * Clear transaction log
+   */
+  clearTransactionLog(): void {
+    this.txLog.clear();
+  }
+
+  /**
    * Logout
    */
   logout(): void {
@@ -186,17 +255,13 @@ export class DashboardComponent implements OnInit {
     this.router.navigate(['/login']);
   }
 
-  /**
-   * Get post title
-   */
+  // -- Display helpers --
+
   getPostTitle(post: ContentGroup): string {
     const metadata = post.metadata as BlogPostMetadata;
     return metadata?.title || 'Untitled Post';
   }
 
-  /**
-   * Get post summary
-   */
   getPostSummary(post: ContentGroup): string {
     const metadata = post.metadata as BlogPostMetadata;
     if (metadata?.summary) {
@@ -206,17 +271,11 @@ export class DashboardComponent implements OnInit {
     return textItem?.Text?.substring(0, 150) || 'No summary available';
   }
 
-  /**
-   * Get post status
-   */
   getPostStatus(post: ContentGroup): string {
     const metadata = post.metadata as BlogPostMetadata;
     return metadata?.status || 'published';
   }
 
-  /**
-   * Get status severity for PrimeNG tag
-   */
   getStatusSeverity(status: string): 'success' | 'info' | 'warning' | 'danger' {
     switch (status) {
       case 'published':
@@ -230,17 +289,11 @@ export class DashboardComponent implements OnInit {
     }
   }
 
-  /**
-   * Get post tags
-   */
   getPostTags(post: ContentGroup): string[] {
     const metadata = post.metadata as BlogPostMetadata;
     return metadata?.tags || [];
   }
 
-  /**
-   * Get post date
-   */
   getPostDate(post: ContentGroup): Date {
     const metadata = post.metadata as BlogPostMetadata;
     if (metadata?.publishDate) {
@@ -248,5 +301,21 @@ export class DashboardComponent implements OnInit {
     }
     const textItem = post.items.find(item => item.CreatedAt);
     return textItem?.CreatedAt ? new Date(textItem.CreatedAt) : new Date();
+  }
+
+  getConnectionStatusIcon(): string {
+    switch (this.connectionStatus) {
+      case 'connected': return 'pi pi-check-circle';
+      case 'testing': return 'pi pi-spin pi-spinner';
+      default: return 'pi pi-times-circle';
+    }
+  }
+
+  getConnectionStatusClass(): string {
+    switch (this.connectionStatus) {
+      case 'connected': return 'status-connected';
+      case 'testing': return 'status-testing';
+      default: return 'status-disconnected';
+    }
   }
 }

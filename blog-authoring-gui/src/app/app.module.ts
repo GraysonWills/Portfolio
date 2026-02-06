@@ -16,8 +16,10 @@ import { TagModule } from 'primeng/tag';
 import { DropdownModule } from 'primeng/dropdown';
 import { CalendarModule } from 'primeng/calendar';
 import { ToggleButtonModule } from 'primeng/togglebutton';
-import { MessageService } from 'primeng/api';
+import { MessageService, ConfirmationService } from 'primeng/api';
 import { EditorModule } from 'primeng/editor';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
@@ -53,9 +55,11 @@ import { ImageUploaderComponent } from './components/image-uploader/image-upload
     DropdownModule,
     CalendarModule,
     ToggleButtonModule,
-    EditorModule
+    EditorModule,
+    ConfirmDialogModule,
+    TooltipModule
   ],
-  providers: [MessageService],
+  providers: [MessageService, ConfirmationService],
   bootstrap: [AppComponent]
 })
 export class AppModule { }
