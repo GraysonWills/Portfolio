@@ -2,7 +2,7 @@
   <div class="footer-content">
     <div class="footer-section">
       <h3>Connect</h3>
-      <nav class="social-links" aria-label="Social links">
+      <nav class="social-links" aria-label="Social and contact links">
         <a [href]="'mailto:' + contactInfo.email" class="social-link" aria-label="Send email">
           <i class="pi pi-envelope" aria-hidden="true"></i>
           <span>Email</span>
@@ -11,17 +11,29 @@
           <i class="pi pi-linkedin" aria-hidden="true"></i>
           <span>LinkedIn</span>
         </a>
+        <a *ngFor="let icon of getFooterIcons()" 
+           [href]="getIconUrl(icon)" 
+           target="_blank" 
+           rel="noopener noreferrer" 
+           class="social-link" 
+           [attr.aria-label]="icon.Text + ' profile'">
+          <img [src]="icon.Photo" [alt]="icon.Text || 'Social icon'" class="footer-icon-inline" loading="lazy" />
+          <span>{{ icon.Text }}</span>
+        </a>
         <a [href]="'https://' + contactInfo.website" target="_blank" rel="noopener noreferrer" class="social-link" aria-label="Personal website">
           <i class="pi pi-globe" aria-hidden="true"></i>
           <span>Website</span>
         </a>
       </nav>
     </div>
-    <div class="footer-section" *ngIf="getFooterIcons().length > 0">
-      <h3>Links</h3>
-      <div class="footer-icons">
-        <img *ngFor="let icon of getFooterIcons()" [src]="icon.Photo" [alt]="icon.Text || 'Footer icon'" class="footer-icon" loading="lazy" />
-      </div>
+    <div class="footer-section">
+      <h3>Explore</h3>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a routerLink="/" class="footer-nav-link">Home</a>
+        <a routerLink="/work" class="footer-nav-link">Work</a>
+        <a routerLink="/projects" class="footer-nav-link">Projects</a>
+        <a routerLink="/blog" class="footer-nav-link">Blog</a>
+      </nav>
     </div>
     <div class="footer-section footer-copyright">
       <p class="copyright">&copy; {{ currentYear }} Grayson Wills. All rights reserved.</p>

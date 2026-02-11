@@ -53,6 +53,7 @@ html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 body {
@@ -61,6 +62,7 @@ body {
   background-color: var(--bg-primary);
   line-height: 1.6;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* ── Typography ── */
@@ -138,11 +140,11 @@ a:hover { color: var(--primary); }
 
 /* ── Utility: Sections ── */
 .section {
-  padding: 5rem 0;
+  padding: 3.5rem 0;
 }
 
 .section-alt {
-  padding: 5rem 0;
+  padding: 3.5rem 0;
   background: var(--bg-secondary);
 }
 
@@ -155,11 +157,11 @@ a:hover { color: var(--primary); }
 }
 
 .section-subtitle {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   color: var(--text-muted);
   text-align: center;
   max-width: 600px;
-  margin: 0 auto 3rem;
+  margin: 0 auto 2rem;
 }
 
 /* ── Scroll-Reveal Animation ── */
@@ -255,50 +257,213 @@ a:hover { color: var(--primary); }
   background: var(--primary-dark);
 }
 
-/* ── PrimeNG Overrides ── */
-::ng-deep {
-  .p-button {
-    border-radius: var(--radius-sm) !important;
-    transition: all var(--transition-fast) !important;
-    font-weight: 600 !important;
-  }
+/* ── PrimeNG Global Overrides ── */
+.p-button {
+  border-radius: var(--radius-sm) !important;
+  transition: all var(--transition-fast) !important;
+  font-weight: 600 !important;
+}
 
-  .p-card {
-    border-radius: var(--radius-md) !important;
+.p-card {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  border: 1px solid rgba(102, 126, 234, 0.08) !important;
+  transition: all var(--transition-base) !important;
+  overflow: hidden;
+
+  &:hover {
+    box-shadow: var(--shadow-hover) !important;
+    transform: translateY(-3px);
+  }
+}
+
+.p-chip {
+  border-radius: var(--radius-xl) !important;
+  font-weight: 500 !important;
+}
+
+.p-tag {
+  border-radius: var(--radius-xl) !important;
+}
+
+.p-menubar {
+  border: none !important;
+  background: transparent !important;
+}
+
+.p-toast {
+  z-index: 10001 !important;
+}
+
+/* ── Kill carousel horizontal overflow (no side-scroll) ── */
+.p-carousel {
+  overflow: hidden !important;
+}
+
+.p-carousel .p-carousel-content {
+  overflow: hidden !important;
+}
+
+.p-carousel .p-carousel-items-content {
+  overflow: hidden !important;
+}
+
+/* ── Hero carousel: remove all internal whitespace ── */
+app-landing .hero-carousel.p-carousel,
+app-landing .hero-carousel .p-carousel-content,
+app-landing .hero-carousel .p-carousel-container {
+  height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+app-landing .hero-carousel .p-carousel-items-container,
+app-landing .hero-carousel .p-carousel-items-content {
+  height: 100% !important;
+}
+
+/* Position carousel indicators over the image, not below it */
+app-landing .hero-carousel .p-carousel-indicators {
+  position: absolute !important;
+  bottom: 1rem !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 3;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+app-landing .hero-carousel .p-carousel-indicators .p-carousel-indicator button {
+  background: rgba(255, 255, 255, 0.5) !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+app-landing .hero-carousel .p-carousel-indicators .p-carousel-indicator.p-highlight button {
+  background: rgba(255, 255, 255, 0.95) !important;
+  width: 24px !important;
+  border-radius: 5px !important;
+}
+
+/* Remove any prev/next button space */
+app-landing .hero-carousel .p-carousel-prev,
+app-landing .hero-carousel .p-carousel-next {
+  display: none !important;
+}
+
+/* ── Header PrimeNG Overrides (global scope) ── */
+app-header .p-menubar {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+app-header .p-menubar-root-list {
+  gap: 0.5rem;
+}
+
+app-header .p-menubar-root-list > .p-menuitem > .p-menuitem-link {
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+
+  &:hover {
+    background-color: rgba(102, 126, 234, 0.06);
+    color: var(--primary);
+  }
+}
+
+app-header .p-menubar-root-list > .p-menuitem.p-menuitem-active > .p-menuitem-link,
+app-header .p-menubar-root-list > .p-menuitem.active-route > .p-menuitem-link {
+  color: var(--primary);
+  background-color: rgba(102, 126, 234, 0.08);
+  font-weight: 600;
+}
+
+/* ── Work Page PrimeNG Overrides (global scope) ── */
+app-work .custom-timeline .p-timeline-event-content {
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+  border-left: 3px solid var(--primary);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+
+  &:hover {
+    transform: translateX(4px);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+app-work .custom-timeline .p-timeline-event-content h3 {
+  color: var(--primary);
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+}
+
+app-work .custom-timeline .p-timeline-event-content ul {
+  margin-left: 1.5rem;
+  margin-top: 0.4rem;
+}
+
+app-work .custom-timeline .p-timeline-event-content li {
+  margin-bottom: 0.25rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+app-work .custom-timeline .p-timeline-event-marker {
+  background: var(--primary) !important;
+  border: 3px solid var(--bg-card) !important;
+  box-shadow: 0 0 0 2px var(--primary) !important;
+}
+
+app-work .custom-timeline .p-timeline-event-connector {
+  background: var(--bg-tertiary) !important;
+}
+
+app-work .skill-chip .p-chip {
+  background: var(--primary) !important;
+  color: var(--text-inverse) !important;
+  border-radius: var(--radius-xl) !important;
+  font-weight: 500 !important;
+}
+
+/* ── Mobile: Prevent hover states from sticking on touch devices ── */
+@media (hover: none) {
+  .p-card:hover {
     box-shadow: var(--shadow-sm) !important;
-    border: 1px solid rgba(102, 126, 234, 0.08) !important;
-    transition: all var(--transition-base) !important;
-    overflow: hidden;
-
-    &:hover {
-      box-shadow: var(--shadow-hover) !important;
-      transform: translateY(-4px);
-    }
+    transform: none;
   }
+}
 
-  .p-chip {
-    border-radius: var(--radius-xl) !important;
-    font-weight: 500 !important;
-  }
+/* ── iOS: Prevent tap highlight and auto-zoom on inputs ── */
+input, select, textarea {
+  font-size: 16px; /* Prevents iOS Safari zoom on focus */
+}
 
-  .p-tag {
-    border-radius: var(--radius-xl) !important;
-  }
+* {
+  -webkit-tap-highlight-color: transparent;
+}
 
-  .p-menubar {
-    border: none !important;
-    background: transparent !important;
-  }
+/* ── Safe area insets for notched devices ── */
+.header-container {
+  padding-top: env(safe-area-inset-top, 0);
+}
 
-  .p-toast {
-    z-index: 10001 !important;
-  }
+.footer-container {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0));
 }
 
 /* ── Responsive Breakpoints ── */
 @media (max-width: 768px) {
   .section, .section-alt {
-    padding: 3rem 0;
+    padding: 2.5rem 0;
   }
 
   .container {

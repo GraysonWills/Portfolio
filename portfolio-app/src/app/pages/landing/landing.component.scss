@@ -1,12 +1,14 @@
 .landing-page {
+  position: relative;
   min-height: 100vh;
 }
 
 /* ── Hero Section ── */
 .hero-section {
   position: relative;
-  height: 90vh;
-  min-height: 550px;
+  height: 80vh;
+  min-height: 480px;
+  overflow: hidden;
 }
 
 .hero-carousel {
@@ -16,8 +18,8 @@
 .hero-image-container {
   position: relative;
   width: 100%;
-  height: 90vh;
-  min-height: 550px;
+  height: 80vh;
+  min-height: 480px;
   overflow: hidden;
 }
 
@@ -33,34 +35,43 @@
   to   { transform: scale(1.05); }
 }
 
+/* ── Static overlay sits OUTSIDE carousel — no re-animation on slide change ── */
 .hero-overlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 80vh;
+  min-height: 480px;
   background: var(--gradient-hero);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .hero-content {
   text-align: center;
   color: var(--text-inverse);
   padding: 2rem;
-  animation: fadeInUp 1s ease-out;
+  animation: fadeInUp 1s ease-out forwards;
+  pointer-events: auto;
 }
 
 .hero-title {
   font-size: clamp(2.5rem, 6vw, 4.5rem);
   font-weight: 800;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
   letter-spacing: -0.02em;
   color: white;
 }
 
 .hero-subtitle {
-  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
-  margin-bottom: 2.5rem;
+  font-size: clamp(1rem, 2.5vw, 1.4rem);
+  margin-bottom: 2rem;
   opacity: 0.92;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.95);
@@ -75,8 +86,8 @@
 
 /* ── Summary ── */
 .summary-text {
-  font-size: 1.2rem;
-  line-height: 1.9;
+  font-size: 1.1rem;
+  line-height: 1.85;
   color: var(--text-secondary);
   text-align: center;
 }
@@ -104,7 +115,7 @@
 .certifications-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 2rem;
+  gap: 1.5rem;
   max-width: 900px;
   margin: 0 auto;
 }
@@ -114,33 +125,33 @@
 }
 
 .cert-content {
-  padding: 1.5rem 1rem;
+  padding: 1.25rem 1rem;
 }
 
 .cert-icon {
-  font-size: 2.5rem;
+  font-size: 2rem;
   color: var(--primary);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   display: block;
 }
 
 .cert-content h3 {
-  font-size: 1.2rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  margin-bottom: 0.4rem;
   color: var(--text-primary);
 }
 
 .cert-content p {
   color: var(--text-muted);
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
 }
 
 /* ── Education ── */
 .education-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
+  gap: 1.5rem;
   max-width: 900px;
   margin: 0 auto;
 }
@@ -150,32 +161,32 @@
 }
 
 .edu-content {
-  padding: 1.5rem 1rem;
+  padding: 1.25rem 1rem;
 }
 
 .edu-icon {
-  font-size: 2.5rem;
+  font-size: 2rem;
   color: var(--secondary);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   display: block;
 }
 
 .edu-content h3 {
-  font-size: 1.2rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  margin-bottom: 0.4rem;
   color: var(--text-primary);
 }
 
 .edu-institution {
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
 }
 
 .edu-location {
   color: var(--text-muted);
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
 }
 
 /* ── Animations ── */
@@ -186,13 +197,49 @@
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
-  .hero-section, .hero-image-container {
-    height: 75vh;
-    min-height: 450px;
+  .hero-section {
+    height: 70vh;
+    min-height: 400px;
+  }
+
+  .hero-image-container {
+    height: 70vh;
+    min-height: 400px;
+  }
+
+  .hero-overlay {
+    height: 70vh;
+    min-height: 400px;
   }
 
   .hero-actions {
     flex-direction: column;
     align-items: center;
+  }
+
+  .certifications-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .education-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Very small screens ── */
+@media (max-width: 380px) {
+  .hero-section,
+  .hero-image-container,
+  .hero-overlay {
+    height: 60vh;
+    min-height: 340px;
+  }
+
+  .hero-content {
+    padding: 1rem;
+  }
+
+  .hero-subtitle {
+    font-size: 0.9rem;
   }
 }

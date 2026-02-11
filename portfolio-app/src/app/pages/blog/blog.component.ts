@@ -1,7 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RedisService } from '../../services/redis.service';
-import { MailchimpService } from '../../services/mailchimp.service';
 import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 
@@ -16,26 +14,31 @@ export class BlogComponent implements OnInit {
   filteredPosts: ContentGroup[] = [];
   layout: 'list' | 'grid' = 'list';
   searchQuery: string = '';
-  subscriptionForm: FormGroup;
-  isSubmitting: boolean = false;
   isLoading: boolean = true;
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════╗
+   * ║  FUTURE: Blog Sectionalization                              ║
+   * ║                                                              ║
+   * ║  To group posts by category (like Projects accordion):       ║
+   * ║  1. Add: categoryGroups: Map<string, ContentGroup[]>         ║
+   * ║  2. Add: expandedCategories: Record<string, boolean> = {}    ║
+   * ║  3. In loadBlogPosts success handler, call groupByCategory() ║
+   * ║  4. groupByCategory() groups filteredPosts by                ║
+   * ║     (metadata as BlogPostMetadata).category                  ║
+   * ║  5. Template: wrap each group in accordion-section divs      ║
+   * ║     (reuse .accordion-header / .accordion-body from projects)║
+   * ║  6. Seed data already has `category` field on each post      ║
+   * ╚══════════════════════════════════════════════════════════════╝
+   */
 
   constructor(
     private redisService: RedisService,
-    private mailchimpService: MailchimpService,
-    private messageService: MessageService,
-    private fb: FormBuilder
-  ) {
-    this.subscriptionForm = this.fb.group({
-      email: ['', [Validators.required, Validators.email]],
-      firstName: [''],
-      lastName: ['']
-    });
-  }
+    private messageService: MessageService
+  ) {}
 
   ngOnInit(): void {
     this.loadBlogPosts();
-    this.mailchimpService.loadMailchimpScript();
   }
 
   /**
@@ -124,6 +127,7 @@ export class BlogComponent implements OnInit {
       publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : null,
       tags: metadata?.tags || [],
       status: metadata?.status || 'published',
+      category: metadata?.category || 'General',
       readTime: this.estimateReadTime(content)
     };
   }
@@ -140,46 +144,5 @@ export class BlogComponent implements OnInit {
    */
   toggleLayout(): void {
     this.layout = this.layout === 'list' ? 'grid' : 'list';
-  }
-
-  /**
-   * Subscribe to newsletter
-   */
-  subscribe(): void {
-    if (this.subscriptionForm.valid && !this.isSubmitting) {
-      this.isSubmitting = true;
-      const formValue = this.subscriptionForm.value;
-      
-      this.mailchimpService.subscribe(
-        formValue.email,
-        formValue.firstName,
-        formValue.lastName
-      ).subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'Successfully subscribed to newsletter!'
-          });
-          this.subscriptionForm.reset();
-          this.isSubmitting = false;
-        },
-        error: (error) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to subscribe. Please try again.'
-          });
-          this.isSubmitting = false;
-        }
-      });
-    }
-  }
-
-  /**
-   * Expand/collapse blog post
-   */
-  togglePost(post: ContentGroup): void {
-    // Implementation for expand/collapse functionality
   }
 }

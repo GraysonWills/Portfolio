@@ -30,9 +30,6 @@ export class LandingComponent implements OnInit {
     this.loadLinkedInData();
   }
 
-  /**
-   * Load landing page content from Redis
-   */
   private loadLandingContent(): void {
     this.redisService.getLandingPageContent().subscribe({
       next: (content: RedisContent[]) => {
@@ -43,7 +40,6 @@ export class LandingComponent implements OnInit {
           item => item.PageContentID === PageContentID.LandingText
         );
 
-        // Extract summary from landing text
         const summaryContent = this.landingText.find(
           item => item.Metadata?.['type'] === 'summary'
         );
@@ -62,13 +58,9 @@ export class LandingComponent implements OnInit {
     });
   }
 
-  /**
-   * Load LinkedIn profile data
-   */
   private loadLinkedInData(): void {
     this.linkedInService.getLinkedInProfile().subscribe({
       next: (profile) => {
-        // Only use LinkedIn summary as fallback
         if (!this.summary) {
           this.summary = profile.summary;
         }
@@ -87,30 +79,24 @@ export class LandingComponent implements OnInit {
     });
   }
 
-  /**
-   * Download resume
-   */
   downloadResume(): void {
     if (typeof window !== 'undefined') {
       window.open('/assets/resume.pdf', '_blank');
     }
   }
 
-  /**
-   * Open email client
-   */
   openEmail(email: string): void {
     if (typeof window !== 'undefined' && email) {
       window.location.href = `mailto:${email}`;
     }
   }
 
-  /**
-   * Get carousel images
-   */
-  getCarouselImages(): string[] {
+  getCarouselItems(): { photo: string; alt: string }[] {
     return this.landingPhotos
       .filter(item => item.Photo)
-      .map(item => item.Photo as string);
+      .map(item => ({
+        photo: item.Photo as string,
+        alt: item.Metadata?.['alt'] || 'Portfolio hero image'
+      }));
   }
 }

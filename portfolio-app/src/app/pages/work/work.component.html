@@ -33,7 +33,7 @@
              aria-label="Professional timeline" 
              appScrollReveal>
       <h2 class="section-title">Professional Timeline</h2>
-      <p-timeline [value]="timelineEvents" align="alternate" styleClass="custom-timeline">
+      <p-timeline [value]="timelineEvents" [align]="timelineAlign" styleClass="custom-timeline">
         <ng-template let-event pTemplate="content">
           <div class="timeline-content" [innerHTML]="event.content"></div>
         </ng-template>

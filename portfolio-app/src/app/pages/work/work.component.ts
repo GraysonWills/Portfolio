@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, HostListener } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
@@ -17,6 +17,7 @@ export class WorkComponent implements OnInit {
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   experienceData: any[] = [];
   isLoading: boolean = true;
+  timelineAlign: 'alternate' | 'left' = 'alternate';
   private loadCount = 0;
 
   constructor(
@@ -26,8 +27,18 @@ export class WorkComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.updateTimelineAlign();
     this.loadWorkContent();
     this.loadLinkedInData();
+  }
+
+  @HostListener('window:resize')
+  onResize(): void {
+    this.updateTimelineAlign();
+  }
+
+  private updateTimelineAlign(): void {
+    this.timelineAlign = window.innerWidth <= 768 ? 'left' : 'alternate';
   }
 
   /**

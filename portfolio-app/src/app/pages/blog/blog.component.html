@@ -19,13 +19,13 @@
           aria-label="Search blog posts">
         <i class="pi pi-search search-icon" aria-hidden="true"></i>
       </div>
-      <p-button 
-        [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
-        (onClick)="toggleLayout()"
-        [label]="layout === 'grid' ? 'List View' : 'Grid View'"
-        styleClass="p-button-outlined"
-        ariaLabel="Toggle between grid and list view">
-      </p-button>
+      <button
+        class="layout-toggle-btn"
+        (click)="toggleLayout()"
+        [attr.aria-label]="layout === 'grid' ? 'Switch to list view' : 'Switch to grid view'">
+        <i [class]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"></i>
+        <span>{{ layout === 'grid' ? 'List' : 'Grid' }}</span>
+      </button>
     </section>
 
     <!-- Loading Skeleton -->
@@ -39,15 +39,37 @@
       </div>
     </section>
 
+    <!--
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  FUTURE: Blog Sectionalization (like Projects page)        ║
+      ║                                                            ║
+      ║  Plan: Group blog posts by `category` metadata field.      ║
+      ║  Each category becomes a collapsible accordion section.    ║
+      ║                                                            ║
+      ║  Steps to implement:                                       ║
+      ║  1. Add `categoryGroups` property (same pattern as         ║
+      ║     ProjectsComponent.categoryGroups)                      ║
+      ║  2. Group filteredPosts by metadata.category               ║
+      ║  3. Wrap each group in an accordion section with           ║
+      ║     expandedCategories toggle (see projects.component.ts)  ║
+      ║  4. Reuse the same .accordion-header / .accordion-body     ║
+      ║     CSS classes from projects.component.scss               ║
+      ║  5. The blog seed data already has `category` in metadata  ║
+      ║     (Backend, Career, AI, Automation, etc.)                ║
+      ╚══════════════════════════════════════════════════════════════╝
+    -->
+
     <!-- Blog Posts -->
     <section class="posts-section" *ngIf="!isLoading" aria-label="Blog posts">
       <div [class]="'posts-' + layout" role="list">
-        <p-card *ngFor="let post of filteredPosts; trackBy: trackByPost" 
+        <article *ngFor="let post of filteredPosts; trackBy: trackByPost" 
                 class="blog-card" 
                 role="listitem"
+                [routerLink]="['/blog', post.listItemID]"
+                [attr.aria-label]="'Read: ' + getPostData(post).title"
                 appScrollReveal>
           <ng-container *ngTemplateOutlet="blogPostCard; context: {post: getPostData(post)}"></ng-container>
-        </p-card>
+        </article>
       </div>
       
       <div *ngIf="filteredPosts.length === 0" class="no-posts" appScrollReveal>
@@ -56,69 +78,7 @@
       </div>
     </section>
 
-    <!-- Newsletter Subscription -->
-    <section class="subscription-section" appScrollReveal aria-label="Newsletter subscription">
-      <p-card class="subscription-card">
-        <div class="subscription-content">
-          <h2 class="subscription-title">Subscribe to Newsletter</h2>
-          <p class="subscription-description">Get the latest updates, articles, and insights delivered to your inbox.</p>
-          <form [formGroup]="subscriptionForm" (ngSubmit)="subscribe()" class="subscription-form" aria-label="Newsletter signup form">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="firstName">First Name</label>
-                <input 
-                  type="text" 
-                  id="firstName" 
-                  pInputText 
-                  formControlName="firstName"
-                  placeholder="First Name"
-                  autocomplete="given-name">
-              </div>
-              <div class="form-group">
-                <label for="lastName">Last Name</label>
-                <input 
-                  type="text" 
-                  id="lastName" 
-                  pInputText 
-                  formControlName="lastName"
-                  placeholder="Last Name"
-                  autocomplete="family-name">
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="email">Email *</label>
-              <input 
-                type="email" 
-                id="email" 
-                pInputText 
-                formControlName="email"
-                placeholder="your.email@example.com"
-                autocomplete="email"
-                [class.ng-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched"
-                [attr.aria-invalid]="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched"
-                aria-describedby="emailError">
-              <small id="emailError" 
-                     *ngIf="subscriptionForm.get('email')?.invalid && subscriptionForm.get('email')?.touched" 
-                     class="error-message"
-                     role="alert">
-                Please enter a valid email address
-              </small>
-            </div>
-            <p-button 
-              type="submit"
-              label="Subscribe"
-              icon="pi pi-send"
-              [disabled]="subscriptionForm.invalid || isSubmitting"
-              [loading]="isSubmitting"
-              ariaLabel="Submit newsletter subscription">
-            </p-button>
-          </form>
-          <p class="privacy-notice">
-            <small>By subscribing, you agree to receive email updates. You can unsubscribe at any time.</small>
-          </p>
-        </div>
-      </p-card>
-    </section>
+    <!-- NOTE: Newsletter subscription removed — handled externally via Mailchimp embed/popup -->
   </div>
 </div>
 
@@ -139,22 +99,16 @@
           <i class="pi pi-clock" aria-hidden="true"></i>
           {{ post.readTime }} min read
         </span>
-        <p-tag 
-          *ngFor="let tag of post.tags" 
-          [value]="tag"
-          severity="info"
-          class="blog-tag">
-        </p-tag>
       </div>
       <h3 class="blog-title">{{ post.title }}</h3>
       <p class="blog-summary">{{ post.summary }}</p>
-      <div class="blog-actions">
-        <p-button 
-          label="Read More" 
-          icon="pi pi-arrow-right"
-          styleClass="p-button-text"
-          ariaLabel="Read full article: {{ post.title }}">
-        </p-button>
+      <div class="blog-footer">
+        <div class="blog-tags" *ngIf="post.tags?.length">
+          <span *ngFor="let tag of post.tags.slice(0, 2)" class="blog-tag">{{ tag }}</span>
+        </div>
+        <span class="read-more-link" [attr.aria-label]="'Read full article: ' + post.title">
+          Read More <i class="pi pi-arrow-right"></i>
+        </span>
       </div>
     </div>
   </div>

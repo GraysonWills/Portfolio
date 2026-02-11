@@ -1,42 +1,45 @@
 <div class="landing-page">
-  <!-- Hero Carousel Section -->
+  <!-- Hero Section -->
   <section class="hero-section" aria-label="Hero banner">
+    <!-- Carousel handles ONLY background images -->
     <p-carousel
-      [value]="getCarouselImages()"
+      [value]="getCarouselItems()"
       [numVisible]="1"
       [numScroll]="1"
       [circular]="true"
       [autoplayInterval]="5000"
       [showIndicators]="true"
       class="hero-carousel">
-      <ng-template let-image pTemplate="item">
+      <ng-template let-slide pTemplate="item">
         <div class="hero-image-container">
-          <img [src]="image" alt="Portfolio hero image" class="hero-image" loading="eager" />
-          <div class="hero-overlay">
-            <div class="hero-content">
-              <h1 class="hero-title">Grayson Wills</h1>
-              <p class="hero-subtitle">Solution Architect &amp; Data Specialist</p>
-              <div class="hero-actions">
-                <p-button
-                  label="Contact Me"
-                  icon="pi pi-envelope"
-                  (onClick)="contactInfo.email && openEmail(contactInfo.email)"
-                  styleClass="p-button-lg p-button-rounded"
-                  ariaLabel="Send an email">
-                </p-button>
-                <p-button
-                  label="Download Resume"
-                  icon="pi pi-download"
-                  (onClick)="downloadResume()"
-                  styleClass="p-button-lg p-button-rounded p-button-outlined"
-                  ariaLabel="Download resume PDF">
-                </p-button>
-              </div>
-            </div>
-          </div>
+          <img [src]="slide.photo" [alt]="slide.alt" class="hero-image" loading="eager" />
         </div>
       </ng-template>
     </p-carousel>
+
+    <!-- Static overlay — stays put when slides change -->
+    <div class="hero-overlay">
+      <div class="hero-content">
+        <h1 class="hero-title">Grayson Wills</h1>
+        <p class="hero-subtitle">Data Analyst &amp; AI Engineer &#64; General Motors</p>
+        <div class="hero-actions">
+          <p-button
+            label="Contact Me"
+            icon="pi pi-envelope"
+            (onClick)="contactInfo.email && openEmail(contactInfo.email)"
+            styleClass="p-button-lg p-button-rounded"
+            ariaLabel="Send an email">
+          </p-button>
+          <p-button
+            label="Download Resume"
+            icon="pi pi-download"
+            (onClick)="downloadResume()"
+            styleClass="p-button-lg p-button-rounded p-button-outlined"
+            ariaLabel="Download resume PDF">
+          </p-button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- About / Summary Section -->

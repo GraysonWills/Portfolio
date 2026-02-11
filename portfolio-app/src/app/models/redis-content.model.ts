@@ -24,7 +24,8 @@ export enum PageContentID {
   ProjectsCategoryPhoto = 9,
   ProjectsCategoryText = 10,
   ProjectsPhoto = 11,
-  ProjectsText = 12
+  ProjectsText = 12,
+  BlogBody = 13
 }
 
 export interface RedisContent {
@@ -84,6 +85,18 @@ export interface BlogPostMetadata {
   status: 'draft' | 'scheduled' | 'published';
   category?: string;
 }
+
+/**
+ * Blog Body Content Blocks
+ * Stored as JSON array in BlogBody (PageContentID: 13) Text field.
+ * Supports rich content: paragraphs (Markdown), images, carousels, headings, quotes.
+ */
+export type BlogBodyBlock =
+  | { type: 'paragraph'; content: string }
+  | { type: 'heading'; content: string; level: 2 | 3 | 4 }
+  | { type: 'image'; url: string; alt: string; caption?: string }
+  | { type: 'carousel'; images: Array<{ url: string; alt: string }>; caption?: string }
+  | { type: 'quote'; content: string; author?: string };
 
 /**
  * Content Group for List Rendering

@@ -1,25 +1,77 @@
 <header class="header-container" role="banner">
-  <nav aria-label="Main navigation">
-    <p-menubar [model]="menuItems" class="navigation-menu">
-      <ng-template pTemplate="start">
-        <a routerLink="/" class="logo-container" aria-label="Go to homepage">
-          <img *ngIf="getHeaderIcon()" [src]="getHeaderIcon()" alt="Grayson Wills logo" class="logo-image" />
-          <span class="logo-text">{{ getHeaderText() }}</span>
+  <nav class="nav-bar" aria-label="Main navigation">
+    <!-- Logo -->
+    <a routerLink="/" class="logo-container" aria-label="Go to homepage">
+      <img *ngIf="getHeaderIcon()" [src]="getHeaderIcon()" alt="Grayson Wills logo" class="logo-image" />
+      <span class="logo-text">{{ getHeaderText() }}</span>
+    </a>
+
+    <!-- Desktop Nav -->
+    <ul class="nav-links desktop-only" role="list">
+      <li *ngFor="let item of menuItems" role="listitem">
+        <a [routerLink]="item.routerLink" 
+           class="nav-link" 
+           [class.active]="item.styleClass === 'active-route'"
+           [attr.aria-current]="item.styleClass === 'active-route' ? 'page' : null">
+          <i [class]="item.icon" aria-hidden="true"></i>
+          <span>{{ item.label }}</span>
         </a>
-      </ng-template>
-      <ng-template pTemplate="end">
-        <div class="contact-icons" role="list" aria-label="Contact links">
-          <a [href]="'mailto:' + contactInfo.email" class="contact-link" aria-label="Send email" role="listitem">
-            <i class="pi pi-envelope" aria-hidden="true"></i>
-          </a>
-          <a [href]="'https://' + contactInfo.linkedin" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="LinkedIn profile" role="listitem">
-            <i class="pi pi-linkedin" aria-hidden="true"></i>
-          </a>
-          <a [href]="'https://' + contactInfo.website" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="Personal website" role="listitem">
-            <i class="pi pi-globe" aria-hidden="true"></i>
-          </a>
-        </div>
-      </ng-template>
-    </p-menubar>
+      </li>
+    </ul>
+
+    <!-- Desktop Contact Icons -->
+    <div class="contact-icons desktop-only" role="list" aria-label="Contact links">
+      <a [href]="'mailto:' + contactInfo.email" class="contact-link" aria-label="Send email" role="listitem">
+        <i class="pi pi-envelope" aria-hidden="true"></i>
+      </a>
+      <a [href]="'https://' + contactInfo.linkedin" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="LinkedIn profile" role="listitem">
+        <i class="pi pi-linkedin" aria-hidden="true"></i>
+      </a>
+      <a [href]="'https://' + contactInfo.website" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="Personal website" role="listitem">
+        <i class="pi pi-globe" aria-hidden="true"></i>
+      </a>
+    </div>
+
+    <!-- Mobile Hamburger -->
+    <button class="hamburger mobile-only" 
+            (click)="toggleMobileMenu()" 
+            [attr.aria-expanded]="mobileMenuOpen"
+            aria-label="Toggle navigation menu">
+      <span class="hamburger-line" [class.open]="mobileMenuOpen"></span>
+      <span class="hamburger-line" [class.open]="mobileMenuOpen"></span>
+      <span class="hamburger-line" [class.open]="mobileMenuOpen"></span>
+    </button>
   </nav>
+
+  <!-- Mobile Drawer Overlay -->
+  <div class="mobile-overlay" 
+       [class.open]="mobileMenuOpen" 
+       (click)="closeMobileMenu()"
+       aria-hidden="true"></div>
+
+  <!-- Mobile Drawer -->
+  <aside class="mobile-drawer" [class.open]="mobileMenuOpen" role="dialog" aria-label="Mobile navigation">
+    <ul class="mobile-nav-links" role="list">
+      <li *ngFor="let item of menuItems" role="listitem">
+        <a [routerLink]="item.routerLink" 
+           class="mobile-nav-link" 
+           [class.active]="item.styleClass === 'active-route'"
+           (click)="closeMobileMenu()">
+          <i [class]="item.icon" aria-hidden="true"></i>
+          <span>{{ item.label }}</span>
+        </a>
+      </li>
+    </ul>
+    <div class="mobile-contact" role="list" aria-label="Contact links">
+      <a [href]="'mailto:' + contactInfo.email" class="contact-link" aria-label="Send email" role="listitem">
+        <i class="pi pi-envelope" aria-hidden="true"></i>
+      </a>
+      <a [href]="'https://' + contactInfo.linkedin" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="LinkedIn profile" role="listitem">
+        <i class="pi pi-linkedin" aria-hidden="true"></i>
+      </a>
+      <a [href]="'https://' + contactInfo.website" target="_blank" rel="noopener noreferrer" class="contact-link" aria-label="Personal website" role="listitem">
+        <i class="pi pi-globe" aria-hidden="true"></i>
+      </a>
+    </div>
+  </aside>
 </header>

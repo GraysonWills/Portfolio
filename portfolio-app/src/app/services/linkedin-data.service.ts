@@ -24,104 +24,99 @@ export class LinkedInDataService {
       'Statistics',
       'Solution Architecture',
       'Data Architecture',
-      'Cloud Infrastructure',
-      'Full Stack Development',
-      'CI/CD Pipelines',
-      'Redis',
       'Angular',
-      'Node.js',
       'Python',
-      'AWS',
-      'TypeScript'
+      'Computer Vision',
+      'Power BI',
+      'TypeScript',
+      'Node.js'
     ],
     certifications: [
       {
         name: 'DFSS Green Belt',
-        issuer: 'Six Sigma',
-        date: '2023'
-      },
-      {
-        name: 'AWS Solutions Architect',
-        issuer: 'Amazon Web Services',
-        date: '2024'
+        issuer: 'Six Sigma'
       }
     ],
-    summary: 'Experienced Solution Architect and Data Specialist with a passion for building ' +
-             'scalable, data-driven applications. I specialize in designing end-to-end systems ' +
-             'that transform complex data challenges into elegant, performant solutions. With ' +
-             'expertise spanning cloud architecture, statistical modeling, and full-stack development, ' +
-             'I bridge the gap between business needs and technical execution.',
+    summary: "I'm a passionate software developer dedicated to crafting elegant and efficient solutions " +
+             'that make a meaningful impact. With a genuine love for coding and problem-solving, I thrive on ' +
+             'turning ideas into powerful and scalable applications. Throughout my journey I have gained ' +
+             'extensive experience in a variety of programming languages, frameworks, and tools — equipped ' +
+             'with a versatile skill set that allows me to tackle diverse challenges head-on.',
     experience: [
       {
-        title: 'Solution Architect',
-        company: 'Enterprise Solutions Corp',
-        location: 'Remote',
-        startDate: 'Jan 2023',
+        title: 'Data Analyst',
+        company: 'General Motors',
+        location: 'Warren, Michigan',
+        startDate: 'June 2025',
         endDate: 'Present',
         description: [
-          'Lead architectural design for microservices-based platforms serving 500K+ users.',
-          'Drive cloud migration strategies reducing infrastructure costs by 40%.'
+          'Developed and optimized data pipelines and ETL processes for large-scale analytics.',
+          'Designed Power BI dashboards for operational and executive reporting.'
         ],
         achievements: [
-          'Architected a real-time analytics pipeline processing 2M events/day',
-          'Reduced system downtime by 99.5% through redundancy patterns',
-          'Mentored team of 8 engineers on cloud-native design principles'
+          'Delivered dashboards reducing manual reporting time for leadership',
+          'Led enterprise data quality efforts across reporting platforms',
+          'Initiated computer vision PoC for connector recognition using NVIDIA libraries'
         ]
       },
       {
-        title: 'Senior Data Engineer',
-        company: 'DataFlow Analytics',
-        location: 'Austin, TX',
-        startDate: 'Jun 2021',
-        endDate: 'Dec 2022',
+        title: 'Internal Investigator & Angular Developer',
+        company: 'General Motors',
+        location: 'Warren, Michigan',
+        startDate: 'September 2024',
+        endDate: 'June 2025',
         description: [
-          'Designed and implemented ETL pipelines processing terabytes of data daily.',
-          'Built real-time dashboards for executive decision-making.'
+          'Conducted data analysis to resolve vehicle performance issues.',
+          'Developed Angular tools for internal investigation workflows.'
         ],
         achievements: [
-          'Reduced data processing time by 60% through pipeline optimization',
-          'Implemented data quality framework catching 95% of anomalies',
-          'Led migration from on-premise Hadoop to AWS cloud data lake'
+          'Discovered transmission issue leading to safety recall',
+          'Reported findings to VPs securing funding for issue resolution'
         ]
       },
       {
-        title: 'Full Stack Developer',
-        company: 'TechStart Inc',
-        location: 'Dallas, TX',
-        startDate: 'Aug 2019',
-        endDate: 'May 2021',
+        title: 'TRACK Website Lead Developer',
+        company: 'General Motors',
+        location: 'Warren, Michigan',
+        startDate: 'October 2023',
+        endDate: 'February 2025',
         description: [
-          'Developed customer-facing web applications using Angular and Node.js.',
-          'Integrated third-party APIs and payment processing systems.'
+          'Led design of LinkedIn-style internal platform for rotational program.',
+          'Built full-stack solution enhancing employee engagement.'
         ],
         achievements: [
-          'Shipped 12 features ahead of schedule, improving customer retention by 25%',
-          'Built reusable component library adopted across 3 product teams',
-          'Implemented CI/CD pipeline reducing deployment time from 2 hours to 15 minutes'
+          'Improved job search efficiency for rotational program employees',
+          'Implemented job-specific details and contact features'
         ]
       },
       {
-        title: 'Junior Software Developer',
-        company: 'CodeWorks Agency',
-        location: 'Houston, TX',
-        startDate: 'May 2018',
-        endDate: 'Jul 2019',
+        title: 'Robotics Intern',
+        company: 'NASA',
+        location: 'Houston, Texas',
+        startDate: 'June 2019',
+        endDate: 'August 2019',
         description: [
-          'Built and maintained client websites and internal tools.',
-          'Collaborated on agile team delivering bi-weekly sprint releases.'
+          'Collaborated with NASA experts on robotics challenges.',
+          'Enhanced Space Exploration Vehicle with camera technology.'
         ],
         achievements: [
-          'Delivered 8 client projects on time and under budget',
-          'Introduced automated testing reducing regression bugs by 70%'
+          'Contributed to camera system improvements for the SEV',
+          'Developed skills in robotics and project management'
         ]
       }
     ],
     education: [
       {
-        degree: 'Bachelor of Science in Computer Science',
-        institution: 'University of Texas at Dallas',
-        location: 'Richardson, TX',
-        graduationDate: '2018'
+        degree: 'Master of Science in Artificial Intelligence',
+        institution: 'Purdue University',
+        location: 'West Lafayette, IN',
+        graduationDate: '2025'
+      },
+      {
+        degree: 'Bachelor of Science in Electrical & Computer Engineering',
+        institution: 'The University of Texas at Austin',
+        location: 'Austin, TX',
+        graduationDate: '2023'
       }
     ]
   };

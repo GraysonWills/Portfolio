@@ -1,5 +1,7 @@
-import { Component, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Router, NavigationEnd } from '@angular/router';
+import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
@@ -11,10 +13,12 @@ import { MenuItem } from 'primeng/api';
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss'
 })
-export class HeaderComponent implements OnInit {
+export class HeaderComponent implements OnInit, OnDestroy {
   headerContent: RedisContent[] = [];
   menuItems: MenuItem[] = [];
   contactInfo: any = {};
+  mobileMenuOpen: boolean = false;
+  private routerSub!: Subscription;
 
   constructor(
     private redisService: RedisService,
@@ -26,6 +30,11 @@ export class HeaderComponent implements OnInit {
     this.loadHeaderContent();
     this.loadContactInfo();
     this.setupMenuItems();
+    this.trackActiveRoute();
+  }
+
+  ngOnDestroy(): void {
+    this.routerSub?.unsubscribe();
   }
 
   /**
@@ -57,31 +66,59 @@ export class HeaderComponent implements OnInit {
   }
 
   /**
-   * Setup navigation menu items
+   * Setup navigation menu items with routerLink
    */
   private setupMenuItems(): void {
     this.menuItems = [
       {
         label: 'Home',
         icon: 'pi pi-home',
-        command: () => this.navigateTo('/')
+        routerLink: '/',
+        styleClass: ''
       },
       {
         label: 'Work',
         icon: 'pi pi-briefcase',
-        command: () => this.navigateTo('/work')
+        routerLink: '/work',
+        styleClass: ''
       },
       {
         label: 'Projects',
         icon: 'pi pi-code',
-        command: () => this.navigateTo('/projects')
+        routerLink: '/projects',
+        styleClass: ''
       },
       {
         label: 'Blog',
         icon: 'pi pi-book',
-        command: () => this.navigateTo('/blog')
+        routerLink: '/blog',
+        styleClass: ''
       }
     ];
+    this.updateActiveRoute(this.router.url);
+  }
+
+  /**
+   * Track route changes and update active menu item
+   */
+  private trackActiveRoute(): void {
+    this.routerSub = this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd)
+    ).subscribe((event: any) => {
+      this.updateActiveRoute(event.urlAfterRedirects || event.url);
+    });
+  }
+
+  /**
+   * Update active class on menu items based on current route
+   */
+  private updateActiveRoute(url: string): void {
+    this.menuItems.forEach(item => {
+      const isActive = item.routerLink === '/'
+        ? url === '/'
+        : url.startsWith(item.routerLink as string);
+      item.styleClass = isActive ? 'active-route' : '';
+    });
   }
 
   /**
@@ -89,6 +126,22 @@ export class HeaderComponent implements OnInit {
    */
   navigateTo(route: string): void {
     this.router.navigate([route]);
+  }
+
+  /**
+   * Toggle mobile menu drawer
+   */
+  toggleMobileMenu(): void {
+    this.mobileMenuOpen = !this.mobileMenuOpen;
+    document.body.style.overflow = this.mobileMenuOpen ? 'hidden' : '';
+  }
+
+  /**
+   * Close mobile menu drawer
+   */
+  closeMobileMenu(): void {
+    this.mobileMenuOpen = false;
+    document.body.style.overflow = '';
   }
 
   /**

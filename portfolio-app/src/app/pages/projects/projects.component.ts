@@ -3,6 +3,18 @@ import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageID, PageContentID, ContentGroup } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 
+interface ProjectItem {
+  title: string;
+  description: string;
+  text?: string;
+  photo?: string;
+  techStack?: string[];
+  githubUrl?: string;
+  liveUrl?: string;
+  date?: string;
+  listItemID: string;
+}
+
 @Component({
   selector: 'app-projects',
   standalone: false,
@@ -12,10 +24,10 @@ import { MessageService } from 'primeng/api';
 export class ProjectsComponent implements OnInit {
   projectsContent: RedisContent[] = [];
   categoryGroups: ContentGroup[] = [];
-  layout: 'list' | 'grid' = 'grid';
-  sortField: string = 'date';
-  sortOrder: number = -1;
   isLoading: boolean = true;
+
+  /** Tracks which category accordions are expanded */
+  expandedCategories: Record<string, boolean> = {};
 
   constructor(
     private redisService: RedisService,
@@ -49,7 +61,8 @@ export class ProjectsComponent implements OnInit {
   }
 
   /**
-   * Process projects content into category groups
+   * Process projects content into category groups.
+   * Each category may contain multiple projects (text + photo pairs).
    */
   private processProjectsContent(): void {
     const categories = this.projectsContent
@@ -69,13 +82,12 @@ export class ProjectsComponent implements OnInit {
         }
       });
 
-    // Group projects by category
     this.categoryGroups = categories.map(category => {
       const categoryPhoto = this.projectsContent.find(
         item => item.PageContentID === PageContentID.ProjectsCategoryPhoto &&
                 item.ListItemID === category.listItemID
       );
-      
+
       const projects = this.projectsContent.filter(
         item => (item.PageContentID === PageContentID.ProjectsPhoto ||
                  item.PageContentID === PageContentID.ProjectsText) &&
@@ -92,63 +104,63 @@ export class ProjectsComponent implements OnInit {
       };
       return group;
     });
-  }
 
-  /**
-   * Get project data from content group
-   */
-  getProjectData(group: ContentGroup): any {
-    const textItem = group.items.find(item => item.PageContentID === PageContentID.ProjectsText);
-    const photoItem = group.items.find(item => item.PageContentID === PageContentID.ProjectsPhoto);
-    
-    try {
-      const data = textItem ? JSON.parse(textItem.Text || '{}') : {};
-      return {
-        ...data,
-        photo: photoItem?.Photo,
-        listItemID: group.listItemID
-      };
-    } catch (e) {
-      return {
-        text: textItem?.Text || '',
-        photo: photoItem?.Photo,
-        listItemID: group.listItemID
-      };
-    }
-  }
-
-  /**
-   * Toggle layout view
-   */
-  toggleLayout(): void {
-    this.layout = this.layout === 'list' ? 'grid' : 'list';
-  }
-
-  /**
-   * Sort projects
-   */
-  sortProjects(field: string): void {
-    if (this.sortField === field) {
-      this.sortOrder = this.sortOrder === 1 ? -1 : 1;
-    } else {
-      this.sortField = field;
-      this.sortOrder = -1;
-    }
-    
-    // Sort category groups
-    this.categoryGroups.sort((a, b) => {
-      const aData = this.getProjectData(a);
-      const bData = this.getProjectData(b);
-      const aValue = aData[field] || '';
-      const bValue = bData[field] || '';
-      return this.sortOrder * (aValue > bValue ? 1 : -1);
+    // Expand all categories by default
+    this.categoryGroups.forEach(cat => {
+      this.expandedCategories[cat.listItemID] = true;
     });
   }
 
   /**
-   * Open GitHub URL
+   * Get all individual projects within a category group.
+   * A single category can contain multiple ProjectsText items.
    */
-  openGitHub(url: string): void {
+  getProjectsInCategory(group: ContentGroup): ProjectItem[] {
+    const textItems = group.items.filter(
+      item => item.PageContentID === PageContentID.ProjectsText
+    );
+    const photoItems = group.items.filter(
+      item => item.PageContentID === PageContentID.ProjectsPhoto
+    );
+
+    return textItems.map((textItem, index) => {
+      try {
+        const data = JSON.parse(textItem.Text || '{}');
+        return {
+          ...data,
+          photo: photoItems[index]?.Photo,
+          listItemID: group.listItemID
+        } as ProjectItem;
+      } catch (e) {
+        return {
+          text: textItem.Text || '',
+          title: 'Project',
+          description: textItem.Text || '',
+          photo: photoItems[index]?.Photo,
+          listItemID: group.listItemID
+        } as ProjectItem;
+      }
+    });
+  }
+
+  /**
+   * Toggle accordion expand/collapse for a category
+   */
+  toggleCategory(listItemID: string): void {
+    this.expandedCategories[listItemID] = !this.expandedCategories[listItemID];
+  }
+
+  /**
+   * Check if a category is expanded
+   */
+  isCategoryExpanded(listItemID: string): boolean {
+    return !!this.expandedCategories[listItemID];
+  }
+
+  /**
+   * Open external URL
+   */
+  openUrl(url: string): void {
     if (typeof window !== 'undefined' && url) {
       window.open(url, '_blank');
     }
@@ -170,5 +182,14 @@ export class ProjectsComponent implements OnInit {
     if (!category.metadata) return null;
     const metadata = category.metadata as Record<string, unknown>;
     return metadata['categoryPhoto'] as string || null;
+  }
+
+  /**
+   * Get project count for a category
+   */
+  getProjectCount(category: ContentGroup): number {
+    return category.items.filter(
+      item => item.PageContentID === PageContentID.ProjectsText
+    ).length;
   }
 }

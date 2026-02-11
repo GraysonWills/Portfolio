@@ -6,50 +6,84 @@
       <p class="page-subtitle">Portfolio of technical projects and solutions</p>
     </section>
 
-    <!-- Controls -->
-    <section class="controls-section" *ngIf="categoryGroups.length > 0">
-      <div class="controls">
-        <p-button 
-          [icon]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"
-          (onClick)="toggleLayout()"
-          [label]="layout === 'grid' ? 'List View' : 'Grid View'"
-          styleClass="p-button-outlined"
-          ariaLabel="Toggle between grid and list view">
-        </p-button>
-      </div>
-    </section>
-
     <!-- Loading Skeleton -->
     <section *ngIf="isLoading" class="loading-skeleton" aria-label="Loading projects">
       <div class="skeleton-card" *ngFor="let i of [1,2,3]">
-        <div class="skeleton-image"></div>
         <div class="skeleton-line medium"></div>
         <div class="skeleton-line"></div>
         <div class="skeleton-line short"></div>
       </div>
     </section>
 
-    <!-- Projects by Category -->
+    <!-- Projects by Category (Accordion) -->
     <section class="projects-section" *ngIf="!isLoading" aria-label="Project categories">
-      <div *ngFor="let category of categoryGroups; let i = index" 
-           class="category-section" 
+      <div *ngFor="let category of categoryGroups; let i = index"
+           class="accordion-section"
            appScrollReveal>
-        <div class="category-header" *ngIf="getCategoryName(category)">
-          <img 
-            *ngIf="getCategoryPhoto(category)" 
-            [src]="getCategoryPhoto(category)" 
-            [alt]="getCategoryName(category) + ' category icon'"
-            class="category-image"
-            loading="lazy">
-          <h2 class="category-title">{{ getCategoryName(category) }}</h2>
-        </div>
-        
-        <div [class]="'projects-' + layout" role="list" aria-label="Projects in this category">
-          <p-card *ngFor="let projectGroup of [category]" 
-                  class="project-card" 
-                  role="listitem">
-            <ng-container *ngTemplateOutlet="projectCard; context: {project: getProjectData(projectGroup)}"></ng-container>
-          </p-card>
+
+        <!-- Accordion Header (clickable) -->
+        <button class="accordion-header"
+                (click)="toggleCategory(category.listItemID)"
+                [attr.aria-expanded]="isCategoryExpanded(category.listItemID)"
+                [attr.aria-controls]="'cat-' + category.listItemID">
+          <div class="accordion-header-left">
+            <img
+              *ngIf="getCategoryPhoto(category)"
+              [src]="getCategoryPhoto(category)"
+              [alt]="getCategoryName(category) + ' icon'"
+              class="category-image"
+              loading="lazy">
+            <h2 class="category-title">{{ getCategoryName(category) }}</h2>
+            <span class="project-count">{{ getProjectCount(category) }} project{{ getProjectCount(category) !== 1 ? 's' : '' }}</span>
+          </div>
+          <i class="pi accordion-chevron"
+             [class.pi-chevron-down]="isCategoryExpanded(category.listItemID)"
+             [class.pi-chevron-right]="!isCategoryExpanded(category.listItemID)"
+             aria-hidden="true"></i>
+        </button>
+
+        <!-- Accordion Body (collapsible) -->
+        <div class="accordion-body"
+             [id]="'cat-' + category.listItemID"
+             [class.expanded]="isCategoryExpanded(category.listItemID)">
+          <div class="projects-list" role="list" aria-label="Projects in this category">
+            <article *ngFor="let project of getProjectsInCategory(category)"
+                     class="project-card"
+                     role="listitem">
+              <div class="project-content">
+                <img *ngIf="project.photo"
+                     [src]="project.photo"
+                     [alt]="project.title ? project.title + ' screenshot' : 'Project screenshot'"
+                     class="project-image"
+                     loading="lazy">
+                <div class="project-details">
+                  <h3 class="project-title">{{ project.title || 'Project' }}</h3>
+                  <p class="project-description">{{ project.description || project.text }}</p>
+                  <div class="project-tech-stack" *ngIf="project.techStack?.length" role="list" aria-label="Technologies used">
+                    <span *ngFor="let tech of project.techStack?.slice(0, 4)" class="tech-tag" role="listitem">{{ tech }}</span>
+                  </div>
+                  <div class="project-actions" *ngIf="project.githubUrl || project.liveUrl">
+                    <a *ngIf="project.githubUrl"
+                       class="project-link"
+                       (click)="openUrl(project.githubUrl)"
+                       tabindex="0"
+                       role="link"
+                       aria-label="View source on GitHub">
+                      <i class="pi pi-github"></i> GitHub
+                    </a>
+                    <a *ngIf="project.liveUrl"
+                       class="project-link project-link--live"
+                       (click)="openUrl(project.liveUrl)"
+                       tabindex="0"
+                       role="link"
+                       aria-label="Open live demo">
+                      <i class="pi pi-external-link"></i> Live Demo
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
         </div>
       </div>
     </section>
@@ -61,43 +95,3 @@
     </section>
   </div>
 </div>
-
-<ng-template #projectCard let-project="project">
-  <div class="project-content">
-    <img *ngIf="project.photo" 
-         [src]="project.photo" 
-         [alt]="project.title ? project.title + ' project screenshot' : 'Project screenshot'" 
-         class="project-image"
-         loading="lazy">
-    <div class="project-details">
-      <h3 class="project-title">{{ project.title || 'Project' }}</h3>
-      <p class="project-description">{{ project.description || project.text }}</p>
-      <div class="project-tech-stack" *ngIf="project.techStack?.length" role="list" aria-label="Technologies used">
-        <p-chip 
-          *ngFor="let tech of project.techStack" 
-          [label]="tech"
-          class="tech-chip"
-          role="listitem">
-        </p-chip>
-      </div>
-      <div class="project-actions" *ngIf="project.githubUrl || project.liveUrl">
-        <p-button 
-          *ngIf="project.githubUrl"
-          label="View on GitHub" 
-          icon="pi pi-github"
-          (onClick)="openGitHub(project.githubUrl)"
-          styleClass="p-button-outlined"
-          ariaLabel="View project source code on GitHub">
-        </p-button>
-        <p-button 
-          *ngIf="project.liveUrl"
-          label="Live Demo" 
-          icon="pi pi-external-link"
-          (onClick)="openGitHub(project.liveUrl)"
-          styleClass="p-button-text"
-          ariaLabel="Open live demo of the project">
-        </p-button>
-      </div>
-    </div>
-  </div>
-</ng-template>

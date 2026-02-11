@@ -60,4 +60,11 @@ export class FooterComponent implements OnInit {
       item => item.PageContentID === PageContentID.FooterIcon
     );
   }
+
+  /**
+   * Get URL from icon metadata
+   */
+  getIconUrl(icon: RedisContent): string {
+    return icon.Metadata?.['url'] || '#';
+  }
 }

@@ -179,6 +179,19 @@ export class RedisService {
   }
 
   /**
+   * Get a single blog post by ListItemID (all related content items)
+   */
+  getBlogPostByListItemId(listItemId: string): Observable<RedisContent[]> {
+    return this.http.get<RedisContent[]>(
+      `${this.apiUrl}/content/list-item/${listItemId}`,
+      { headers: this.headers }
+    ).pipe(
+      retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
+      catchError(this.handleError)
+    );
+  }
+
+  /**
    * Get landing page content (PageID: 0)
    */
   getLandingPageContent(): Observable<RedisContent[]> {

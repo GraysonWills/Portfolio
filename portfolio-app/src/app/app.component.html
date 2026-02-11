@@ -1,8 +1,8 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-container">
   <app-header></app-header>
-  <main id="main-content" class="main-content" role="main" tabindex="-1">
-    <router-outlet></router-outlet>
+  <main id="main-content" class="main-content" role="main" tabindex="-1" [@routeTransition]="getRouteAnimationData(outlet)">
+    <router-outlet #outlet="outlet"></router-outlet>
   </main>
   <app-footer></app-footer>
   <p-toast position="bottom-right" [life]="4000"></p-toast>

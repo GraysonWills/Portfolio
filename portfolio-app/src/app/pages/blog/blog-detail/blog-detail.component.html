@@ -1,0 +1,161 @@
+<div class="blog-detail-page">
+  <!-- Loading State -->
+  <div *ngIf="isLoading" class="loading-state">
+    <div class="container-narrow">
+      <div class="skeleton-back"></div>
+      <div class="skeleton-cover"></div>
+      <div class="skeleton-title"></div>
+      <div class="skeleton-line long"></div>
+      <div class="skeleton-line medium"></div>
+      <div class="skeleton-line long"></div>
+    </div>
+  </div>
+
+  <!-- Not Found State -->
+  <div *ngIf="!isLoading && notFound" class="not-found-state">
+    <div class="container-narrow">
+      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <h2>Post Not Found</h2>
+      <p>The blog post you're looking for doesn't exist or has been removed.</p>
+      <button pButton label="Back to Blog" icon="pi pi-arrow-left" class="p-button-outlined" (click)="goBack()"></button>
+    </div>
+  </div>
+
+  <!-- Blog Post Content -->
+  <div *ngIf="!isLoading && !notFound">
+    <!-- Back Button -->
+    <div class="container-narrow">
+      <button class="back-btn" (click)="goBack()" aria-label="Back to blog">
+        <i class="pi pi-arrow-left"></i> Back to Blog
+      </button>
+    </div>
+
+    <!-- Cover Image -->
+    <div *ngIf="coverImage" class="cover-image-wrapper">
+      <img [src]="coverImage" [alt]="coverAlt" class="cover-image" />
+      <div class="cover-gradient"></div>
+    </div>
+
+    <!-- Article Header -->
+    <article class="container-narrow article-content">
+      <header class="article-header">
+        <div class="article-category" *ngIf="category">{{ category }}</div>
+        <h1 class="article-title">{{ title }}</h1>
+        <p class="article-summary" *ngIf="summary">{{ summary }}</p>
+        
+        <div class="article-meta">
+          <span *ngIf="publishDate" class="meta-item">
+            <i class="pi pi-calendar" aria-hidden="true"></i>
+            {{ publishDate | date:'longDate' }}
+          </span>
+          <span class="meta-divider" *ngIf="publishDate"></span>
+          <span class="meta-item">
+            <i class="pi pi-clock" aria-hidden="true"></i>
+            {{ readTime }} min read
+          </span>
+        </div>
+
+        <div class="article-tags" *ngIf="tags.length">
+          <span *ngFor="let tag of tags" class="article-tag">{{ tag }}</span>
+        </div>
+      </header>
+
+      <!-- Article Body -->
+      <div class="article-body">
+        <ng-container *ngFor="let block of bodyBlocks">
+          <!-- Paragraph (Markdown) -->
+          <div *ngIf="block.type === 'paragraph'" 
+               class="body-paragraph"
+               [innerHTML]="renderMarkdown(block.content)">
+          </div>
+
+          <!-- Heading -->
+          <h2 *ngIf="block.type === 'heading' && block.level === 2" class="body-heading h2">
+            {{ block.content }}
+          </h2>
+          <h3 *ngIf="block.type === 'heading' && block.level === 3" class="body-heading h3">
+            {{ block.content }}
+          </h3>
+          <h4 *ngIf="block.type === 'heading' && block.level === 4" class="body-heading h4">
+            {{ block.content }}
+          </h4>
+
+          <!-- Single Image -->
+          <figure *ngIf="block.type === 'image'" class="body-figure">
+            <img [src]="block.url" [alt]="block.alt" class="body-image" loading="lazy" />
+            <figcaption *ngIf="block.caption" class="body-caption">{{ block.caption }}</figcaption>
+          </figure>
+
+          <!-- Image Carousel -->
+          <div *ngIf="block.type === 'carousel'" class="body-carousel">
+            <p-carousel
+              [value]="block.images"
+              [numVisible]="1"
+              [numScroll]="1"
+              [circular]="true"
+              [showIndicators]="true"
+              [showNavigators]="true"
+              [autoplayInterval]="0">
+              <ng-template pTemplate="item" let-img>
+                <div class="carousel-slide">
+                  <img [src]="img.url" [alt]="img.alt" class="carousel-image" loading="lazy" />
+                </div>
+              </ng-template>
+            </p-carousel>
+            <p *ngIf="block.caption" class="body-caption carousel-caption">{{ block.caption }}</p>
+          </div>
+
+          <!-- Block Quote -->
+          <blockquote *ngIf="block.type === 'quote'" class="body-quote">
+            <p [innerHTML]="renderMarkdown(block.content)"></p>
+            <cite *ngIf="block.author">— {{ block.author }}</cite>
+          </blockquote>
+        </ng-container>
+      </div>
+    </article>
+
+    <!-- Recent Posts Section -->
+    <section *ngIf="recentPosts.length > 0" class="recent-posts-section">
+      <div class="container">
+        <h2 class="recent-posts-title">Recent Posts</h2>
+        <div class="recent-posts-grid">
+          <article *ngFor="let post of recentPosts" 
+                   class="blog-card"
+                   [routerLink]="['/blog', post.listItemID]"
+                   role="link"
+                   [attr.aria-label]="'Read: ' + getPostData(post).title">
+            <div class="blog-post-content">
+              <img *ngIf="getPostData(post).image" 
+                   [src]="getPostData(post).image" 
+                   [alt]="getPostData(post).title + ' cover image'" 
+                   class="blog-image"
+                   loading="lazy">
+              <div class="blog-details">
+                <div class="blog-meta">
+                  <span *ngIf="getPostData(post).publishDate" class="publish-date">
+                    <i class="pi pi-calendar" aria-hidden="true"></i>
+                    {{ getPostData(post).publishDate | date:'mediumDate' }}
+                  </span>
+                  <span *ngIf="getPostData(post).readTime" class="read-time">
+                    <i class="pi pi-clock" aria-hidden="true"></i>
+                    {{ getPostData(post).readTime }} min read
+                  </span>
+                </div>
+                <h3 class="blog-title">{{ getPostData(post).title }}</h3>
+                <p class="blog-summary">{{ getPostData(post).summary }}</p>
+                <div class="blog-footer">
+                  <div class="blog-tags" *ngIf="getPostData(post).tags?.length">
+                    <span *ngFor="let tag of getPostData(post).tags.slice(0, 2)" class="blog-tag">{{ tag }}</span>
+                  </div>
+                  <span class="read-more-link">
+                    Read More <i class="pi pi-arrow-right"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

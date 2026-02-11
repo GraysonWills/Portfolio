@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blog Author — Grayson Wills</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/primeicons@7.0.0/primeicons.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Top bar ── -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <i class="pi pi-pencil brand-icon"></i>
+        <span class="brand-text">Blog Author</span>
+      </div>
+      <button class="btn btn-primary" id="btnNew" title="New Post">
+        <i class="pi pi-plus"></i> New Post
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ══════════ Sidebar: post list ══════════ -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search posts..." />
+      </div>
+      <ul class="post-list" id="postList">
+        <li class="post-list-empty">Loading posts...</li>
+      </ul>
+    </aside>
+
+    <!-- ══════════ Main: editor + preview ══════════ -->
+    <main class="main">
+      <!-- Empty state -->
+      <div class="empty-state" id="emptyState">
+        <i class="pi pi-file-edit empty-icon"></i>
+        <h2>Select a post or create a new one</h2>
+        <p>Your blog posts will appear in the sidebar.</p>
+      </div>
+
+      <!-- Editor panel -->
+      <div class="editor-panel" id="editorPanel" style="display:none">
+        <div class="editor-tabs">
+          <button class="tab active" data-tab="card" id="tabCard">Card Info</button>
+          <button class="tab" data-tab="body" id="tabBody">Article Body</button>
+          <button class="tab" data-tab="preview" id="tabPreview">Preview</button>
+        </div>
+
+        <!-- ── Card Info form ── -->
+        <div class="tab-content" id="cardContent">
+          <form id="postForm" class="post-form">
+            <input type="hidden" id="editListItemId" />
+
+            <div class="form-group">
+              <label for="postTitle">Title</label>
+              <input type="text" id="postTitle" placeholder="My new blog post..." required />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="postCategory">Category</label>
+                <select id="postCategory">
+                  <option value="General">General</option>
+                  <option value="Backend">Backend</option>
+                  <option value="Career">Career</option>
+                  <option value="AI">AI</option>
+                  <option value="Automation">Automation</option>
+                  <option value="Frontend">Frontend</option>
+                  <option value="Data">Data</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label for="postStatus">Status</label>
+                <select id="postStatus">
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="scheduled">Scheduled</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="postTags">Tags <span class="hint">(comma-separated)</span></label>
+              <input type="text" id="postTags" placeholder="Redis, Node.js, Angular" />
+            </div>
+
+            <div class="form-group">
+              <label for="postImage">Cover Image URL</label>
+              <input type="url" id="postImage" placeholder="https://images.unsplash.com/..." />
+              <div class="image-preview-small" id="imagePreviewSmall"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="postImageAlt">Image Alt Text</label>
+              <input type="text" id="postImageAlt" placeholder="Descriptive alt text for the image" />
+            </div>
+
+            <div class="form-group">
+              <label for="postSummary">Summary <span class="hint">(shown on card)</span></label>
+              <textarea id="postSummary" rows="2" placeholder="A brief description of the post..."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="postContent">Legacy Content <span class="hint">(fallback if no body blocks)</span></label>
+              <textarea id="postContent" rows="4" placeholder="Plain text content (optional, use Article Body tab for rich content)..."></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="btnSave">
+                <i class="pi pi-save"></i> Publish to Redis
+              </button>
+              <button type="button" class="btn btn-danger" id="btnDelete" style="display:none">
+                <i class="pi pi-trash"></i> Delete
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- ── Article Body editor ── -->
+        <div class="tab-content" id="bodyContent" style="display:none">
+          <div class="body-editor">
+            <div class="body-editor-header">
+              <h3>Article Body Blocks</h3>
+              <p class="hint">Build your article with content blocks. Use Markdown in paragraphs for formatting.</p>
+            </div>
+            <div class="body-blocks" id="bodyBlocks">
+              <!-- Blocks rendered dynamically -->
+            </div>
+            <div class="add-block-bar">
+              <span class="add-block-label">Add block:</span>
+              <button type="button" class="add-block-btn" data-type="paragraph" title="Paragraph">
+                <i class="pi pi-align-left"></i> Paragraph
+              </button>
+              <button type="button" class="add-block-btn" data-type="heading" title="Heading">
+                <i class="pi pi-hashtag"></i> Heading
+              </button>
+              <button type="button" class="add-block-btn" data-type="image" title="Image">
+                <i class="pi pi-image"></i> Image
+              </button>
+              <button type="button" class="add-block-btn" data-type="carousel" title="Image Carousel">
+                <i class="pi pi-images"></i> Carousel
+              </button>
+              <button type="button" class="add-block-btn" data-type="quote" title="Quote">
+                <i class="pi pi-comment"></i> Quote
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Preview pane ── -->
+        <div class="tab-content" id="previewContent" style="display:none">
+          <div class="preview-wrapper">
+            <p class="preview-label">Card Preview</p>
+            <div class="preview-card" id="previewCard"></div>
+            <p class="preview-label" style="margin-top:2rem;">Article Preview</p>
+            <div class="preview-article" id="previewArticle"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Markdown rendering via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
