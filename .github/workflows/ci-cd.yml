@@ -8,7 +8,13 @@ on:
 
 env:
   NODE_VERSION: '22.x'
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
+  S3_BUCKET: www.grayson-wills.com
+  CLOUDFRONT_DISTRIBUTION_ID: E28CZKZOGGZGVK
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::381492289909:role/GitHubActionsPortfolioDeploy
+  BLOG_AUTHORING_S3_BUCKET: grayson-wills-blog-authoring-dev-381492289909
+  BLOG_AUTHORING_CLOUDFRONT_DISTRIBUTION_ID: E31OPQLJ4WFI66
+  AWS_BLOG_AUTHORING_DEPLOY_ROLE_ARN: arn:aws:iam::381492289909:role/GitHubActionsBlogAuthoringDeploy
 
 jobs:
   # ─── Build & Test Backend ───
@@ -64,11 +70,44 @@ jobs:
           path: portfolio-app/dist/
           retention-days: 7
 
+  # ─── Build Blog Authoring GUI ───
+  blog_authoring:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: blog-authoring-gui
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: blog-authoring-gui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production
+        run: npm run build -- --configuration=production
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blog-authoring-dist
+          path: blog-authoring-gui/dist/
+          retention-days: 7
+
   # ─── Deploy (only on main/master push) ───
   deploy:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -79,42 +118,73 @@ jobs:
           name: portfolio-dist
           path: portfolio-app/dist/
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (GitHub OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy frontend to EC2
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      - name: Deploy frontend to S3 (long-cache assets)
         run: |
-          mkdir -p ~/.ssh
-          echo "$EC2_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
+          aws s3 sync "$BUILD_DIR/" "s3://${S3_BUCKET}/" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public,max-age=31536000,immutable"
 
-          # Deploy Angular app
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST '
-            sudo systemctl stop nginx || true
-            sudo mv /var/www/portfolio-app /var/www/portfolio-app.backup || true
-            sudo mkdir -p /var/www/portfolio-app
-          '
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key -r portfolio-app/dist/portfolio-app/browser/* $EC2_USER@$EC2_HOST:/var/www/portfolio-app/
-          
-          # Deploy Redis API server
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key -r redis-api-server/ $EC2_USER@$EC2_HOST:/opt/redis-api-server/
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST '
-            cd /opt/redis-api-server && npm ci --production
-            sudo systemctl restart redis-api || true
-            sudo systemctl start nginx
-          '
-
-      - name: Verify deployment
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
+      - name: Deploy index.html (no-cache)
         run: |
-          sleep 10
-          curl -sf "http://$EC2_HOST/api/health" || echo "Health check pending..."
+          BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
+          aws s3 cp "$BUILD_DIR/index.html" "s3://${S3_BUCKET}/index.html" \
+            --cache-control "no-cache" \
+            --content-type "text/html"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
+            --paths "/*"
+
+  deploy_blog_authoring:
+    needs: [blog_authoring]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: blog-authoring-dist
+          path: blog-authoring-gui/dist/
+
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_BLOG_AUTHORING_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy blog authoring to S3 (long-cache assets)
+        run: |
+          BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
+          aws s3 sync "$BUILD_DIR/" "s3://${BLOG_AUTHORING_S3_BUCKET}/" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public,max-age=31536000,immutable"
+
+      - name: Deploy index.html (no-cache)
+        run: |
+          BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
+          aws s3 cp "$BUILD_DIR/index.html" "s3://${BLOG_AUTHORING_S3_BUCKET}/index.html" \
+            --cache-control "no-cache" \
+            --content-type "text/html"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${BLOG_AUTHORING_CLOUDFRONT_DISTRIBUTION_ID}" \
+            --paths "/*"
