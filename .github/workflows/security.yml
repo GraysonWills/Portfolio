@@ -29,6 +29,7 @@ jobs:
           report_format: sarif
           report_path: gitleaks.sarif
       - name: Upload SARIF
+        if: ${{ always() && hashFiles('gitleaks.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
@@ -74,4 +75,3 @@ jobs:
       - name: Audit production deps (fail on high/critical)
         working-directory: ${{ matrix.pkg }}
         run: npm audit --omit=dev --audit-level=high
-
