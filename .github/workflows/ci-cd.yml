@@ -188,3 +188,15 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "${BLOG_AUTHORING_CLOUDFRONT_DISTRIBUTION_ID}" \
             --paths "/*"
+
+  smoke_test_prod:
+    needs: [deploy, deploy_blog_authoring]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Smoke test production endpoints
+        run: |
+          bash scripts/smoke_prod.sh
