@@ -1,0 +1,59 @@
+{
+  "family": "portfolio-redis-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::381492289909:role/PortfolioEcsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::381492289909:role/PortfolioRedisApiTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "redis-api",
+      "image": "381492289909.dkr.ecr.us-east-2.amazonaws.com/portfolio-redis-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3000" },
+
+        { "name": "REDIS_HOST", "value": "master.portfolio-redis.gbuhvm.use2.cache.amazonaws.com" },
+        { "name": "REDIS_PORT", "value": "6379" },
+        { "name": "REDIS_TLS", "value": "true" },
+        { "name": "REDIS_DB", "value": "0" },
+
+        {
+          "name": "ALLOWED_ORIGINS",
+          "value": "http://localhost:4300,http://localhost:4301,https://www.grayson-wills.com,https://d39s45clv1oor3.cloudfront.net"
+        },
+
+        { "name": "COGNITO_REGION", "value": "us-east-2" },
+        { "name": "COGNITO_USER_POOL_ID", "value": "us-east-2_dzSpoyFyI" },
+        { "name": "COGNITO_CLIENT_ID", "value": "6v59a97qmb3hfl1n7ptp8npdoi" },
+        { "name": "AUTH_ALLOWED_USERNAMES", "value": "grayson-wills" },
+
+        { "name": "S3_UPLOAD_BUCKET", "value": "grayson-wills-media-381492289909" },
+        { "name": "S3_UPLOAD_REGION", "value": "us-east-2" },
+        { "name": "S3_UPLOAD_PREFIX", "value": "uploads/" }
+      ],
+      "secrets": [
+        {
+          "name": "REDIS_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:381492289909:secret:portfolio/elasticache/auth-token-vQzQXi"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/portfolio-redis-api",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

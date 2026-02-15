@@ -1,0 +1,70 @@
+name: Redis API Deploy (ECS Fargate)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - redis-api-server/**
+      - .github/workflows/ecs-deploy.yml
+
+env:
+  AWS_REGION: us-east-2
+  AWS_ECS_DEPLOY_ROLE_ARN: arn:aws:iam::381492289909:role/GitHubActionsEcsDeploy
+  ECR_REPOSITORY: portfolio-redis-api
+  ECS_CLUSTER: portfolio-cluster
+  ECS_SERVICE: portfolio-redis-api-svc
+  TASK_DEF_FILE: redis-api-server/ecs/task-definition.json
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ECS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" ./redis-api-server
+          docker push "${IMAGE_URI}"
+
+      - name: Render task definition (set image)
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          jq --arg IMAGE "${IMAGE_URI}" '.containerDefinitions[0].image = $IMAGE' "${TASK_DEF_FILE}" > task-def-rendered.json
+
+      - name: Register task definition
+        id: register
+        run: |
+          TASK_DEF_ARN="$(aws ecs register-task-definition --cli-input-json file://task-def-rendered.json --query 'taskDefinition.taskDefinitionArn' --output text)"
+          echo "task_def_arn=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "${{ steps.register.outputs.task_def_arn }}" \
+            --force-new-deployment \
+            --desired-count 1
+          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+

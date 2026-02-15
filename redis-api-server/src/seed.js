@@ -34,7 +34,8 @@ const PageContentID = {
   LandingPhoto: 6, LandingText: 7, WorkText: 8,
   ProjectsCategoryPhoto: 9, ProjectsCategoryText: 10,
   ProjectsPhoto: 11, ProjectsText: 12,
-  BlogBody: 13
+  BlogBody: 13,
+  WorkSkillMetric: 14
 };
 
 function now() { return new Date().toISOString(); }
@@ -285,6 +286,58 @@ const seedData = [
     PageContentID: PageContentID.WorkText,
     ListItemID: 'experience-6',
     Metadata: { type: 'experience', order: 7 }
+  },
+  {
+    ID: 'work-metric-architecture',
+    Text: JSON.stringify({
+      label: 'AI Systems Architecture',
+      value: 86,
+      level: 'Advanced',
+      summary: 'Production design and platform integration across analytics + AI workflows'
+    }),
+    PageID: PageID.Work,
+    PageContentID: PageContentID.WorkSkillMetric,
+    ListItemID: 'career-metric-1',
+    Metadata: { type: 'career-metric', order: 1 }
+  },
+  {
+    ID: 'work-metric-data-science',
+    Text: JSON.stringify({
+      label: 'Data Science Delivery',
+      value: 91,
+      level: 'Advanced',
+      summary: 'Experimentation, KPI translation, and executive-facing dashboard outcomes'
+    }),
+    PageID: PageID.Work,
+    PageContentID: PageContentID.WorkSkillMetric,
+    ListItemID: 'career-metric-2',
+    Metadata: { type: 'career-metric', order: 2 }
+  },
+  {
+    ID: 'work-metric-computer-vision',
+    Text: JSON.stringify({
+      label: 'Computer Vision',
+      value: 74,
+      level: 'Developing',
+      summary: 'Active in CV pipelines, model experimentation, and edge case tuning'
+    }),
+    PageID: PageID.Work,
+    PageContentID: PageContentID.WorkSkillMetric,
+    ListItemID: 'career-metric-3',
+    Metadata: { type: 'career-metric', order: 3 }
+  },
+  {
+    ID: 'work-metric-product-exec',
+    Text: JSON.stringify({
+      label: 'Product + Executive Communication',
+      value: 80,
+      level: 'Strong',
+      summary: 'Cross-functional decision support and narrative framing for leadership'
+    }),
+    PageID: PageID.Work,
+    PageContentID: PageContentID.WorkSkillMetric,
+    ListItemID: 'career-metric-4',
+    Metadata: { type: 'career-metric', order: 4 }
   },
 
   // ═══════════════════════════════════════

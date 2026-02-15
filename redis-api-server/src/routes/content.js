@@ -10,12 +10,19 @@ const express = require('express');
 const router = express.Router();
 const redisClient = require('../config/redis');
 const { v4: uuidv4 } = require('uuid');
+const requireAuth = require('../middleware/requireAuth');
 const {
   addToIndex,
   removeFromIndex,
   getAllContent,
   getContentWhere,
 } = require('../utils/content-index');
+
+// Public reads; authenticated writes.
+router.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  return requireAuth(req, res, next);
+});
 
 /**
  * GET /api/content

@@ -5,13 +5,14 @@ Backend API server that connects to Redis database and provides REST endpoints f
 ## Features
 
 - RESTful API endpoints for content CRUD operations
-- Image upload with base64 encoding
+- Image upload (S3 when configured, otherwise base64 fallback)
 - Health check endpoint
 - Redis JSON storage support (with fallback to string storage)
 - CORS enabled for Angular frontend
 - Environment variable configuration
 - Auto-detects TLS for RedisLabs connections
 - **Optional**: Redis Cloud API integration for management operations
+- **Write auth:** POST/PUT/DELETE + uploads can be protected with Cognito JWTs (read endpoints stay public)
 
 ## Prerequisites
 
@@ -136,6 +137,29 @@ These are used for **management/admin operations** only (not for data):
 |----------|-------------|---------|
 | `PORT` | API server port | `3000` |
 | `NODE_ENV` | Environment | `development` |
+| `ALLOWED_ORIGINS` | Comma-separated frontend origins for CORS | `http://localhost:4200,http://localhost:3000` |
+| `CACHE_TTL_MS` | In-memory GET cache TTL (milliseconds) | `60000` |
+
+### Optional: Cognito Auth (Recommended)
+
+If set, all **write** endpoints require `Authorization: Bearer <Cognito ID token>`.
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `COGNITO_REGION` | Cognito region | ✅ Yes |
+| `COGNITO_USER_POOL_ID` | User pool ID | ✅ Yes |
+| `COGNITO_CLIENT_ID` | App client ID | ✅ Yes |
+| `DISABLE_AUTH` | Set to `true` to disable auth checks (local only) | ❌ Optional |
+
+### Optional: S3 Uploads (Recommended)
+
+If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `S3_UPLOAD_BUCKET` | S3 bucket to store images | ✅ Yes |
+| `S3_UPLOAD_REGION` | S3 bucket region | ✅ Yes |
+| `S3_UPLOAD_PREFIX` | Key prefix (default: `uploads/`) | ❌ Optional |
 
 ## API Endpoints
 
@@ -149,11 +173,11 @@ These are used for **management/admin operations** only (not for data):
 - **GET** `/api/content/:id` - Get content by ID
 - **GET** `/api/content/page/:pageId` - Get content by PageID
 - **GET** `/api/content/list-item/:listItemId` - Get content by ListItemID
-- **POST** `/api/content` - Create new content item
-- **POST** `/api/content/batch` - Create multiple content items
-- **PUT** `/api/content/:id` - Update content by ID
-- **DELETE** `/api/content/:id` - Delete content by ID
-- **DELETE** `/api/content/list-item/:listItemId` - Delete all content by ListItemID
+- **POST** `/api/content` - Create new content item (auth required)
+- **POST** `/api/content/batch` - Create multiple content items (auth required)
+- **PUT** `/api/content/:id` - Update content by ID (auth required)
+- **DELETE** `/api/content/:id` - Delete content by ID (auth required)
+- **DELETE** `/api/content/list-item/:listItemId` - Delete all content by ListItemID (auth required)
 
 ### Admin (Optional - requires API keys)
 
@@ -163,9 +187,10 @@ These are used for **management/admin operations** only (not for data):
 
 ### Upload
 
-- **POST** `/api/upload/image` - Upload image (returns base64 data URL)
+- **POST** `/api/upload/image` - Upload image (auth required)
   - Content-Type: `multipart/form-data`
   - Form field: `image` (file)
+  - Returns `{ url }` (S3 URL when configured, otherwise base64 data URL fallback)
 
 ## Redis Data Structure
 
@@ -194,6 +219,46 @@ Content is stored in Redis with the following structure:
 - `1` - Work
 - `2` - Projects
 - `3` - Blog
+
+**PageContentID Values:**
+- `0` - HeaderText
+- `1` - HeaderIcon
+- `2` - FooterIcon
+- `3` - BlogItem
+- `4` - BlogText
+- `5` - BlogImage
+- `6` - LandingPhoto
+- `7` - LandingText
+- `8` - WorkText
+- `9` - ProjectsCategoryPhoto
+- `10` - ProjectsCategoryText
+- `11` - ProjectsPhoto
+- `12` - ProjectsText
+- `13` - BlogBody
+- `14` - WorkSkillMetric
+
+### ID and Grouping Conventions
+
+- Redis key pattern: `content:{ID}`
+- `ID` is the immutable row identifier used by `PUT /api/content/:id` and `DELETE /api/content/:id`.
+- `ListItemID` groups multiple records into one logical entity:
+  - Blog post rows (metadata/text/image/body) share one `ListItemID`.
+  - Work timeline entries use `experience-{n}`.
+  - Career metric bars use `career-metric-{n}`.
+- Use `Metadata.order` when a grouped collection must render in a fixed order.
+
+### Work Skill Metric Payload
+
+For `PageID = 1` and `PageContentID = 14`, store JSON in `Text`:
+
+```json
+{
+  "label": "AI Systems Architecture",
+  "value": 86,
+  "level": "Advanced",
+  "summary": "Production design and platform integration across analytics + AI workflows"
+}
+```
 
 ## Frontend Integration
 
