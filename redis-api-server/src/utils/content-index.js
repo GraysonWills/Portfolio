@@ -13,6 +13,37 @@ const redisClient = require('../config/redis');
 
 const INDEX_KEY = 'content:_index';
 
+// ElastiCache Redis (and many self-hosted Redis deployments) do not include
+// Redis Stack modules like RedisJSON. Prefer JSON.GET when available, but
+// always fall back to string GET + JSON.parse for compatibility.
+let redisJsonSupported = null; // null = unknown, true/false = known
+
+async function getDocument(key) {
+  // Try RedisJSON first if we haven't ruled it out.
+  if (redisJsonSupported !== false) {
+    try {
+      const doc = await redisClient.json.get(key);
+      redisJsonSupported = true;
+      if (doc !== null && doc !== undefined) return doc;
+    } catch (err) {
+      const msg = String(err?.message || err);
+      // Only treat "unknown command" as a signal that RedisJSON isn't installed.
+      if (msg.toLowerCase().includes('unknown command')) {
+        redisJsonSupported = false;
+      }
+      // For wrong-type or other errors, fall through to string GET.
+    }
+  }
+
+  const str = await redisClient.get(key);
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Add a content ID to the index Set.
  */
@@ -50,23 +81,13 @@ async function getAllContent() {
 
   if (ids.length === 0) return [];
 
-  // Batch-fetch all documents
-  const pipeline = redisClient.multi();
-  for (const id of ids) {
-    pipeline.json.get(`content:${id}`);
-  }
-
-  const results = await pipeline.exec();
   const contents = [];
 
-  for (let i = 0; i < results.length; i++) {
-    const doc = results[i];
-    if (doc) {
-      contents.push(doc);
-    } else {
-      // Stale index entry — clean it up
-      await removeFromIndex(ids[i]);
-    }
+  for (const id of ids) {
+    const key = `content:${id}`;
+    const doc = await getDocument(key);
+    if (doc) contents.push(doc);
+    else await removeFromIndex(id); // stale index entry
   }
 
   return contents;
@@ -87,7 +108,8 @@ async function getContentWhere(predicate) {
  */
 async function rebuildIndex() {
   console.log('[content-index] Rebuilding index from SCAN...');
-  let cursor = 0;
+  // node-redis expects cursor as a string
+  let cursor = '0';
   let count = 0;
 
   do {
@@ -101,7 +123,7 @@ async function rebuildIndex() {
       await redisClient.sAdd(INDEX_KEY, id);
       count++;
     }
-  } while (cursor !== 0);
+  } while (cursor !== '0');
 
   console.log(`[content-index] Index rebuilt: ${count} entries`);
 }
