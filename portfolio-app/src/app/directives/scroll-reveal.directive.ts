@@ -12,7 +12,8 @@ import { isPlatformBrowser } from '@angular/common';
   standalone: false
 })
 export class ScrollRevealDirective implements OnInit, OnDestroy {
-  @Input('appScrollReveal') threshold: string = '0.15';
+  // Lower default so "below-the-fold" sections don't render as blank whitespace on load.
+  @Input('appScrollReveal') threshold: string = '0.1';
 
   private observer: IntersectionObserver | null = null;
 
@@ -24,7 +25,15 @@ export class ScrollRevealDirective implements OnInit, OnDestroy {
   ngOnInit(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const thresholdValue = parseFloat(this.threshold) || 0.15;
+    // `parseFloat("0")` is `0`, so avoid `||` which would override it.
+    const parsed = parseFloat(this.threshold);
+    const thresholdValue = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : 0.1;
+
+    // Graceful fallback: if IO isn't available, just reveal immediately.
+    if (typeof IntersectionObserver === 'undefined') {
+      this.el.nativeElement.classList.add('visible');
+      return;
+    }
 
     this.observer = new IntersectionObserver(
       (entries) => {
@@ -36,7 +45,8 @@ export class ScrollRevealDirective implements OnInit, OnDestroy {
           }
         });
       },
-      { threshold: thresholdValue, rootMargin: '0px 0px -50px 0px' }
+      // Avoid negative root margins; they can delay initial reveals and create "blank" sections.
+      { threshold: thresholdValue, rootMargin: '0px 0px 0px 0px' }
     );
 
     this.observer.observe(this.el.nativeElement);

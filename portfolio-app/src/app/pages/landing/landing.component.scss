@@ -50,22 +50,42 @@
   justify-content: center;
   z-index: 2;
   pointer-events: none;
+  isolation: isolate;
+
+  &::after {
+    content: '';
+    position: absolute;
+    width: 360px;
+    height: 360px;
+    right: -120px;
+    top: -180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(241, 143, 59, 0.36), rgba(241, 143, 59, 0));
+    z-index: -1;
+  }
 }
 
 .hero-content {
   text-align: center;
   color: var(--text-inverse);
-  padding: 2rem;
+  padding: 1.9rem 2.2rem;
+  max-width: 760px;
+  background: linear-gradient(180deg, rgba(15, 23, 34, 0.26), rgba(15, 23, 34, 0.16));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
   animation: fadeInUp 1s ease-out forwards;
   pointer-events: auto;
 }
 
 .hero-title {
   font-size: clamp(2.5rem, 6vw, 4.5rem);
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-weight: 700;
   margin-bottom: 0.5rem;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: white;
 }
 
@@ -75,13 +95,25 @@
   opacity: 0.92;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.95);
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .hero-actions {
   display: flex;
-  gap: 1rem;
+  gap: 1.25rem;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+.hero-actions .p-button.p-button-outlined {
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+.hero-actions .p-button.p-button-outlined:enabled:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
 }
 
 /* ── Summary ── */
@@ -90,6 +122,11 @@
   line-height: 1.85;
   color: var(--text-secondary);
   text-align: center;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid rgba(11, 79, 159, 0.14);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ── Skills ── */
@@ -100,6 +137,11 @@
   justify-content: center;
   max-width: 800px;
   margin: 0 auto;
+  padding: 1.25rem;
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
+  box-shadow: var(--shadow-sm);
 }
 
 .skill-chip {
@@ -118,6 +160,11 @@
   gap: 1.5rem;
   max-width: 900px;
   margin: 0 auto;
+  padding: 1.25rem;
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
+  box-shadow: var(--shadow-sm);
 }
 
 .cert-card {
@@ -154,6 +201,11 @@
   gap: 1.5rem;
   max-width: 900px;
   margin: 0 auto;
+  padding: 1.25rem;
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
+  box-shadow: var(--shadow-sm);
 }
 
 .edu-card {

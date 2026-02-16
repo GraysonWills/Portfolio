@@ -114,14 +114,46 @@ export class RedisService {
             groupedMap.set(listItemID, {
               listItemID: listItemID,
               items: [],
-              metadata: item.Metadata as any
             });
           }
 
           groupedMap.get(listItemID)!.items.push(item);
         });
 
-        return Array.from(groupedMap.values());
+        const normalizeMetadata = (value: unknown): unknown => {
+          if (!value) return undefined;
+          if (typeof value === 'string') {
+            try {
+              return JSON.parse(value);
+            } catch {
+              return undefined;
+            }
+          }
+          return value;
+        };
+
+        const groups = Array.from(groupedMap.values());
+
+        // Group-level metadata is not guaranteed to be on the first item returned from the API.
+        // For blog posts, it lives on the BlogItem entry (PageContentID.BlogItem).
+        groups.forEach(group => {
+          let metaCandidate: RedisContent | undefined;
+
+          if (pageID === PageID.Blog) {
+            metaCandidate = group.items.find(
+              i => i.PageContentID === PageContentID.BlogItem && i.Metadata
+            );
+          } else {
+            metaCandidate = group.items.find(i => i.Metadata);
+          }
+
+          const normalized = normalizeMetadata(metaCandidate?.Metadata);
+          if (normalized && typeof normalized === 'object') {
+            group.metadata = normalized as any;
+          }
+        });
+
+        return groups;
       }),
       catchError(this.handleError)
     );

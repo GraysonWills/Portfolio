@@ -2,41 +2,45 @@
    Portfolio Global Styles — Design System
    ═══════════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 /* ── CSS Custom Properties (Design Tokens) ── */
 :root {
-  --primary: #667eea;
-  --primary-dark: #5a6fd6;
-  --secondary: #764ba2;
-  --accent: #f093fb;
-  --gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-  --gradient-hero: linear-gradient(135deg, rgba(102, 126, 234, 0.85) 0%, rgba(118, 75, 162, 0.85) 100%);
+  --primary: #0b4f9f;
+  --primary-dark: #083b77;
+  --secondary: #bf5700;
+  --secondary-dark: #8f3e00;
+  --accent: #f18f3b;
+  --success: #2f9e6f;
+  --gradient-primary: linear-gradient(132deg, #0b4f9f 0%, #2a7de1 55%, #bf5700 100%);
+  --gradient-hero: linear-gradient(132deg, rgba(11, 79, 159, 0.9) 0%, rgba(42, 125, 225, 0.86) 48%, rgba(191, 87, 0, 0.84) 100%);
 
-  --text-primary: #1a1a2e;
-  --text-secondary: #555770;
-  --text-muted: #8b8da3;
+  --text-primary: #0f1722;
+  --text-secondary: #243244;
+  --text-muted: #4d5f74;
   --text-inverse: #ffffff;
 
-  --bg-primary: #ffffff;
-  --bg-secondary: #f4f6fc;
-  --bg-tertiary: #eef1f8;
+  --bg-primary: #f8fafc;
+  --bg-secondary: #edf3f9;
+  --bg-tertiary: #dce4ec;
   --bg-card: #ffffff;
 
-  --shadow-sm: 0 2px 8px rgba(102, 126, 234, 0.08);
-  --shadow-md: 0 4px 20px rgba(102, 126, 234, 0.12);
-  --shadow-lg: 0 10px 40px rgba(102, 126, 234, 0.18);
-  --shadow-hover: 0 12px 36px rgba(102, 126, 234, 0.22);
+  --shadow-sm: 0 4px 14px rgba(15, 23, 34, 0.08);
+  --shadow-md: 0 10px 28px rgba(15, 23, 34, 0.11);
+  --shadow-lg: 0 16px 42px rgba(15, 23, 34, 0.15);
+  --shadow-hover: 0 20px 44px rgba(11, 79, 159, 0.2);
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
 
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
 
   --container-max: 1200px;
   --container-narrow: 800px;
@@ -59,7 +63,10 @@ html {
 body {
   font-family: var(--font-sans);
   color: var(--text-primary);
-  background-color: var(--bg-primary);
+  background:
+    radial-gradient(circle at 10% -20%, rgba(241, 143, 59, 0.2), transparent 34%),
+    radial-gradient(circle at 90% -10%, rgba(42, 125, 225, 0.18), transparent 36%),
+    var(--bg-primary);
   line-height: 1.6;
   min-height: 100vh;
   overflow-x: hidden;
@@ -154,6 +161,21 @@ a:hover { color: var(--primary); }
   color: var(--text-primary);
   margin-bottom: 1rem;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.section-title::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: linear-gradient(138deg, var(--secondary), var(--accent));
+  box-shadow: 0 0 0 1px rgba(191, 87, 0, 0.2);
 }
 
 .section-subtitle {
@@ -172,6 +194,12 @@ a:hover { color: var(--primary); }
 }
 
 .reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* If appScrollReveal is attached to a parent (like a <section>), reveal nested blocks. */
+.visible .reveal {
   opacity: 1;
   transform: translateY(0);
 }
@@ -258,23 +286,83 @@ a:hover { color: var(--primary); }
 }
 
 /* ── PrimeNG Global Overrides ── */
+.pi {
+  line-height: 1;
+}
+
 .p-button {
-  border-radius: var(--radius-sm) !important;
+  border-radius: 999px !important;
   transition: all var(--transition-fast) !important;
   font-weight: 600 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  /* PrimeNG v19 renders icon + label as siblings; enforce spacing explicitly. */
+  column-gap: 0.85rem !important;
+  row-gap: 0.5rem !important;
+  padding: 0.85rem 1.25rem !important;
+  border: none !important;
+  background: var(--gradient-primary) !important;
+  color: var(--text-inverse) !important;
+}
+
+.p-button .p-button-icon {
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+}
+
+.p-button .p-button-icon.p-button-icon-left {
+  margin-right: 0.75rem !important;
+}
+
+.p-button .p-button-icon.p-button-icon-right {
+  margin-left: 0.75rem !important;
+}
+
+.p-button:enabled:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(11, 79, 159, 0.22);
+}
+
+.p-button:enabled:active {
+  transform: translateY(0);
+}
+
+.p-button .p-button-label {
+  line-height: 1.1;
 }
 
 .p-card {
   border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-sm) !important;
-  border: 1px solid rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(11, 79, 159, 0.08) !important;
   transition: all var(--transition-base) !important;
   overflow: hidden;
 
   &:hover {
     box-shadow: var(--shadow-hover) !important;
-    transform: translateY(-3px);
+    transform: translateY(-4px);
   }
+}
+
+.p-button.p-button-primary {
+  background: var(--gradient-primary) !important;
+  border: none !important;
+}
+
+.p-button.p-button-outlined {
+  background: transparent !important;
+  border: 1px solid rgba(11, 79, 159, 0.35) !important;
+  color: var(--primary) !important;
+}
+
+.p-button.p-button-outlined:enabled:hover {
+  background: rgba(11, 79, 159, 0.06) !important;
+  box-shadow: none;
 }
 
 .p-chip {
@@ -304,26 +392,33 @@ a:hover { color: var(--primary); }
   overflow: hidden !important;
 }
 
-.p-carousel .p-carousel-items-content {
+.p-carousel .p-carousel-viewport,
+.p-carousel .p-carousel-item-list {
   overflow: hidden !important;
 }
 
 /* ── Hero carousel: remove all internal whitespace ── */
-app-landing .hero-carousel.p-carousel,
+app-landing .hero-carousel,
+app-landing .hero-carousel .p-carousel,
+app-landing .hero-carousel .p-carousel-content-container,
 app-landing .hero-carousel .p-carousel-content,
-app-landing .hero-carousel .p-carousel-container {
+app-landing .hero-carousel .p-carousel-viewport,
+app-landing .hero-carousel .p-carousel-item-list {
   height: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
 }
 
-app-landing .hero-carousel .p-carousel-items-container,
-app-landing .hero-carousel .p-carousel-items-content {
+app-landing .hero-carousel .p-carousel-item,
+app-landing .hero-carousel .p-carousel-item-content,
+app-landing .hero-carousel .p-carousel-item > * {
   height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 /* Position carousel indicators over the image, not below it */
-app-landing .hero-carousel .p-carousel-indicators {
+app-landing .hero-carousel .p-carousel-indicator-list {
   position: absolute !important;
   bottom: 1rem !important;
   left: 50% !important;
@@ -333,23 +428,24 @@ app-landing .hero-carousel .p-carousel-indicators {
   margin: 0 !important;
 }
 
-app-landing .hero-carousel .p-carousel-indicators .p-carousel-indicator button {
+app-landing .hero-carousel .p-carousel-indicator-button {
   background: rgba(255, 255, 255, 0.5) !important;
   width: 10px !important;
   height: 10px !important;
   border-radius: 50% !important;
   transition: all 0.3s ease !important;
+  padding: 0 !important;
 }
 
-app-landing .hero-carousel .p-carousel-indicators .p-carousel-indicator.p-highlight button {
+app-landing .hero-carousel .p-carousel-indicator.p-carousel-indicator-active .p-carousel-indicator-button {
   background: rgba(255, 255, 255, 0.95) !important;
   width: 24px !important;
   border-radius: 5px !important;
 }
 
 /* Remove any prev/next button space */
-app-landing .hero-carousel .p-carousel-prev,
-app-landing .hero-carousel .p-carousel-next {
+app-landing .hero-carousel .p-carousel-prev-button,
+app-landing .hero-carousel .p-carousel-next-button {
   display: none !important;
 }
 
@@ -373,7 +469,7 @@ app-header .p-menubar-root-list > .p-menuitem > .p-menuitem-link {
   color: var(--text-secondary);
 
   &:hover {
-    background-color: rgba(102, 126, 234, 0.06);
+    background-color: rgba(11, 79, 159, 0.06);
     color: var(--primary);
   }
 }
@@ -381,50 +477,34 @@ app-header .p-menubar-root-list > .p-menuitem > .p-menuitem-link {
 app-header .p-menubar-root-list > .p-menuitem.p-menuitem-active > .p-menuitem-link,
 app-header .p-menubar-root-list > .p-menuitem.active-route > .p-menuitem-link {
   color: var(--primary);
-  background-color: rgba(102, 126, 234, 0.08);
+  background-color: rgba(11, 79, 159, 0.08);
   font-weight: 600;
 }
 
 /* ── Work Page PrimeNG Overrides (global scope) ── */
-app-work .custom-timeline .p-timeline-event-content {
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  margin-bottom: 0.75rem;
-  border-left: 3px solid var(--primary);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-
-  &:hover {
-    transform: translateX(4px);
-    box-shadow: var(--shadow-sm);
-  }
+app-work .custom-timeline .p-timeline-event {
+  min-height: 140px;
 }
 
-app-work .custom-timeline .p-timeline-event-content h3 {
-  color: var(--primary);
-  margin-bottom: 0.4rem;
-  font-weight: 700;
+app-work .custom-timeline .p-timeline-event-opposite {
+  padding-top: 0.3rem;
 }
 
-app-work .custom-timeline .p-timeline-event-content ul {
-  margin-left: 1.5rem;
-  margin-top: 0.4rem;
-}
-
-app-work .custom-timeline .p-timeline-event-content li {
-  margin-bottom: 0.25rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-app-work .custom-timeline .p-timeline-event-marker {
-  background: var(--primary) !important;
-  border: 3px solid var(--bg-card) !important;
-  box-shadow: 0 0 0 2px var(--primary) !important;
+app-work .custom-timeline .p-timeline-event-separator {
+  margin-inline: 0.95rem;
 }
 
 app-work .custom-timeline .p-timeline-event-connector {
-  background: var(--bg-tertiary) !important;
+  width: 3px !important;
+  background: linear-gradient(180deg, rgba(11, 79, 159, 0.26), rgba(42, 125, 225, 0.16), rgba(191, 87, 0, 0.22)) !important;
+}
+
+app-work .custom-timeline .p-timeline-event-content {
+  padding: 0 0 1rem 0 !important;
+}
+
+app-work .custom-timeline .p-timeline-event:last-child .p-timeline-event-connector {
+  display: none;
 }
 
 app-work .skill-chip .p-chip {
@@ -468,5 +548,9 @@ input, select, textarea {
 
   .container {
     padding: 0 1rem;
+  }
+
+  app-work .custom-timeline .p-timeline-event-separator {
+    margin-inline: 0.6rem;
   }
 }
