@@ -71,7 +71,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           return;
         }
 
-        const metaItem = items.find(i => i.PageContentID === PageContentID.BlogItem);
+        const metaItem = items.find(i => i.PageContentID === PageContentID.BlogItem) || items.find(i => !!i.Metadata);
         const textItem = items.find(i => i.PageContentID === PageContentID.BlogText);
         const imgItem  = items.find(i => i.PageContentID === PageContentID.BlogImage);
         const bodyItem = items.find(i => i.PageContentID === PageContentID.BlogBody);

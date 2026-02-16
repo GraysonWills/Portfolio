@@ -142,7 +142,7 @@ export class RedisService {
           if (pageID === PageID.Blog) {
             metaCandidate = group.items.find(
               i => i.PageContentID === PageContentID.BlogItem && i.Metadata
-            );
+            ) || group.items.find(i => i.Metadata);
           } else {
             metaCandidate = group.items.find(i => i.Metadata);
           }
