@@ -1,16 +1,35 @@
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { RouterModule } from '@angular/router';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { RouterTestingModule } from '@angular/router/testing';
 import { AppComponent } from './app.component';
+import { MailchimpService } from './services/mailchimp.service';
+import { RedisService } from './services/redis.service';
+import { SeoService } from './services/seo.service';
+
+class RedisServiceStub {
+  setApiEndpoint(): void {}
+}
+
+class MailchimpServiceStub {
+  loadMailchimpScript(): void {}
+}
+
+class SeoServiceStub {
+  update(): void {}
+}
 
 describe('AppComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [
-        RouterModule.forRoot([])
+      imports: [RouterTestingModule, NoopAnimationsModule],
+      declarations: [AppComponent],
+      providers: [
+        { provide: RedisService, useClass: RedisServiceStub },
+        { provide: MailchimpService, useClass: MailchimpServiceStub },
+        { provide: SeoService, useClass: SeoServiceStub },
       ],
-      declarations: [
-        AppComponent
-      ],
+      schemas: [NO_ERRORS_SCHEMA],
     }).compileComponents();
   });
 
@@ -20,16 +39,18 @@ describe('AppComponent', () => {
     expect(app).toBeTruthy();
   });
 
-  it(`should have as title 'portfolio-app'`, () => {
+  it(`should have the expected title`, () => {
     const fixture = TestBed.createComponent(AppComponent);
     const app = fixture.componentInstance;
-    expect(app.title).toEqual('portfolio-app');
+    expect(app.title).toEqual('Grayson Wills - Portfolio');
   });
 
-  it('should render title', () => {
+  it('should render a skip link', () => {
     const fixture = TestBed.createComponent(AppComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, portfolio-app');
+    const skipLink = compiled.querySelector<HTMLAnchorElement>('a.skip-link');
+    expect(skipLink).toBeTruthy();
+    expect(skipLink?.getAttribute('href')).toBe('#main-content');
   });
 });

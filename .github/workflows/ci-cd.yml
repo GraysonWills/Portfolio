@@ -40,6 +40,9 @@ jobs:
       - name: Lint (if available)
         run: npm run lint || true
 
+      - name: Test
+        run: npm test
+
   # ─── Build & Test Frontend ───
   frontend:
     runs-on: ubuntu-latest
@@ -59,6 +62,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Test
+        run: npm test -- --watch=false --browsers=ChromeHeadless --no-progress
 
       - name: Build production
         run: npm run build -- --configuration=production
@@ -89,6 +95,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Test
+        run: npm test -- --watch=false --browsers=ChromeHeadless --no-progress
 
       - name: Build production
         run: npm run build -- --configuration=production
