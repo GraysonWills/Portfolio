@@ -34,6 +34,9 @@ function createApp() {
   }
 
   // ─── Security ────────────────────────────────────────────────
+  // Reduce passive fingerprinting.
+  app.disable('x-powered-by');
+
   app.use(helmet({
     contentSecurityPolicy: false, // Allow inline scripts for portfolio
     crossOriginEmbedderPolicy: false
@@ -88,8 +91,9 @@ function createApp() {
   });
 
   // ─── Body Parsing ────────────────────────────────────────────
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Keep request size bounded to reduce abuse blast radius.
+  app.use(express.json({ limit: '2mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 
   // ─── In-Memory Response Cache (for GET endpoints) ────────────
   const cache = new Map();
