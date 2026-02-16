@@ -108,6 +108,13 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           this.bodyBlocks = [{ type: 'paragraph', content: textItem.Text }];
         }
 
+        // If there is no body/text at all, treat as not found.
+        if (!this.bodyBlocks || this.bodyBlocks.length === 0) {
+          this.notFound = true;
+          this.isLoading = false;
+          return;
+        }
+
         // Calculate read time from all text content
         const allText = this.bodyBlocks
           .filter(b => b.type === 'paragraph' || b.type === 'heading' || b.type === 'quote')

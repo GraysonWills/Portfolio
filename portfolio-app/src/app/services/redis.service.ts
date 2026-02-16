@@ -214,9 +214,15 @@ export class RedisService {
           const meta: any = g.metadata || {};
           const status = meta?.status || 'published';
           const publishDate = meta?.publishDate ? new Date(meta.publishDate).getTime() : null;
+          const hasContent = g.items.some((i) =>
+            (i.PageContentID === PageContentID.BlogBody || i.PageContentID === PageContentID.BlogText) &&
+            typeof i.Text === 'string' &&
+            i.Text.trim().length > 0
+          );
 
           if (status !== 'published') return false;
           if (publishDate && publishDate > now) return false;
+          if (!hasContent) return false;
           return true;
         });
       })

@@ -111,7 +111,11 @@ export class DashboardComponent implements OnInit {
           g.metadata = (metaItem?.Metadata as any) || undefined;
         });
 
-        this.blogPosts = groups.sort(
+        const usable = groups.filter((g) =>
+          g.items.some((i) => i.PageContentID === PageContentID.BlogText && !!i.Text && i.Text.trim().length > 0)
+        );
+
+        this.blogPosts = usable.sort(
           (a, b) => this.getPostDate(b).getTime() - this.getPostDate(a).getTime()
         );
       },

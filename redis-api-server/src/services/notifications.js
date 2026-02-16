@@ -69,6 +69,20 @@ function extractBlogMetadata(items) {
   return { metaItem, meta, title, summary, tags, publishDate, status, scheduleName };
 }
 
+function hasBlogContent(items) {
+  return items.some((i) => (i.PageContentID === 13 || i.PageContentID === 4) && typeof i.Text === 'string' && i.Text.trim());
+}
+
+async function assertBlogPostExists(listItemID) {
+  const items = await getBlogGroup(listItemID);
+  if (!items.length || !hasBlogContent(items)) {
+    const err = new Error('Blog post not found');
+    err.status = 404;
+    throw err;
+  }
+  return items;
+}
+
 async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
   const items = await getBlogGroup(listItemID);
   const existing = items.find(i => i.PageContentID === 3);
@@ -199,12 +213,7 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts' }) {
     return { ok: true, skipped: true, reason: 'EMAIL_NOTIFICATIONS_ENABLED=false' };
   }
 
-  const items = await getBlogGroup(listItemID);
-  if (!items.length) {
-    const err = new Error('Blog post not found');
-    err.status = 404;
-    throw err;
-  }
+  const items = await assertBlogPostExists(listItemID);
 
   const { title, summary } = extractBlogMetadata(items);
   const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(listItemID)}`;
@@ -254,9 +263,10 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     throw err;
   }
 
+  const existingItems = await assertBlogPostExists(listItemID);
+
   // Best-effort cleanup for reschedules.
   try {
-    const existingItems = await getBlogGroup(listItemID);
     const existingMeta = extractBlogMetadata(existingItems);
     if (existingMeta.scheduleName) {
       const scheduler = getScheduler();
@@ -323,6 +333,7 @@ async function cancelSchedule({ scheduleName }) {
 
 async function publishBlogPostNow({ listItemID, sendEmail = true, topic = 'blog_posts' }) {
   // When scheduler fires, we mark as published and optionally send notifications.
+  await assertBlogPostExists(listItemID);
   await updateBlogMetadata(listItemID, {
     status: 'published',
     publishDate: new Date().toISOString(),
