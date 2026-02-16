@@ -22,6 +22,17 @@ const notificationsRoutes = require('./routes/notifications');
 function createApp() {
   const app = express();
 
+  function getClientIp(req) {
+    // Behind ALB, AWS appends the real client IP to X-Forwarded-For.
+    // We take the last IP to avoid client-supplied spoofed prefixes.
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.trim()) {
+      const parts = xff.split(',').map(p => p.trim()).filter(Boolean);
+      if (parts.length) return parts[parts.length - 1];
+    }
+    return req.socket?.remoteAddress || req.ip || 'unknown';
+  }
+
   // ─── Security ────────────────────────────────────────────────
   app.use(helmet({
     contentSecurityPolicy: false, // Allow inline scripts for portfolio
@@ -61,6 +72,7 @@ function createApp() {
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => getClientIp(req),
     message: { error: 'Too many requests, please try again later.' }
   });
   app.use('/api/', apiLimiter);
@@ -71,6 +83,7 @@ function createApp() {
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => getClientIp(req),
     message: { error: 'Write rate limit exceeded. Please try again later.' }
   });
 
