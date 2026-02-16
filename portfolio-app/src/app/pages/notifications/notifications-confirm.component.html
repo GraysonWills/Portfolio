@@ -1,0 +1,30 @@
+<div class="notifications-page">
+  <div class="container">
+    <section class="panel" appScrollReveal>
+      <h1 class="title">Email Subscription</h1>
+      <p class="subtitle">Confirming your subscription status.</p>
+
+      <div *ngIf="state === 'loading'" class="status-row">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Confirming...</span>
+      </div>
+
+      <div *ngIf="state === 'success'" class="status-row success">
+        <i class="pi pi-check-circle" aria-hidden="true"></i>
+        <div>
+          <div class="status-title">Confirmed</div>
+          <div class="status-detail">You’re subscribed. New posts will land in your inbox.</div>
+        </div>
+      </div>
+
+      <div *ngIf="state === 'error'" class="status-row error">
+        <i class="pi pi-times-circle" aria-hidden="true"></i>
+        <div>
+          <div class="status-title">Couldn’t Confirm</div>
+          <div class="status-detail">{{ errorMessage }}</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+

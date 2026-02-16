@@ -65,17 +65,17 @@
                   <div class="project-actions" *ngIf="project.githubUrl || project.liveUrl">
                     <a *ngIf="project.githubUrl"
                        class="project-link"
-                       (click)="openUrl(project.githubUrl)"
-                       tabindex="0"
-                       role="link"
+                       [href]="project.githubUrl"
+                       target="_blank"
+                       rel="noopener noreferrer"
                        aria-label="View source on GitHub">
                       <i class="pi pi-github"></i> GitHub
                     </a>
                     <a *ngIf="project.liveUrl"
                        class="project-link project-link--live"
-                       (click)="openUrl(project.liveUrl)"
-                       tabindex="0"
-                       role="link"
+                       [href]="project.liveUrl"
+                       target="_blank"
+                       rel="noopener noreferrer"
                        aria-label="Open live demo">
                       <i class="pi pi-external-link"></i> Live Demo
                     </a>

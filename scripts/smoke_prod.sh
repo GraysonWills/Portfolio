@@ -77,11 +77,28 @@ expect_cors_allow_origin() {
   fi
 }
 
+expect_content_type_prefix() {
+  local url="$1"
+  local expected_prefix="$2"
+  local got
+  got="$(curl -sS -I "$url" | awk -F': ' 'tolower($1)=="content-type"{print $2}' | tr -d '\r' | tail -n 1)"
+  if [[ "$got" != "${expected_prefix}"* ]]; then
+    echo "expected content-type starting with '${expected_prefix}', got '${got}': $url"
+    return 1
+  fi
+}
+
 echo "== Static sites =="
 retry 30 10 expect_code "${PORTFOLIO_URL}/" "200"
 retry 30 10 expect_code "${PORTFOLIO_URL}/this/does/not/exist" "200"
 retry 30 10 expect_code "${BLOG_URL}/" "200"
 retry 30 10 expect_code "${BLOG_URL}/content-studio" "200"
+
+echo "== SEO files =="
+retry 30 10 expect_code "${PORTFOLIO_URL}/robots.txt" "200"
+retry 30 10 expect_content_type_prefix "${PORTFOLIO_URL}/robots.txt" "text/plain"
+retry 30 10 expect_code "${PORTFOLIO_URL}/sitemap.xml" "200"
+retry 30 10 expect_content_type_prefix "${PORTFOLIO_URL}/sitemap.xml" "application/xml"
 
 echo "== Apex redirect =="
 retry 30 10 expect_code "${APEX_URL}/" "301"
@@ -108,4 +125,3 @@ retry 30 10 expect_code "${S3_WWW_URL}" "403"
 retry 30 10 expect_code "${S3_BLOG_URL}" "403"
 
 echo "OK"
-

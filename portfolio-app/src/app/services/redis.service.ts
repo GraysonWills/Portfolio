@@ -207,7 +207,20 @@ export class RedisService {
    * Get content for blog posts (PageID: 3)
    */
   getBlogPosts(): Observable<ContentGroup[]> {
-    return this.getContentGroupedByListItemID(PageID.Blog);
+    return this.getContentGroupedByListItemID(PageID.Blog).pipe(
+      map((groups: ContentGroup[]) => {
+        const now = Date.now();
+        return groups.filter((g) => {
+          const meta: any = g.metadata || {};
+          const status = meta?.status || 'published';
+          const publishDate = meta?.publishDate ? new Date(meta.publishDate).getTime() : null;
+
+          if (status !== 'published') return false;
+          if (publishDate && publishDate > now) return false;
+          return true;
+        });
+      })
+    );
   }
 
   /**

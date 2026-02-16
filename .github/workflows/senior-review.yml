@@ -1,0 +1,109 @@
+name: Senior Engineer Review
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: senior-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+env:
+  NODE_VERSION: '22.x'
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install + Build (redis-api-server)
+        working-directory: redis-api-server
+        run: |
+          npm ci
+          # Syntax check all JS files (cheap correctness gate)
+          find src -name '*.js' -print0 | xargs -0 -n 1 node --check
+
+      - name: Install + Build (portfolio-app)
+        working-directory: portfolio-app
+        run: |
+          npm ci
+          npm run build -- --configuration=production
+
+      - name: Install + Build (blog-authoring-gui)
+        working-directory: blog-authoring-gui
+        run: |
+          npm ci
+          npm run build -- --configuration=production
+
+      - name: Generate Review Report
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_REVIEW_MODEL: ${{ secrets.OPENAI_REVIEW_MODEL }}
+          REVIEW_ARTIFACTS_DIR: artifacts
+          REVIEW_MAX_DIFF_CHARS: '180000'
+          REVIEW_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          REVIEW_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/senior_review.mjs
+          echo "## Senior Engineer Review" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Report generated at \`artifacts/senior-review-report.md\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          # Include a readable excerpt (full report is in artifact)
+          python - <<'PY'
+import pathlib
+p = pathlib.Path("artifacts/senior-review-report.md")
+text = p.read_text(encoding="utf-8")
+print(text[:12000])
+PY
+
+      - name: Upload Review Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: senior-review
+          path: artifacts/
+          retention-days: 14
+
+      - name: Comment On PR (Update Existing)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('artifacts/senior-review-pr-comment.md', 'utf8');
+            const marker = '<!-- senior-review -->';
+            const issue_number = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100
+            });
+
+            const existing = comments.find(c => typeof c.body === 'string' && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body
+              });
+            }
+

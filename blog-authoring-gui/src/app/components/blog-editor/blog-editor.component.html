@@ -123,6 +123,22 @@
             </div>
           </div>
 
+          <!-- Notifications -->
+          <div class="form-group side-card">
+            <label>Email Update</label>
+            <p-toggleButton
+              formControlName="sendEmailUpdate"
+              onLabel="Email: On"
+              offLabel="Email: Off"
+              onIcon="pi pi-envelope"
+              offIcon="pi pi-envelope"
+              styleClass="full-width">
+            </p-toggleButton>
+            <small class="help-text">
+              If enabled: published posts notify subscribers immediately, and scheduled posts send at publish time.
+            </small>
+          </div>
+
           <!-- Category -->
           <div class="form-group side-card">
             <label for="category">Category</label>

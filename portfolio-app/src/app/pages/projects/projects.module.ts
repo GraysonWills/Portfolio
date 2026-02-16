@@ -4,7 +4,14 @@ import { SharedModule } from '../../shared/shared.module';
 import { ProjectsComponent } from './projects.component';
 
 const routes: Routes = [
-  { path: '', component: ProjectsComponent, data: { title: 'Projects' } }
+  {
+    path: '',
+    component: ProjectsComponent,
+    data: {
+      title: 'Projects',
+      description: 'Selected projects by Grayson Wills across cloud architecture, full-stack development, and AI systems.'
+    }
+  }
 ];
 
 @NgModule({

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portfolio Subscription Mockups</title>
+    <link rel="stylesheet" href="./shared.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div class="hero-top">
+          <span class="chip">Portfolio Update Mockup</span>
+          <span class="chip">Email Subscription UX</span>
+        </div>
+        <h1>Blog Subscription + Preferences Experience</h1>
+        <p>
+          Designed to sit inside the existing portfolio blog routes without changing blog content structure. Focus: easy subscribe,
+          explicit consent, and frictionless unsubscribe/preferences.
+        </p>
+      </header>
+
+      <section class="frame-grid">
+        <article class="frame">
+          <div class="frame-label">
+            <span>N1 Portfolio Blog + Subscribe Card</span>
+            <span>Desktop</span>
+          </div>
+          <div class="frame-body">
+            <div class="app">
+              <div class="app-head">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Blog / Subscribe</span>
+                </div>
+                <span class="pill">Route: /blog</span>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Existing Blog List (unchanged)</div>
+                <div class="line w90"></div>
+                <div class="line w80"></div>
+                <div class="line w55"></div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">New: Stay Updated Card</div>
+                <div class="row">
+                  <div class="stack">
+                    <div class="line w90"></div>
+                    <div class="line w70"></div>
+                    <span class="pill success">Double Opt-In Enabled</span>
+                    <div class="cta-row">
+                      <span class="btn primary">Subscribe</span>
+                      <span class="btn">Manage Preferences</span>
+                    </div>
+                  </div>
+                  <div class="stack">
+                    <span class="pill">Topic: Blog Posts</span>
+                    <span class="pill">Topic: Major Updates</span>
+                    <span class="pill warn">Frequency: Weekly Digest</span>
+                  </div>
+                </div>
+                <div class="note">
+                  Form fields: email, optional topics, optional frequency. Submit triggers confirmation email before activation.
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="frame">
+          <div class="frame-label">
+            <span>N2 Preferences / Unsubscribe Center</span>
+            <span>Desktop</span>
+          </div>
+          <div class="frame-body">
+            <div class="app">
+              <div class="app-head">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Notification Preferences</span>
+                </div>
+                <span class="pill">Route: /notifications/manage</span>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Subscriber Profile</div>
+                <div class="line w70"></div>
+                <div class="line w40"></div>
+                <span class="pill success">Status: Subscribed</span>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Notification Topics</div>
+                <div class="row">
+                  <div class="stack">
+                    <span class="pill success">Blog Posts: On</span>
+                    <span class="pill">Major Site Updates: On</span>
+                    <span class="pill">Project Releases: Off</span>
+                  </div>
+                  <div class="stack">
+                    <span class="pill">Frequency: Instant</span>
+                    <span class="pill">Digest Day: Friday</span>
+                  </div>
+                </div>
+                <div class="cta-row">
+                  <span class="btn primary">Save Preferences</span>
+                  <span class="btn">Unsubscribe All</span>
+                </div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Compliance UX</div>
+                <div class="note">
+                  Unsubscribe must not require login. One-click links in emails land here with a signed token and confirm action.
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

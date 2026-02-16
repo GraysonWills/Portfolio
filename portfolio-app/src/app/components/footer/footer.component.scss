@@ -1,5 +1,5 @@
 .footer-container {
-  background: var(--gradient-primary);
+  background: linear-gradient(145deg, #0f1722 0%, #123762 58%, #0b4f9f 100%);
   color: var(--text-inverse);
   padding: 3.5rem 2rem 1.5rem;
   margin-top: auto;
@@ -14,7 +14,7 @@
     right: -40px;
     width: 250px;
     height: 250px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(241, 143, 59, 0.2);
     border-radius: 50%;
     pointer-events: none;
   }
@@ -26,7 +26,7 @@
     left: -30px;
     width: 180px;
     height: 180px;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(42, 125, 225, 0.22);
     border-radius: 50%;
     pointer-events: none;
   }
@@ -75,20 +75,25 @@
 
   &:hover {
     transform: translateX(4px);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.16);
     color: var(--text-inverse);
   }
 
   i {
-    font-size: 1.1rem;
-    width: 20px;
+    font-size: 1.15rem;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
   }
 }
 
 .footer-icon-inline {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   object-fit: contain;
   filter: brightness(0) invert(1);
   opacity: 0.9;
@@ -111,7 +116,7 @@
 
   &:hover {
     transform: translateX(4px);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.16);
     color: var(--text-inverse);
   }
 }

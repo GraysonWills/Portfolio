@@ -122,7 +122,10 @@ export class BlogApiService {
     summary: string,
     tags: string[],
     image?: string,
-    listItemID?: string
+    listItemID?: string,
+    publishDate?: Date,
+    status?: 'draft' | 'scheduled' | 'published',
+    category?: string
   ): Observable<RedisContent[]> {
     const postItems: RedisContent[] = [];
     const itemId = listItemID || `blog-${Date.now()}`;
@@ -130,9 +133,20 @@ export class BlogApiService {
       title,
       summary,
       tags,
-      publishDate: new Date(),
-      status: 'published'
+      publishDate: publishDate || new Date(),
+      status: status || 'published',
+      ...(category ? { category } : {})
     };
+
+    // Blog metadata record (required by portfolio for title/tags/date)
+    postItems.push({
+      ID: `blog-item-${itemId}`,
+      Text: title,
+      PageID: PageID.Blog,
+      PageContentID: PageContentID.BlogItem,
+      ListItemID: itemId,
+      Metadata: metadata as any
+    } as any);
 
     // Blog text content
     postItems.push({
@@ -141,8 +155,7 @@ export class BlogApiService {
       PageID: PageID.Blog,
       PageContentID: PageContentID.BlogText,
       ListItemID: itemId,
-      Metadata: metadata as any,
-      CreatedAt: new Date()
+      Metadata: metadata as any
     });
 
     // Blog image content (if provided)
@@ -172,14 +185,18 @@ export class BlogApiService {
     content: string,
     summary: string,
     tags: string[],
-    image?: string
+    image?: string,
+    publishDate?: Date,
+    status?: 'draft' | 'scheduled' | 'published',
+    category?: string
   ): Observable<RedisContent[]> {
     const metadata: BlogPostMetadata = {
       title,
       summary,
       tags,
-      publishDate: new Date(),
-      status: 'published'
+      publishDate: publishDate || new Date(),
+      status: status || 'published',
+      ...(category ? { category } : {})
     };
 
     return new Observable<RedisContent[]>((observer) => {
@@ -199,6 +216,16 @@ export class BlogApiService {
           // Update blog metadata record (if present)
           if (blogItem?.ID) {
             writes.push(this.updateContent(blogItem.ID, { Metadata: metadata as any }));
+          } else {
+            // Create the BlogItem record if missing (required for portfolio display)
+            writes.push(this.createContent({
+              ID: `blog-item-${listItemID}`,
+              Text: title,
+              PageID: PageID.Blog,
+              PageContentID: PageContentID.BlogItem,
+              ListItemID: listItemID,
+              Metadata: metadata as any
+            } as any));
           }
 
           // Update/remove/create image record
@@ -275,6 +302,35 @@ export class BlogApiService {
     ).pipe(
       catchError(this.handleError)
     );
+  }
+
+  /**
+   * Trigger notification send now for a blog post (admin/auth required).
+   */
+  sendNotificationNow(listItemID: string, topic: string = 'blog_posts'): Observable<any> {
+    return this.http.post<any>(
+      `${this.apiUrl}/notifications/send-now`,
+      { listItemID, topic },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  /**
+   * Schedule publish + optional notification send (admin/auth required).
+   */
+  schedulePublish(listItemID: string, publishAt: Date, sendEmail: boolean, topic: string = 'blog_posts'): Observable<any> {
+    return this.http.post<any>(
+      `${this.apiUrl}/notifications/schedule`,
+      { listItemID, publishAt, sendEmail, topic },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  cancelSchedule(scheduleName: string): Observable<any> {
+    return this.http.delete<any>(
+      `${this.apiUrl}/notifications/schedule/${encodeURIComponent(scheduleName)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
   }
 
   /**

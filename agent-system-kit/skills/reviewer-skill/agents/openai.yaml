@@ -1,0 +1,5 @@
+interface:
+  display_name: "Reviewer Skill"
+  short_description: "Audit outputs and assign subagent tasks"
+  default_prompt: "Use $reviewer-skill to review current artifacts and produce subagent.md."
+

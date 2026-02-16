@@ -16,6 +16,8 @@ const contentRoutes = require('./routes/content');
 const uploadRoutes = require('./routes/upload');
 const healthRoutes = require('./routes/health');
 const adminRoutes = require('./routes/admin');
+const subscriptionsRoutes = require('./routes/subscriptions');
+const notificationsRoutes = require('./routes/notifications');
 
 function createApp() {
   const app = express();
@@ -79,21 +81,51 @@ function createApp() {
   // ─── In-Memory Response Cache (for GET endpoints) ────────────
   const cache = new Map();
   const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS, 10) || 60_000;
+  const MAX_CACHE_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES, 10) || 500;
+  let lastSweepAt = 0;
+
+  function evictExpired(now = Date.now()) {
+    // Sweep at most once per TTL window to avoid per-request full scans.
+    if (now - lastSweepAt < CACHE_TTL) return;
+    lastSweepAt = now;
+    for (const [cacheKey, entry] of cache.entries()) {
+      if (now - entry.timestamp >= CACHE_TTL) {
+        cache.delete(cacheKey);
+      }
+    }
+  }
+
+  function enforceCacheBounds() {
+    while (cache.size > MAX_CACHE_ENTRIES) {
+      // Map keeps insertion order; first key is oldest entry.
+      const oldestKey = cache.keys().next().value;
+      if (!oldestKey) break;
+      cache.delete(oldestKey);
+    }
+  }
 
   function cacheMiddleware(req, res, next) {
     if (req.method !== 'GET') return next();
 
+    const now = Date.now();
+    evictExpired(now);
+
     const key = req.originalUrl;
     const cached = cache.get(key);
 
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    if (cached && now - cached.timestamp < CACHE_TTL) {
       res.set('X-Cache', 'HIT');
       return res.json(cached.data);
+    }
+
+    if (cached) {
+      cache.delete(key);
     }
 
     const originalJson = res.json.bind(res);
     res.json = (data) => {
       cache.set(key, { data, timestamp: Date.now() });
+      enforceCacheBounds();
       res.set('X-Cache', 'MISS');
       return originalJson(data);
     };
@@ -115,6 +147,8 @@ function createApp() {
   app.use('/api/content', cacheMiddleware, contentRoutes);
   app.use('/api/upload', writeLimiter, uploadRoutes);
   app.use('/api/admin', writeLimiter, adminRoutes);
+  app.use('/api/subscriptions', writeLimiter, subscriptionsRoutes);
+  app.use('/api/notifications', writeLimiter, notificationsRoutes);
 
   app.get('/', (req, res) => {
     res.json({
@@ -125,7 +159,9 @@ function createApp() {
         health: '/api/health',
         content: '/api/content',
         upload: '/api/upload',
-        admin: '/api/admin (requires API keys)'
+        admin: '/api/admin (requires API keys)',
+        subscriptions: '/api/subscriptions',
+        notifications: '/api/notifications (requires auth)'
       }
     });
   });
@@ -153,4 +189,3 @@ function createApp() {
 }
 
 module.exports = { createApp };
-

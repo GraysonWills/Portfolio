@@ -1,7 +1,9 @@
 .projects-page {
   min-height: 100vh;
   padding: 3rem 2rem 2rem;
-  background: var(--bg-secondary);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(42, 125, 225, 0.14), transparent 34%),
+    var(--bg-secondary);
 }
 
 .container {
@@ -12,14 +14,22 @@
 .page-header {
   text-align: center;
   margin-bottom: 2rem;
+  border: 1px solid rgba(11, 79, 159, 0.14);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f3f7fc 100%);
+  box-shadow: var(--shadow-sm);
+  padding: 1.35rem 1.25rem;
 }
 
 .page-title {
   font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--text-primary);
   margin-bottom: 0.5rem;
-  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
 
 .page-subtitle {
@@ -41,16 +51,17 @@
   width: 100%;
   padding: 1rem 1.25rem;
   background: var(--bg-card);
-  border: 1px solid rgba(102, 126, 234, 0.08);
+  border: 1px solid rgba(11, 79, 159, 0.14);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   transition: all var(--transition-fast);
   font-family: inherit;
 
   &:hover {
     box-shadow: var(--shadow-md);
-    border-color: rgba(102, 126, 234, 0.18);
+    border-color: rgba(11, 79, 159, 0.18);
   }
 }
 
@@ -63,9 +74,10 @@
 .category-image {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 12px;
   object-fit: cover;
   box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(11, 79, 159, 0.18);
 }
 
 .category-title {
@@ -77,11 +89,14 @@
 
 .project-count {
   font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-xl);
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(11, 79, 159, 0.09);
+  border: 1px solid rgba(11, 79, 159, 0.2);
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .accordion-chevron {
@@ -114,7 +129,7 @@
 /* ── Project Cards ── */
 .project-card {
   background: var(--bg-card);
-  border: 1px solid rgba(102, 126, 234, 0.06);
+  border: 1px solid rgba(11, 79, 159, 0.11);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
@@ -124,7 +139,7 @@
     &:hover {
       box-shadow: var(--shadow-md);
       transform: translateY(-2px);
-      border-color: rgba(102, 126, 234, 0.14);
+      border-color: rgba(11, 79, 159, 0.14);
     }
   }
 
@@ -180,12 +195,12 @@
 .tech-tag {
   display: inline-block;
   padding: 0.2rem 0.6rem;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   color: var(--primary);
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(11, 79, 159, 0.1);
   border-radius: var(--radius-xl);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Executor Skill"
+  short_description: "Execute scoped milestones from plan.md"
+  default_prompt: "Use $executor-skill to implement the next milestone and update agent.md."
+

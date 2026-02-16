@@ -1,6 +1,6 @@
 # Portfolio Site - Full Stack Project
 
-A comprehensive portfolio website project consisting of an Angular frontend, Node.js/Express backend API, and a blog authoring GUI. The project uses Redis Cloud for dynamic content storage and is designed for deployment on AWS EC2 with CI/CD workflows.
+A comprehensive portfolio website project consisting of an Angular frontend, Node.js/Express backend API, and a blog authoring GUI. The frontend is deployed to AWS S3 + CloudFront via GitHub Actions. The Redis API server is currently intended to run locally (production hosting TBD).
 
 ## Project Structure
 
@@ -86,7 +86,9 @@ REDIS_PASSWORD=your-redis-cloud-password
 REDIS_TLS=true
 REDIS_DB=0
 PORT=3000
-ALLOWED_ORIGINS=http://localhost:4200,http://localhost:4201
+ALLOWED_ORIGINS=http://localhost:4200,http://localhost:4201,http://localhost:4300,http://localhost:4301,http://localhost:3000
+CACHE_TTL_MS=60000
+CACHE_MAX_ENTRIES=500
 ```
 
 **Blog Author** (`blog-author/.env`):
@@ -129,11 +131,84 @@ cd portfolio-app && npm start
 # → http://localhost:4200
 ```
 
+To run on the currently used local port:
+```bash
+cd portfolio-app && npm start -- --port 4300
+# → http://localhost:4300
+```
+
+**Blog Authoring GUI** (Angular editor):
+```bash
+cd blog-authoring-gui && npm install && npm start -- --port 4301
+# → http://localhost:4301
+```
+
 **Blog Author** (optional, local only):
 ```bash
 cd blog-author && npm start
 # → http://localhost:4201
 ```
+
+## AWS Deployment (Frontend)
+
+The portfolio frontend (`portfolio-app/`) is hosted as a static site:
+
+- **S3 bucket:** `www.grayson-wills.com` (region: `us-east-2`)
+- **CloudFront distribution:** `E28CZKZOGGZGVK` (alias: `www.grayson-wills.com`)
+- **Route53:** `www.grayson-wills.com` CNAME -> CloudFront
+
+### CI/CD (GitHub Actions)
+
+Workflow: `.github/workflows/ci-cd.yml`
+
+On push to `main` or `master`, the workflow:
+
+1. Builds the Angular production bundle
+2. Syncs `portfolio-app/dist/portfolio-app/browser` to `s3://www.grayson-wills.com/`
+3. Uploads `index.html` with `no-cache` headers (to avoid stale SPA shells)
+4. Invalidates CloudFront (`/*`)
+
+### AWS Auth (No Long-Lived Keys)
+
+Deployment uses **GitHub OIDC** (no `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets):
+
+- IAM OIDC Provider: `token.actions.githubusercontent.com`
+- IAM Role: `arn:aws:iam::381492289909:role/GitHubActionsPortfolioDeploy`
+
+If you ever need to recreate the role/provider, use the AWS CLI from a session with admin permissions and lock the role trust policy to your repo + branches.
+
+### Production Redis API Note
+
+The deployed frontend expects a live Redis API endpoint (see `portfolio-app/src/environments/environment.prod.ts`). Before shipping a build to `www.grayson-wills.com`, make sure the production `redisApiUrl` points to a real API host and that CORS/origin settings allow `https://www.grayson-wills.com`.
+
+## AWS Deployment (Redis API)
+
+The Redis API server (`redis-api-server/`) is deployed as:
+
+- **AWS Lambda:** `portfolio-redis-api` (region: `us-east-2`)
+- **API Gateway (HTTP API):** `https://api.grayson-wills.com`
+- **Base path:** `/api` (example: `https://api.grayson-wills.com/api/health`)
+
+Write endpoints (POST/PUT/DELETE + uploads) are protected by Cognito JWT auth; read endpoints remain public for the portfolio.
+
+Workflow: `.github/workflows/api-deploy.yml`
+
+## AWS Deployment (Blog Authoring Dev)
+
+The blog authoring GUI (`blog-authoring-gui/`) is deployed as a static site:
+
+- **S3 bucket:** `grayson-wills-blog-authoring-dev-381492289909` (region: `us-east-2`)
+- **CloudFront distribution:** `E31OPQLJ4WFI66`
+- **CloudFront URL:** `https://d39s45clv1oor3.cloudfront.net`
+
+Authentication is backed by **Amazon Cognito User Pool** `us-east-2_dzSpoyFyI` (password resets email a verification code to the user’s verified email).
+
+## Images (S3)
+
+Uploaded images are stored in:
+
+- **S3 bucket:** `grayson-wills-media-381492289909` (public read for `uploads/*`)
+- Upload endpoint: `POST https://api.grayson-wills.com/api/upload/image` (requires auth)
 
 ## Redis Data Schema
 
@@ -169,6 +244,31 @@ The application uses Redis with the following schema:
 | 11 | ProjectsPhoto | Individual project photos |
 | 12 | ProjectsText | Individual project details |
 | **13** | **BlogBody** | **Blog post rich body content (JSON array of blocks)** |
+| **14** | **WorkSkillMetric** | **Career/skill metric bars shown in Work page progress cards** |
+
+### Redis ID Conventions
+
+- Redis key format: `content:{ID}`
+- `ID` should be stable and unique (examples: `work-exp-001`, `work-metric-architecture`, `blog-text-1739472`)
+- `ListItemID` groups related rows that belong to one logical item:
+  - Example: all rows for one blog post share a single `ListItemID`
+  - Example: each career metric uses `career-metric-{n}` as `ListItemID`
+- `Metadata.order` is used for deterministic display order in timelines/metric lists.
+
+### Work Skill Metric Record Format
+
+`PageID = 1`, `PageContentID = 14`
+
+```json
+{
+  "ID": "work-metric-architecture",
+  "Text": "{\"label\":\"AI Systems Architecture\",\"value\":86,\"level\":\"Advanced\",\"summary\":\"Production design and platform integration across analytics + AI workflows\"}",
+  "ListItemID": "career-metric-1",
+  "PageID": 1,
+  "PageContentID": 14,
+  "Metadata": { "type": "career-metric", "order": 1 }
+}
+```
 
 ### Blog Post Structure
 

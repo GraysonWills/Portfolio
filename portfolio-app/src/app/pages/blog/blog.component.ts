@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
+import { SubscriptionService } from '../../services/subscription.service';
 
 @Component({
   selector: 'app-blog',
@@ -15,6 +16,8 @@ export class BlogComponent implements OnInit {
   layout: 'list' | 'grid' = 'list';
   searchQuery: string = '';
   isLoading: boolean = true;
+  subscribeEmail: string = '';
+  isSubscribing: boolean = false;
 
   /**
    * ╔══════════════════════════════════════════════════════════════╗
@@ -34,7 +37,8 @@ export class BlogComponent implements OnInit {
 
   constructor(
     private redisService: RedisService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private subscriptions: SubscriptionService
   ) {}
 
   ngOnInit(): void {
@@ -144,5 +148,41 @@ export class BlogComponent implements OnInit {
    */
   toggleLayout(): void {
     this.layout = this.layout === 'list' ? 'grid' : 'list';
+  }
+
+  subscribe(): void {
+    const email = (this.subscribeEmail || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Invalid Email',
+        detail: 'Please enter a valid email address.'
+      });
+      return;
+    }
+
+    if (this.isSubscribing) return;
+    this.isSubscribing = true;
+
+    this.subscriptions.request(email, ['blog_posts'], 'blog-list').subscribe({
+      next: () => {
+        this.isSubscribing = false;
+        this.subscribeEmail = '';
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Almost Done',
+          detail: 'Check your email to confirm your subscription.'
+        });
+      },
+      error: (err) => {
+        this.isSubscribing = false;
+        const msg = err?.error?.error || err?.message || 'Failed to start subscription.';
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Subscribe Failed',
+          detail: msg
+        });
+      }
+    });
   }
 }

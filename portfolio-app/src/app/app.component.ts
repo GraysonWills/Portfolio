@@ -1,10 +1,9 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Title } from '@angular/platform-browser';
 import { Router, NavigationEnd, ActivatedRoute, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter, map, mergeMap } from 'rxjs/operators';
 import { RedisService } from './services/redis.service';
-import { MailchimpService } from './services/mailchimp.service';
+import { SeoService } from './services/seo.service';
 import { environment } from '../environments/environment';
 import { routeTransition } from './animations/route-animations';
 
@@ -21,15 +20,13 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(
     private redisService: RedisService,
-    private mailchimpService: MailchimpService,
-    private titleService: Title,
+    private seo: SeoService,
     private router: Router,
     private activatedRoute: ActivatedRoute
   ) {}
 
   ngOnInit(): void {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
-    this.mailchimpService.loadMailchimpScript();
 
     this.routerSub = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
@@ -40,10 +37,12 @@ export class AppComponent implements OnInit, OnDestroy {
       }),
       mergeMap(route => route.data)
     ).subscribe(data => {
-      const pageTitle = data['title'];
-      this.titleService.setTitle(
-        pageTitle ? `${pageTitle} | Grayson Wills` : 'Grayson Wills - Portfolio'
-      );
+      const pageTitle = data['title'] as string | undefined;
+      const description = data['description'] as string | undefined;
+      const type = data['type'] as ('website' | 'article') | undefined;
+
+      const pathOnly = (this.router.url || '/').split('?')[0].split('#')[0];
+      this.seo.update({ title: pageTitle, description, url: pathOnly, type });
     });
   }
 

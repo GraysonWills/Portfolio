@@ -14,6 +14,38 @@ import { PageID, PageContentID, RedisContent } from '../models/redis-content.mod
   providedIn: 'root'
 })
 export class LinkedInDataService {
+  private readonly defaultCareerMetrics: Array<{
+    label: string;
+    value: number;
+    level: string;
+    summary: string;
+  }> = [
+    {
+      label: 'AI Systems Architecture',
+      value: 86,
+      level: 'Advanced',
+      summary: 'Production design and platform integration across analytics + AI workflows'
+    },
+    {
+      label: 'Data Science Delivery',
+      value: 91,
+      level: 'Advanced',
+      summary: 'Experimentation, KPI translation, and executive-facing dashboard outcomes'
+    },
+    {
+      label: 'Computer Vision',
+      value: 74,
+      level: 'Developing',
+      summary: 'Active in CV pipelines, model experimentation, and edge case tuning'
+    },
+    {
+      label: 'Product + Executive Communication',
+      value: 80,
+      level: 'Strong',
+      summary: 'Cross-functional decision support and narrative framing for leadership'
+    }
+  ];
+
   private linkedInProfile: LinkedInProfile = {
     contact: {
       email: 'calvarygman@gmail.com',
@@ -162,6 +194,19 @@ export class LinkedInDataService {
         PageID: PageID.Work,
         PageContentID: PageContentID.WorkText,
         ListItemID: `experience-${index}`,
+        CreatedAt: new Date()
+      });
+    });
+
+    // Work page career metrics
+    this.defaultCareerMetrics.forEach((metric, index) => {
+      contentItems.push({
+        ID: `linkedin-metric-${index}-${Date.now()}`,
+        Text: JSON.stringify(metric),
+        PageID: PageID.Work,
+        PageContentID: PageContentID.WorkSkillMetric,
+        ListItemID: `career-metric-${index + 1}`,
+        Metadata: { type: 'career-metric', order: index + 1 },
         CreatedAt: new Date()
       });
     });

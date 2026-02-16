@@ -38,12 +38,32 @@
 
         { "name": "S3_UPLOAD_BUCKET", "value": "grayson-wills-media-381492289909" },
         { "name": "S3_UPLOAD_REGION", "value": "us-east-2" },
-        { "name": "S3_UPLOAD_PREFIX", "value": "uploads/" }
+        { "name": "S3_UPLOAD_PREFIX", "value": "uploads/" },
+
+        { "name": "PUBLIC_SITE_URL", "value": "https://www.grayson-wills.com" },
+        { "name": "SUBSCRIBERS_TABLE_NAME", "value": "portfolio-email-subscribers" },
+        { "name": "TOKENS_TABLE_NAME", "value": "portfolio-email-tokens" },
+        { "name": "SES_FROM_EMAIL", "value": "no-reply@grayson-wills.com" },
+        { "name": "EMAIL_NOTIFICATIONS_ENABLED", "value": "true" },
+
+        { "name": "SCHEDULER_GROUP_NAME", "value": "portfolio-email" },
+        {
+          "name": "SCHEDULER_INVOKE_ROLE_ARN",
+          "value": "arn:aws:iam::381492289909:role/PortfolioSchedulerInvokeLambdaRole"
+        },
+        {
+          "name": "SCHEDULER_TARGET_LAMBDA_ARN",
+          "value": "arn:aws:lambda:us-east-2:381492289909:function:portfolio-redis-api"
+        }
       ],
       "secrets": [
         {
           "name": "REDIS_PASSWORD",
           "valueFrom": "arn:aws:ssm:us-east-2:381492289909:parameter/portfolio/elasticache/auth-token"
+        },
+        {
+          "name": "SCHEDULER_WEBHOOK_SECRET",
+          "valueFrom": "arn:aws:ssm:us-east-2:381492289909:parameter/portfolio/scheduler/webhook-secret"
         }
       ],
       "logConfiguration": {

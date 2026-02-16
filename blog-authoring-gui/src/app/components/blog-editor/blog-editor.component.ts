@@ -50,7 +50,8 @@ export class BlogEditorComponent implements OnInit {
       content: ['', [Validators.required]],
       publishDate: [new Date()],
       status: ['published', [Validators.required]],
-      category: ['']
+      category: [''],
+      sendEmailUpdate: [true]
     });
   }
 
@@ -70,7 +71,8 @@ export class BlogEditorComponent implements OnInit {
       content: this.initialData.content || '',
       publishDate: this.initialData.publishDate || new Date(),
       status: this.initialData.status || 'published',
-      category: this.initialData.category || ''
+      category: this.initialData.category || '',
+      sendEmailUpdate: this.initialData.sendEmailUpdate ?? true
     });
     this.tags = this.initialData.tags || [];
     this.uploadedImage = this.initialData.image || null;
@@ -147,34 +149,78 @@ export class BlogEditorComponent implements OnInit {
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
 
-    const request$ = isEdit && this.initialData?.listItemID
+    const listItemID = isEdit && this.initialData?.listItemID
+      ? this.initialData.listItemID
+      : `blog-${Date.now()}`;
+
+    const request$ = isEdit
       ? this.blogApi.updateBlogPost(
-          this.initialData.listItemID,
+          listItemID,
           formValue.title,
           formValue.content,
           formValue.summary,
           this.tags,
-          this.uploadedImage || undefined
+          this.uploadedImage || undefined,
+          formValue.publishDate,
+          formValue.status,
+          formValue.category
         )
       : this.blogApi.createBlogPost(
           formValue.title,
           formValue.content,
           formValue.summary,
           this.tags,
-          this.uploadedImage || undefined
+          this.uploadedImage || undefined,
+          listItemID,
+          formValue.publishDate,
+          formValue.status,
+          formValue.category
         );
 
     request$.subscribe({
       next: () => {
-        const action = isEdit ? 'UPDATED' : 'CREATED';
-        this.txLog.log(action, `Blog post "${formValue.title}" — status: ${formValue.status}, tags: [${this.tags.join(', ')}]`);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
-        });
-        this.isSaving = false;
-        this.saved.emit();
+        const sendEmailUpdate = !!formValue.sendEmailUpdate;
+
+        const onDone = () => {
+          const action = isEdit ? 'UPDATED' : 'CREATED';
+          this.txLog.log(action, `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, tags: [${this.tags.join(', ')}]`);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
+          });
+          this.isSaving = false;
+          this.saved.emit();
+        };
+
+        // Schedule or notify depending on status
+        if (formValue.status === 'scheduled') {
+          this.blogApi.schedulePublish(listItemID, formValue.publishDate, sendEmailUpdate, 'blog_posts').subscribe({
+            next: () => onDone(),
+            error: (err) => {
+              this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${err.message}`);
+              this.messageService.add({ severity: 'warn', summary: 'Saved', detail: 'Post saved, but scheduling failed.' });
+              this.isSaving = false;
+              this.saved.emit();
+            }
+          });
+          return;
+        }
+
+        if (formValue.status === 'published' && sendEmailUpdate) {
+          this.blogApi.sendNotificationNow(listItemID, 'blog_posts').subscribe({
+            next: () => onDone(),
+            error: (err) => {
+              this.txLog.log('NOTIFY_FAILED', `Failed to send notification for "${formValue.title}" — ${err.message}`);
+              this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but email notify failed.' });
+              this.isSaving = false;
+              this.saved.emit();
+            }
+          });
+          return;
+        }
+
+        onDone();
       },
       error: (error) => {
         this.txLog.log('SAVE_FAILED', `Failed to save "${formValue.title}" — ${error.message}`);

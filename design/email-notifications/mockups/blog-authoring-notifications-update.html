@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blog Authoring Notification Mockups</title>
+    <link rel="stylesheet" href="./shared.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div class="hero-top">
+          <span class="chip">Blog Authoring Update Mockup</span>
+          <span class="chip">Publish + Email Automation</span>
+        </div>
+        <h1>Editor + Dashboard Controls for Scheduled Sends</h1>
+        <p>
+          Keeps existing editing flow while adding clear notification controls tied to publish status and publish date.
+        </p>
+      </header>
+
+      <section class="frame-grid">
+        <article class="frame">
+          <div class="frame-label">
+            <span>N3 Editor Notification Panel</span>
+            <span>Desktop</span>
+          </div>
+          <div class="frame-body">
+            <div class="app">
+              <div class="app-head">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Blog Editor</span>
+                </div>
+                <span class="pill">Route: create/edit</span>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Current Editor (preserved)</div>
+                <div class="line w90"></div>
+                <div class="line w90"></div>
+                <div class="line w80"></div>
+                <div class="line w70"></div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">New: Publishing + Notifications</div>
+                <div class="row">
+                  <div class="stack">
+                    <span class="pill">Status: Scheduled</span>
+                    <span class="pill">Publish Date: Feb 28, 2026 08:00 AM</span>
+                    <span class="pill success">Send Email Update: Enabled</span>
+                  </div>
+                  <div class="stack">
+                    <span class="pill">Audience: Blog Subscribers</span>
+                    <span class="pill">Template: New Post Default</span>
+                    <span class="pill warn">Preheader: Optional</span>
+                  </div>
+                </div>
+                <div class="cta-row">
+                  <span class="btn">Preview Email</span>
+                  <span class="btn primary">Save + Schedule</span>
+                </div>
+                <div class="note">
+                  If status is `scheduled`, backend creates EventBridge one-time job. If `published`, backend sends immediately.
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="frame">
+          <div class="frame-label">
+            <span>N4 Dashboard Scheduled Sends Panel</span>
+            <span>Desktop</span>
+          </div>
+          <div class="frame-body">
+            <div class="app">
+              <div class="app-head">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Blog Authoring Dashboard</span>
+                </div>
+                <span class="pill success">Redis + SES Connected</span>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Publish Pipeline (existing)</div>
+                <div class="row">
+                  <span class="pill">Draft: 2</span>
+                  <span class="pill">Scheduled: 3</span>
+                </div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">New: Scheduled Sends Queue</div>
+                <div class="table-like">
+                  <div class="table-row header">
+                    <span>Post</span>
+                    <span>Run At</span>
+                    <span>Audience</span>
+                    <span>Status</span>
+                  </div>
+                  <div class="table-row">
+                    <span>Automating Everything with n8n</span>
+                    <span>Feb 20, 2026 09:00</span>
+                    <span>Blog Subscribers</span>
+                    <span class="pill">Scheduled</span>
+                  </div>
+                  <div class="table-row">
+                    <span>Building Scalable APIs with Redis</span>
+                    <span>Feb 24, 2026 08:00</span>
+                    <span>All Topics</span>
+                    <span class="pill warn">Retrying</span>
+                  </div>
+                </div>
+                <div class="cta-row">
+                  <span class="btn">Reschedule</span>
+                  <span class="btn">Cancel Send</span>
+                  <span class="btn primary">Open Delivery Metrics</span>
+                </div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Delivery Snapshot</div>
+                <div class="row">
+                  <span class="pill success">Sent: 1,294</span>
+                  <span class="pill">Open Rate: 44%</span>
+                </div>
+                <div class="row">
+                  <span class="pill">Bounced: 6</span>
+                  <span class="pill">Complaints: 0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

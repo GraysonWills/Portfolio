@@ -20,11 +20,27 @@
 
     <!-- Career Progress -->
     <section class="progress-section" *ngIf="!isLoading" appScrollReveal aria-label="Career progress">
-      <h2 class="section-title">Career Progress</h2>
-      <p-progressBar [value]="getCareerProgress()" 
-                     [showValue]="true"
-                     aria-label="Career progress indicator">
-      </p-progressBar>
+      <h2 class="section-title">Career Momentum</h2>
+      <p class="progress-intro">Snapshot of current strengths and growth tracks pulled from Redis content records.</p>
+      <div class="career-progress-total">
+        <span>Overall Profile Strength</span>
+        <strong>{{ getCareerProgress() }}%</strong>
+      </div>
+      <div class="career-metrics-grid" *ngIf="careerMetrics.length > 0">
+        <article class="career-metric-card" *ngFor="let metric of careerMetrics">
+          <div class="metric-header">
+            <h3>{{ metric.label }}</h3>
+            <span class="metric-level" [ngClass]="'tone-' + getMetricTone(metric)">{{ metric.level }}</span>
+          </div>
+          <div class="metric-bar-track" role="progressbar" [attr.aria-valuenow]="metric.value" aria-valuemin="0" aria-valuemax="100">
+            <div class="metric-bar-fill" [style.width.%]="metric.value" [ngClass]="'tone-' + getMetricTone(metric)"></div>
+          </div>
+          <div class="metric-footer">
+            <span>{{ metric.summary }}</span>
+            <strong>{{ metric.value }}%</strong>
+          </div>
+        </article>
+      </div>
     </section>
 
     <!-- Timeline Section -->
@@ -34,8 +50,32 @@
              appScrollReveal>
       <h2 class="section-title">Professional Timeline</h2>
       <p-timeline [value]="timelineEvents" [align]="timelineAlign" styleClass="custom-timeline">
+        <ng-template let-event pTemplate="opposite">
+          <div class="timeline-opposite">
+            <span class="timeline-period">{{ event.period }}</span>
+            <span class="timeline-location">{{ event.location }}</span>
+          </div>
+        </ng-template>
+        <ng-template let-event pTemplate="marker">
+          <span class="timeline-marker" [style.background]="event.markerColor"></span>
+        </ng-template>
         <ng-template let-event pTemplate="content">
-          <div class="timeline-content" [innerHTML]="event.content"></div>
+          <article class="timeline-content-card">
+            <header class="timeline-card-header">
+              <h3>{{ event.title }}</h3>
+              <span class="current-pill" *ngIf="event.isCurrent">Current</span>
+            </header>
+            <p class="timeline-company">{{ event.company }} • {{ event.location }}</p>
+            <ul class="timeline-description" *ngIf="event.description.length > 0">
+              <li *ngFor="let detail of event.description">{{ detail }}</li>
+            </ul>
+            <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
+              <h4>Key Wins</h4>
+              <ul>
+                <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
+              </ul>
+            </div>
+          </article>
         </ng-template>
       </p-timeline>
     </section>

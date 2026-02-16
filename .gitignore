@@ -133,6 +133,9 @@ coverage/
 .nyc_output/
 *.lcov
 .coveralls.yml
+.playwright-cli/
+output/
+redis-api-lambda.zip
 
 # ============================================
 # Temporary Files

@@ -1,0 +1,4 @@
+interface:
+  display_name: "UX/UI Overhaul"
+  short_description: "Redesign UI without changing functionality"
+  default_prompt: "Use $ux-ui-overhaul to create a personalized redesign mockup while preserving all existing content and behavior."

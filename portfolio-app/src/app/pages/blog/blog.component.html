@@ -6,6 +6,33 @@
       <p class="page-subtitle">Insights, tutorials, and technical articles</p>
     </section>
 
+    <!-- Subscribe -->
+    <section class="subscribe-section" appScrollReveal aria-label="Subscribe to blog updates">
+      <div class="subscribe-card">
+        <div class="subscribe-copy">
+          <h2>Stay Updated</h2>
+          <p>Get an email when new posts go live. Double opt-in, unsubscribe anytime.</p>
+        </div>
+        <div class="subscribe-form">
+          <input
+            type="email"
+            pInputText
+            [(ngModel)]="subscribeEmail"
+            (keyup.enter)="subscribe()"
+            placeholder="you@example.com"
+            class="subscribe-input"
+            aria-label="Email address" />
+          <button
+            class="subscribe-btn"
+            (click)="subscribe()"
+            [disabled]="isSubscribing"
+            [attr.aria-busy]="isSubscribing ? 'true' : 'false'">
+            {{ isSubscribing ? 'Sending...' : 'Subscribe' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Search and Controls -->
     <section class="controls-section" *ngIf="!isLoading">
       <div class="search-container">
@@ -78,7 +105,6 @@
       </div>
     </section>
 
-    <!-- NOTE: Newsletter subscription removed — handled externally via Mailchimp embed/popup -->
   </div>
 </div>
 

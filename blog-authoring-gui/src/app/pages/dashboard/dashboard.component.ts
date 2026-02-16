@@ -95,15 +95,23 @@ export class DashboardComponent implements OnInit {
           if (!groupedMap.has(listItemID)) {
             groupedMap.set(listItemID, {
               listItemID: listItemID,
-              items: [],
-              metadata: post.Metadata as any
+              items: []
             });
           }
 
           groupedMap.get(listItemID)!.items.push(post);
         });
 
-        this.blogPosts = Array.from(groupedMap.values()).sort(
+        const groups = Array.from(groupedMap.values());
+
+        // Ensure metadata is pulled from the BlogItem record (required for portfolio display).
+        groups.forEach((g) => {
+          const metaItem = g.items.find((i) => i.PageContentID === PageContentID.BlogItem && !!i.Metadata)
+            || g.items.find((i) => !!i.Metadata);
+          g.metadata = (metaItem?.Metadata as any) || undefined;
+        });
+
+        this.blogPosts = groups.sort(
           (a, b) => this.getPostDate(b).getTime() - this.getPostDate(a).getTime()
         );
       },
@@ -155,7 +163,9 @@ export class DashboardComponent implements OnInit {
           tags: metadata?.tags || [],
           publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
           status: metadata?.status || 'published',
-          category: metadata?.category || ''
+          category: metadata?.category || '',
+          scheduleName: metadata?.scheduleName || null,
+          sendEmailUpdate: metadata?.notifyEmail ?? true
         };
 
         this.isEditing = true;

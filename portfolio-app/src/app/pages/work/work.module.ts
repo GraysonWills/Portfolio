@@ -4,7 +4,14 @@ import { SharedModule } from '../../shared/shared.module';
 import { WorkComponent } from './work.component';
 
 const routes: Routes = [
-  { path: '', component: WorkComponent, data: { title: 'Work Experience' } }
+  {
+    path: '',
+    component: WorkComponent,
+    data: {
+      title: 'Work Experience',
+      description: 'Work experience of Grayson Wills across AI engineering, data science, and full-stack development.'
+    }
+  }
 ];
 
 @NgModule({

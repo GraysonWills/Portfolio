@@ -1,0 +1,5 @@
+interface:
+  display_name: "Planner Skill"
+  short_description: "Build clear, testable execution plans"
+  default_prompt: "Use $planner-skill to produce a complete plan.md for this task."
+

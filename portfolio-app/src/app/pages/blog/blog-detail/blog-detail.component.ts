@@ -1,9 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, OnDestroy, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { RedisService } from '../../../services/redis.service';
 import { RedisContent, PageContentID, ContentGroup, BlogPostMetadata, BlogBodyBlock } from '../../../models/redis-content.model';
+import { SeoService } from '../../../services/seo.service';
 import { MessageService } from 'primeng/api';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 
 @Component({
@@ -12,7 +14,9 @@ import { marked } from 'marked';
   templateUrl: './blog-detail.component.html',
   styleUrl: './blog-detail.component.scss'
 })
-export class BlogDetailComponent implements OnInit {
+export class BlogDetailComponent implements OnInit, OnDestroy {
+  private readonly destroyRef = inject(DestroyRef);
+
   // Post data
   title = '';
   summary = '';
@@ -37,17 +41,24 @@ export class BlogDetailComponent implements OnInit {
     private router: Router,
     private redisService: RedisService,
     private sanitizer: DomSanitizer,
+    private seo: SeoService,
     private messageService: MessageService
   ) {
     marked.setOptions({ breaks: true, gfm: true });
   }
 
   ngOnInit(): void {
-    this.route.params.subscribe(params => {
-      this.currentListItemId = params['id'];
-      this.loadPost(this.currentListItemId);
-      this.loadRecentPosts();
-    });
+    this.route.params
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(params => {
+        this.currentListItemId = params['id'];
+        this.loadPost(this.currentListItemId);
+        this.loadRecentPosts();
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.seo.clearStructuredData('article');
   }
 
   private loadPost(listItemId: string): void {
@@ -72,6 +83,15 @@ export class BlogDetailComponent implements OnInit {
         this.category = meta.category || 'General';
         this.publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
 
+        // Hide drafts/scheduled posts from public view.
+        const status = meta.status || 'published';
+        const publishTs = meta.publishDate ? new Date(meta.publishDate).getTime() : null;
+        if (status !== 'published' || (publishTs && publishTs > Date.now())) {
+          this.notFound = true;
+          this.isLoading = false;
+          return;
+        }
+
         this.coverImage = imgItem?.Photo || '';
         this.coverAlt = imgItem?.Metadata?.['alt'] || this.title;
 
@@ -95,6 +115,34 @@ export class BlogDetailComponent implements OnInit {
           .join(' ');
         const words = allText.trim().split(/\s+/).length;
         this.readTime = Math.max(1, Math.ceil(words / 200));
+
+        // SEO: update page title/meta + inject BlogPosting structured data.
+        const urlPath = `/blog/${listItemId}`;
+        this.seo.update({
+          title: this.title,
+          description: this.summary || `${this.title} — a blog post by Grayson Wills.`,
+          url: urlPath,
+          image: this.coverImage || undefined,
+          imageAlt: this.coverAlt || undefined,
+          type: 'article'
+        });
+
+        const canonicalUrl = `https://www.grayson-wills.com${urlPath}`;
+        const jsonLd: Record<string, unknown> = {
+          '@context': 'https://schema.org',
+          '@type': 'BlogPosting',
+          headline: this.title,
+          description: this.summary || undefined,
+          image: this.coverImage || 'https://www.grayson-wills.com/og-image.png',
+          datePublished: this.publishDate ? this.publishDate.toISOString() : undefined,
+          mainEntityOfPage: canonicalUrl,
+          author: {
+            '@type': 'Person',
+            name: 'Grayson Wills',
+            url: 'https://www.grayson-wills.com/'
+          }
+        };
+        this.seo.setStructuredData('article', jsonLd);
 
         this.isLoading = false;
       },

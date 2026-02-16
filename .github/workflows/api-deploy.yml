@@ -1,0 +1,58 @@
+name: Redis API Deploy (AWS Lambda)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - redis-api-server/**
+      - .github/workflows/api-deploy.yml
+
+env:
+  NODE_VERSION: '22.x'
+  AWS_REGION: us-east-2
+  AWS_API_DEPLOY_ROLE_ARN: arn:aws:iam::381492289909:role/GitHubActionsApiDeploy
+  LAMBDA_FUNCTION_NAME: portfolio-redis-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: redis-api-server/package-lock.json
+
+      - name: Install dependencies (prod only)
+        working-directory: redis-api-server
+        run: npm ci --omit=dev
+
+      - name: Package Lambda zip
+        run: |
+          cd redis-api-server
+          zip -r ../redis-api-lambda.zip . \
+            -x ".env" \
+            -x "node_modules/.cache/*" \
+            -x "setup.ps1" \
+            -x "README.md" \
+            -x ".gitignore"
+
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_API_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --zip-file "fileb://redis-api-lambda.zip"
+

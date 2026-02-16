@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blog Authoring UX Overhaul Mockup</title>
+    <link rel="stylesheet" href="./shared.css" />
+  </head>
+  <body>
+    <div class="mockup-shell">
+      <header class="mockup-header">
+        <div class="mockup-header-top">
+          <span class="badge">Blog Authoring UX Mockup</span>
+          <span class="badge">Drafting Speed + Clarity</span>
+        </div>
+        <h1>Draft Faster Without Changing Backend Functionality</h1>
+        <p>
+          Keeps current capabilities (login, editor, metadata, image upload, status, transaction log) but re-frames the workflow into
+          Draft → Refine → Schedule → Publish with fewer context switches.
+        </p>
+      </header>
+
+      <section class="mockup-grid">
+        <article class="artboard">
+          <div class="artboard-label">
+            <span>Frame B1: Dashboard / Post Pipeline</span>
+            <span>Desktop</span>
+          </div>
+          <div class="artboard-body">
+            <div class="app-frame">
+              <div class="frame-header">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Blog Authoring Dashboard</span>
+                </div>
+                <div class="badge">Redis Connected</div>
+              </div>
+
+              <div class="frame-section">
+                <h3 class="section-title">Quick Actions</h3>
+                <div class="cta-row">
+                  <span class="cta primary">New Post</span>
+                  <span class="cta secondary">Open Drafts</span>
+                  <span class="cta secondary">Templates</span>
+                </div>
+              </div>
+
+              <div class="frame-section">
+                <h3 class="section-title">Pipeline View</h3>
+                <div class="grid-2">
+                  <div class="workflow-lane">
+                    <div class="lane-title">Draft</div>
+                    <div class="lane-card">
+                      Prompt + hook captured
+                      <div class="lane-meta">Title, summary, initial structure</div>
+                    </div>
+                    <div class="lane-card">
+                      Long-form draft in progress
+                      <div class="lane-meta">Autosave every 30 sec</div>
+                    </div>
+                  </div>
+                  <div class="workflow-lane">
+                    <div class="lane-title">Scheduled / Published</div>
+                    <div class="lane-card">
+                      Scheduled for Friday
+                      <div class="lane-meta">Status and date controls retained</div>
+                    </div>
+                    <div class="lane-card">
+                      Published article
+                      <div class="lane-meta">Edit / delete actions retained</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="frame-section">
+                <h3 class="section-title">Existing Feature Mapping</h3>
+                <div class="note-box">
+                  Settings panel, transaction log, status badge, and post cards all remain. Layout emphasizes visibility and faster targeting.
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="artboard">
+          <div class="artboard-label">
+            <span>Frame B2: Editor (Split Workflow)</span>
+            <span>Desktop</span>
+          </div>
+          <div class="artboard-body">
+            <div class="app-frame">
+              <div class="frame-header">
+                <div class="brand">
+                  <div class="brand-mark">GW</div>
+                  <span>Create / Edit Post</span>
+                </div>
+                <div class="badge">Draft Health: Good</div>
+              </div>
+
+              <div class="frame-section hero-panel">
+                <h2 class="hero-title">Writing Session</h2>
+                <p>Left rail for structure, center for editor, right rail for metadata and publish controls.</p>
+                <div class="meta-chips">
+                  <span class="meta-chip">Shortcut: / for commands</span>
+                  <span class="meta-chip">Ctrl+S save</span>
+                  <span class="meta-chip">Read-time live</span>
+                </div>
+              </div>
+
+              <div class="frame-section">
+                <h3 class="section-title">Three-Pane Layout</h3>
+                <div class="grid-2">
+                  <div class="workflow-lane">
+                    <div class="lane-title">Structure</div>
+                    <div class="lane-card">Outline block list (Intro, Section, CTA)</div>
+                    <div class="lane-card">Template snippets (Case Study, Tutorial, Update)</div>
+                  </div>
+                  <div class="workflow-lane">
+                    <div class="lane-title">Metadata + Publish</div>
+                    <div class="lane-card">Tags, category, status, publish date</div>
+                    <div class="lane-card">Featured image + validation checks</div>
+                  </div>
+                </div>
+                <div class="editor-row" style="margin-top: 10px">
+                  <div class="thumb"></div>
+                  <div>
+                    <div class="line w85"></div>
+                    <div class="line" style="margin-top: 8px"></div>
+                    <div class="line w70" style="margin-top: 8px"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="frame-section">
+                <h3 class="section-title">Reduced Friction Improvements</h3>
+                <div class="tag-row">
+                  <span class="tag">Autosave + Recovery</span>
+                  <span class="tag">One-click Tag Suggestions</span>
+                  <span class="tag">Image Alt Prompt</span>
+                  <span class="tag">Publish Readiness Score</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+<div class="notifications-page">
+  <div class="container">
+    <section class="panel" appScrollReveal>
+      <h1 class="title">Unsubscribe</h1>
+      <p class="subtitle">Updating your email notification preferences.</p>
+
+      <div *ngIf="state === 'loading'" class="status-row">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Unsubscribing...</span>
+      </div>
+
+      <div *ngIf="state === 'success'" class="status-row success">
+        <i class="pi pi-check-circle" aria-hidden="true"></i>
+        <div>
+          <div class="status-title">Unsubscribed</div>
+          <div class="status-detail">You won’t receive further blog update emails.</div>
+        </div>
+      </div>
+
+      <div *ngIf="state === 'error'" class="status-row error">
+        <i class="pi pi-times-circle" aria-hidden="true"></i>
+        <div>
+          <div class="status-title">Couldn’t Unsubscribe</div>
+          <div class="status-detail">{{ errorMessage }}</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
