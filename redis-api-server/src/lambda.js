@@ -10,6 +10,13 @@ function isApiGatewayEvent(event) {
   return !!(event && typeof event === 'object' && event.requestContext && event.requestContext.http);
 }
 
+function isSnsEvent(event) {
+  const records = event?.Records;
+  if (!Array.isArray(records) || !records.length) return false;
+  const src = records[0]?.EventSource || records[0]?.eventSource;
+  return src === 'aws:sns';
+}
+
 async function getHttpHandler() {
   if (httpHandler) return httpHandler;
 
@@ -33,6 +40,147 @@ async function ensureRedisConnected() {
     redisConnectPromise = redisClient.connect();
   }
   await redisConnectPromise;
+}
+
+async function handleSnsEvent(rawEvent) {
+  // Lazily require AWS SDK pieces to keep cold starts small for scheduler invokes.
+  // eslint-disable-next-line global-require
+  const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+  // eslint-disable-next-line global-require
+  const { getDdbDoc } = require('./services/aws/clients');
+  // eslint-disable-next-line global-require
+  const { sha256Hex, normalizeEmail, maskEmail } = require('./utils/crypto');
+
+  const subscribersTable = process.env.SUBSCRIBERS_TABLE_NAME || 'portfolio-email-subscribers';
+  const ddb = getDdbDoc();
+
+  const nowIso = new Date().toISOString();
+  let processed = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  const records = Array.isArray(rawEvent?.Records) ? rawEvent.Records : [];
+  for (const r of records) {
+    const msgRaw = r?.Sns?.Message || r?.sns?.Message || '';
+    let msg = null;
+    try {
+      msg = JSON.parse(String(msgRaw || ''));
+    } catch {
+      skipped++;
+      continue;
+    }
+
+    const type = String(msg?.notificationType || msg?.eventType || '').toLowerCase();
+    const mailTs = msg?.mail?.timestamp || null;
+    const sesMessageId = msg?.mail?.messageId || null;
+
+    let status = null;
+    let emails = [];
+    let extra = {};
+
+    if (type === 'bounce') {
+      status = 'BOUNCED';
+      const recs = Array.isArray(msg?.bounce?.bouncedRecipients) ? msg.bounce.bouncedRecipients : [];
+      emails = recs.map(x => x?.emailAddress).filter(Boolean);
+      extra = {
+        bounceAt: msg?.bounce?.timestamp || mailTs || nowIso,
+        bounceType: msg?.bounce?.bounceType || null,
+        bounceSubType: msg?.bounce?.bounceSubType || null,
+        sesMessageId
+      };
+    } else if (type === 'complaint') {
+      status = 'COMPLAINED';
+      const recs = Array.isArray(msg?.complaint?.complainedRecipients) ? msg.complaint.complainedRecipients : [];
+      emails = recs.map(x => x?.emailAddress).filter(Boolean);
+      extra = {
+        complaintAt: msg?.complaint?.timestamp || mailTs || nowIso,
+        complaintFeedbackType: msg?.complaint?.complaintFeedbackType || null,
+        sesMessageId
+      };
+    } else {
+      // Ignore deliveries/opens/clicks/etc until we decide to store metrics.
+      skipped++;
+      continue;
+    }
+
+    for (const e of emails) {
+      processed++;
+      const normalized = normalizeEmail(e);
+      const emailHash = sha256Hex(normalized);
+
+      try {
+        const exprNames = {
+          '#status': 'status',
+          '#updatedAt': 'updatedAt',
+          '#lastSesEventAt': 'lastSesEventAt',
+          '#lastSesEventType': 'lastSesEventType',
+          '#lastSesMessageId': 'lastSesMessageId'
+        };
+        const exprValues = {
+          ':s': status,
+          ':now': nowIso,
+          ':t': status,
+          ':mid': sesMessageId
+        };
+        const sets = [
+          '#status = :s',
+          '#updatedAt = :now',
+          '#lastSesEventAt = :now',
+          '#lastSesEventType = :t',
+          '#lastSesMessageId = :mid'
+        ];
+
+        if (status === 'BOUNCED') {
+          exprNames['#bounceAt'] = 'bounceAt';
+          exprNames['#bounceType'] = 'bounceType';
+          exprNames['#bounceSubType'] = 'bounceSubType';
+          exprValues[':bounceAt'] = extra.bounceAt;
+          exprValues[':bounceType'] = extra.bounceType;
+          exprValues[':bounceSubType'] = extra.bounceSubType;
+          sets.push('#bounceAt = if_not_exists(#bounceAt, :bounceAt)');
+          sets.push('#bounceType = if_not_exists(#bounceType, :bounceType)');
+          sets.push('#bounceSubType = if_not_exists(#bounceSubType, :bounceSubType)');
+        }
+
+        if (status === 'COMPLAINED') {
+          exprNames['#complaintAt'] = 'complaintAt';
+          exprNames['#complaintFeedbackType'] = 'complaintFeedbackType';
+          exprValues[':complaintAt'] = extra.complaintAt;
+          exprValues[':complaintFeedbackType'] = extra.complaintFeedbackType;
+          sets.push('#complaintAt = if_not_exists(#complaintAt, :complaintAt)');
+          sets.push('#complaintFeedbackType = if_not_exists(#complaintFeedbackType, :complaintFeedbackType)');
+        }
+
+        await ddb.send(new UpdateCommand({
+          TableName: subscribersTable,
+          Key: { emailHash },
+          ConditionExpression: 'attribute_exists(emailHash)',
+          UpdateExpression: `SET ${sets.join(', ')}`,
+          ExpressionAttributeNames: exprNames,
+          ExpressionAttributeValues: exprValues
+        }));
+        updated++;
+      } catch (err) {
+        // If the subscriber doesn't exist in our list, ignore.
+        if (err?.name === 'ConditionalCheckFailedException') {
+          skipped++;
+          continue;
+        }
+        console.error('[sns] Failed to update subscriber:', {
+          email: maskEmail(normalized),
+          message: String(err?.message || err)
+        });
+        skipped++;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    processed,
+    updated,
+    skipped
+  };
 }
 
 async function handleInternalEvent(rawEvent) {
@@ -86,6 +234,10 @@ async function handleInternalEvent(rawEvent) {
 
 module.exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
+
+  if (isSnsEvent(event)) {
+    return await handleSnsEvent(event);
+  }
 
   if (isApiGatewayEvent(event)) {
     await ensureRedisConnected();

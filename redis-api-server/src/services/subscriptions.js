@@ -138,6 +138,14 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
       to: maskEmail(normalized),
       message: String(err?.message || err)
     });
+
+    const raw = String(err?.message || '');
+    if (/not verified/i.test(raw)) {
+      const e = new Error('Email address is not verified. SES is in sandbox; verify your recipient email in SES or request production access.');
+      e.status = 400;
+      throw e;
+    }
+
     const e = new Error('Unable to send confirmation email at this time');
     e.status = 502;
     throw e;
@@ -313,4 +321,3 @@ module.exports = {
   updatePreferences,
   getConfig,
 };
-
