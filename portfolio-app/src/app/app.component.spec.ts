@@ -1,11 +1,11 @@
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { Title } from '@angular/platform-browser';
 import { RouterTestingModule } from '@angular/router/testing';
 import { AppComponent } from './app.component';
 import { MailchimpService } from './services/mailchimp.service';
 import { RedisService } from './services/redis.service';
-import { SeoService } from './services/seo.service';
 
 class RedisServiceStub {
   setApiEndpoint(): void {}
@@ -15,8 +15,8 @@ class MailchimpServiceStub {
   loadMailchimpScript(): void {}
 }
 
-class SeoServiceStub {
-  update(): void {}
+class TitleStub {
+  setTitle(): void {}
 }
 
 describe('AppComponent', () => {
@@ -27,7 +27,7 @@ describe('AppComponent', () => {
       providers: [
         { provide: RedisService, useClass: RedisServiceStub },
         { provide: MailchimpService, useClass: MailchimpServiceStub },
-        { provide: SeoService, useClass: SeoServiceStub },
+        { provide: Title, useClass: TitleStub },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     }).compileComponents();
