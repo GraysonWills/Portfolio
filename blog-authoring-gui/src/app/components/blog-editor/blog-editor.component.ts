@@ -21,6 +21,21 @@ export class BlogEditorComponent implements OnInit {
   uploadedImage: string | null = null;
   tags: string[] = [];
   currentTag: string = '';
+  statusOptions = [
+    { label: 'Draft', value: 'draft' },
+    { label: 'Scheduled', value: 'scheduled' },
+    { label: 'Published', value: 'published' }
+  ];
+  editorModules = {
+    toolbar: [
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ header: [2, 3, false] }],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      ['blockquote', 'code-block'],
+      ['link', 'image'],
+      ['clean']
+    ]
+  };
 
   constructor(
     private fb: FormBuilder,
@@ -132,13 +147,24 @@ export class BlogEditorComponent implements OnInit {
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
 
-    this.blogApi.createBlogPost(
-      formValue.title,
-      formValue.content,
-      formValue.summary,
-      this.tags,
-      this.uploadedImage || undefined
-    ).subscribe({
+    const request$ = isEdit && this.initialData?.listItemID
+      ? this.blogApi.updateBlogPost(
+          this.initialData.listItemID,
+          formValue.title,
+          formValue.content,
+          formValue.summary,
+          this.tags,
+          this.uploadedImage || undefined
+        )
+      : this.blogApi.createBlogPost(
+          formValue.title,
+          formValue.content,
+          formValue.summary,
+          this.tags,
+          this.uploadedImage || undefined
+        );
+
+    request$.subscribe({
       next: () => {
         const action = isEdit ? 'UPDATED' : 'CREATED';
         this.txLog.log(action, `Blog post "${formValue.title}" — status: ${formValue.status}, tags: [${this.tags.join(', ')}]`);

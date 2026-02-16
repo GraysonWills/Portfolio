@@ -1,53 +1,182 @@
-/* Global Styles */
-/* PrimeNG 19 uses component-level styles - no global CSS imports needed */
-/* PrimeIcons are imported via angular.json */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
-/* Reset and Base Styles */
+:root {
+  --primary: #0b4f9f;
+  --primary-dark: #083b77;
+  --secondary: #bf5700;
+  --accent: #f18f3b;
+  --success: #2f9e6f;
+  --warning: #c08c22;
+  --danger: #b42318;
+
+  --ink-900: #0f1722;
+  --ink-700: #243244;
+  --ink-500: #4d5f74;
+  --ink-300: #73859a;
+
+  --bg-primary: #f8fafc;
+  --bg-secondary: #edf3f9;
+  --bg-tertiary: #dce4ec;
+  --bg-card: #ffffff;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --shadow-sm: 0 6px 18px rgba(15, 23, 34, 0.08);
+  --shadow-md: 0 14px 28px rgba(15, 23, 34, 0.11);
+  --shadow-lg: 0 18px 42px rgba(15, 23, 34, 0.15);
+  --shadow-hover: 0 22px 44px rgba(11, 79, 159, 0.2);
+
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+
+  --gradient-shell: linear-gradient(145deg, #0f1722 0%, #123762 58%, #0b4f9f 100%);
+  --gradient-panel: linear-gradient(132deg, #0b4f9f 0%, #2a7de1 54%, #bf5700 100%);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
+  color: var(--ink-900);
+  background:
+    radial-gradient(circle at 10% -20%, rgba(241, 143, 59, 0.2), transparent 32%),
+    radial-gradient(circle at 90% -20%, rgba(42, 125, 225, 0.18), transparent 35%),
+    var(--bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  background-color: #f8f9fa;
-  color: #333333;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  color: var(--ink-900);
 }
 
-/* Accessibility */
 a {
   color: inherit;
   text-decoration: none;
 }
 
-button {
+button,
+input,
+textarea,
+select {
   font-family: inherit;
 }
 
-/* Scrollbar Styling */
+:focus-visible {
+  outline: 3px solid rgba(11, 79, 159, 0.42);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 5px;
+  background: linear-gradient(180deg, #2a7de1, #0b4f9f);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: linear-gradient(180deg, #1d66c1, #083b77);
+}
+
+.p-card {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  border: 1px solid rgba(11, 79, 159, 0.1) !important;
+  overflow: hidden;
+}
+
+.pi {
+  line-height: 1;
+}
+
+.p-button {
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.p-button.p-button-primary {
+  background: var(--gradient-panel) !important;
+  border-color: transparent !important;
+}
+
+.p-button.p-button-outlined {
+  border-color: rgba(11, 79, 159, 0.28) !important;
+  color: var(--primary) !important;
+}
+
+.p-inputtext,
+.p-dropdown,
+.p-calendar .p-inputtext {
+  border-radius: var(--radius-sm) !important;
+  border-color: rgba(11, 79, 159, 0.2) !important;
+  min-height: 42px;
+}
+
+.p-inputtext:enabled:focus,
+.p-dropdown:not(.p-disabled).p-focus,
+.p-calendar .p-inputtext:enabled:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 4px rgba(11, 79, 159, 0.13) !important;
+}
+
+.p-tag {
+  border-radius: 999px !important;
+}
+
+.p-dropdown-panel,
+.p-datepicker,
+.p-confirm-dialog,
+.p-dialog {
+  background: #ffffff !important;
+}
+
+.p-dropdown-panel .p-dropdown-items {
+  padding: 0.35rem !important;
+}
+
+.p-dropdown-panel .p-dropdown-item {
+  border-radius: 8px !important;
+  padding: 0.6rem 0.65rem !important;
+}
+
+.p-dropdown-panel .p-dropdown-item:hover {
+  background: rgba(11, 79, 159, 0.08) !important;
+}
+
+.p-card .p-card-body {
+  padding: 1.2rem !important;
+}
+
+.p-toast {
+  z-index: 10001 !important;
 }

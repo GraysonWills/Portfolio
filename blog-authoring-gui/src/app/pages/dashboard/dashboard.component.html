@@ -1,7 +1,10 @@
 <div class="dashboard-container">
   <!-- Header -->
   <div class="dashboard-header">
-    <h1>Blog Authoring Dashboard</h1>
+    <div class="header-title">
+      <h1>Blog Authoring Studio</h1>
+      <p>Draft → refine → schedule → publish</p>
+    </div>
     <div class="header-actions">
       <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
         <i [ngClass]="getConnectionStatusIcon()"></i>
@@ -12,6 +15,12 @@
         icon="pi pi-plus"
         (onClick)="createNewPost()"
         styleClass="p-button-primary">
+      </p-button>
+      <p-button
+        label="Site Content"
+        icon="pi pi-sliders-h"
+        (onClick)="goToContentStudio()"
+        styleClass="p-button-outlined">
       </p-button>
       <p-button 
         icon="pi pi-cog"
@@ -95,12 +104,34 @@
 
   <!-- Blog Posts List -->
   <div class="posts-container" *ngIf="!showEditor">
+    <div class="pipeline-strip" *ngIf="blogPosts.length > 0">
+      <div class="pipeline-item draft">
+        <span class="pipeline-label">Draft</span>
+        <span class="pipeline-count">{{ getPostCountByStatus('draft') }}</span>
+      </div>
+      <div class="pipeline-item scheduled">
+        <span class="pipeline-label">Scheduled</span>
+        <span class="pipeline-count">{{ getPostCountByStatus('scheduled') }}</span>
+      </div>
+      <div class="pipeline-item published">
+        <span class="pipeline-label">Published</span>
+        <span class="pipeline-count">{{ getPostCountByStatus('published') }}</span>
+      </div>
+      <div class="pipeline-item total">
+        <span class="pipeline-label">Total</span>
+        <span class="pipeline-count">{{ blogPosts.length }}</span>
+      </div>
+    </div>
+
     <div *ngIf="blogPosts.length === 0" class="no-posts">
       <p>No blog posts found. Create your first post!</p>
     </div>
 
     <div class="posts-grid" *ngIf="blogPosts.length > 0">
       <p-card *ngFor="let post of blogPosts" class="post-card">
+        <div class="post-media" *ngIf="getPostImage(post) as imageUrl">
+          <img [src]="imageUrl" [alt]="getPostTitle(post) + ' cover image'" loading="lazy">
+        </div>
         <div class="post-content">
           <div class="post-header">
             <h3>{{ getPostTitle(post) }}</h3>

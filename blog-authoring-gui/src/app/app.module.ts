@@ -1,7 +1,7 @@
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { HttpClientModule } from '@angular/common/http';
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 
@@ -20,13 +20,18 @@ import { MessageService, ConfirmationService } from 'primeng/api';
 import { EditorModule } from 'primeng/editor';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
+import { providePrimeNG } from 'primeng/config';
+import Aura from '@primeuix/themes/aura';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { BlogEditorComponent } from './components/blog-editor/blog-editor.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { LoginComponent } from './components/login/login.component';
+import { ForgotPasswordComponent } from './components/forgot-password/forgot-password.component';
 import { ImageUploaderComponent } from './components/image-uploader/image-uploader.component';
+import { ContentStudioComponent } from './pages/content-studio/content-studio.component';
+import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 @NgModule({
   declarations: [
@@ -34,7 +39,9 @@ import { ImageUploaderComponent } from './components/image-uploader/image-upload
     BlogEditorComponent,
     DashboardComponent,
     LoginComponent,
-    ImageUploaderComponent
+    ForgotPasswordComponent,
+    ImageUploaderComponent,
+    ContentStudioComponent
   ],
   imports: [
     BrowserModule,
@@ -59,7 +66,24 @@ import { ImageUploaderComponent } from './components/image-uploader/image-upload
     ConfirmDialogModule,
     TooltipModule
   ],
-  providers: [MessageService, ConfirmationService],
+  providers: [
+    MessageService,
+    ConfirmationService,
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: AuthInterceptor,
+      multi: true
+    },
+    providePrimeNG({
+      ripple: true,
+      theme: {
+        preset: Aura,
+        options: {
+          darkModeSelector: false
+        }
+      }
+    })
+  ],
   bootstrap: [AppComponent]
 })
 export class AppModule { }

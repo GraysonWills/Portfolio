@@ -1,0 +1,286 @@
+<div class="studio-container">
+  <!-- Header -->
+  <div class="studio-header">
+    <div class="header-title">
+      <h1>Portfolio Content Studio</h1>
+      <p>Edit every Redis-backed page section (header, landing, work, projects, blog)</p>
+    </div>
+    <div class="header-actions">
+      <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
+        <i [ngClass]="getConnectionStatusIcon()"></i>
+        {{ connectionStatus === 'connected' ? 'Redis Connected' : connectionStatus === 'testing' ? 'Testing...' : 'Disconnected' }}
+      </span>
+      <p-button
+        label="Blog Posts"
+        icon="pi pi-book"
+        (onClick)="goToDashboard()"
+        styleClass="p-button-outlined">
+      </p-button>
+      <p-button
+        label="New Item"
+        icon="pi pi-plus"
+        (onClick)="newItem()"
+        styleClass="p-button-primary">
+      </p-button>
+      <p-button
+        icon="pi pi-refresh"
+        (onClick)="refresh()"
+        styleClass="p-button-outlined p-button-rounded"
+        pTooltip="Refresh">
+      </p-button>
+      <p-button
+        icon="pi pi-cog"
+        (onClick)="toggleSettings()"
+        styleClass="p-button-outlined p-button-rounded"
+        pTooltip="Settings">
+      </p-button>
+      <p-button
+        icon="pi pi-list"
+        (onClick)="routerRef.navigate(['/dashboard'])"
+        styleClass="p-button-outlined p-button-rounded"
+        pTooltip="Transaction Log"
+        [badge]="txLog.getEntries().length > 0 ? txLog.getEntries().length.toString() : ''">
+      </p-button>
+      <p-button
+        label="Logout"
+        icon="pi pi-sign-out"
+        (onClick)="logout()"
+        styleClass="p-button-outlined">
+      </p-button>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <p-card *ngIf="showSettings" class="settings-panel">
+    <div class="settings-header">
+      <h3>Redis Connection Settings</h3>
+    </div>
+    <div class="settings-body">
+      <div class="form-group">
+        <label for="endpoint">Redis API Endpoint</label>
+        <div class="endpoint-input">
+          <input
+            type="text"
+            id="endpoint"
+            [(ngModel)]="redisEndpoint"
+            pInputText
+            placeholder="http://localhost:3000/api"
+            class="full-width">
+          <p-button
+            label="Save & Test"
+            icon="pi pi-check"
+            (onClick)="saveEndpoint()"
+            styleClass="p-button-sm">
+          </p-button>
+        </div>
+        <small class="help-text">
+          Tip: This is persisted in localStorage so you can point at a remote Redis API server and keep it across reloads.
+        </small>
+      </div>
+    </div>
+  </p-card>
+
+  <!-- Filters -->
+  <section class="filters-panel">
+    <div class="filters-row">
+      <div class="filter">
+        <label>Page</label>
+        <p-dropdown
+          [options]="pageOptions"
+          [(ngModel)]="selectedPageId"
+          (onChange)="loadContent()"
+          optionLabel="label"
+          optionValue="value"
+          appendTo="body">
+        </p-dropdown>
+      </div>
+      <div class="filter">
+        <label>Content Type</label>
+        <p-dropdown
+          [options]="contentOptions"
+          [(ngModel)]="selectedContentId"
+          (onChange)="onFilterChanged()"
+          optionLabel="label"
+          optionValue="value"
+          appendTo="body">
+        </p-dropdown>
+      </div>
+      <div class="filter search">
+        <label>Search</label>
+        <span class="search-wrap">
+          <input
+            type="text"
+            [(ngModel)]="searchQuery"
+            (input)="onFilterChanged()"
+            pInputText
+            placeholder="ID, ListItemID, text, metadata…">
+          <i class="pi pi-search"></i>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Content -->
+  <section class="content-panel">
+    <div class="loading" *ngIf="isLoading">
+      <i class="pi pi-spin pi-spinner"></i> Loading content…
+    </div>
+
+    <div class="content-grid" *ngIf="!isLoading">
+      <p-card *ngFor="let item of filteredContent" class="content-card">
+        <div class="card-header">
+          <div class="card-id">
+            <h3>{{ item.ID }}</h3>
+            <p class="card-meta">{{ getPageLabel(item.PageID) }} • {{ getContentLabel(item.PageContentID) }}</p>
+            <p class="card-list" *ngIf="item.ListItemID">ListItemID: <code>{{ item.ListItemID }}</code></p>
+          </div>
+          <div class="card-actions">
+            <p-button
+              icon="pi pi-pencil"
+              (onClick)="editItem(item)"
+              styleClass="p-button-text p-button-rounded"
+              pTooltip="Edit">
+            </p-button>
+            <p-button
+              icon="pi pi-copy"
+              (onClick)="duplicateItem(item)"
+              styleClass="p-button-text p-button-rounded"
+              pTooltip="Duplicate">
+            </p-button>
+            <p-button
+              icon="pi pi-trash"
+              (onClick)="deleteItem(item)"
+              styleClass="p-button-text p-button-rounded p-button-danger"
+              pTooltip="Delete">
+            </p-button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="photo-preview" *ngIf="item.Photo">
+            <img [src]="item.Photo" [alt]="item.ID + ' image'" loading="lazy">
+          </div>
+          <p class="text-preview" *ngIf="item.Text">{{ getTextPreview(item.Text) }}</p>
+          <p class="meta-preview" *ngIf="item.Metadata">
+            <span class="meta-pill">Metadata</span>
+            <code>{{ (item.Metadata | json) }}</code>
+          </p>
+        </div>
+      </p-card>
+
+      <div class="empty" *ngIf="filteredContent.length === 0">
+        No content items match your filters.
+      </div>
+    </div>
+  </section>
+
+  <!-- Editor Dialog -->
+  <p-dialog
+    header="{{ draft?.isNew ? 'Create Content Item' : 'Edit Content Item' }}"
+    [(visible)]="editorOpen"
+    [modal]="true"
+    [dismissableMask]="true"
+    [style]="{ width: 'min(980px, 95vw)' }"
+    (onHide)="closeEditor()">
+
+    <div class="editor-grid" *ngIf="draft as d">
+      <div class="editor-col">
+        <div class="form-group">
+          <label>ID</label>
+          <input pInputText [(ngModel)]="d.ID" [readonly]="!d.isNew" placeholder="Leave blank to auto-generate">
+          <small class="help-text" *ngIf="d.isNew">If you want stable IDs (recommended), set one like <code>landing-text-summary</code>.</small>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>PageID</label>
+            <p-dropdown
+              [options]="pageOptionsEditable"
+              [(ngModel)]="d.PageID"
+              optionLabel="label"
+              optionValue="value"
+              appendTo="body">
+            </p-dropdown>
+          </div>
+
+          <div class="form-group">
+            <label>PageContentID</label>
+            <p-dropdown
+              [options]="contentOptionsEditable"
+              [(ngModel)]="d.PageContentID"
+              optionLabel="label"
+              optionValue="value"
+              appendTo="body">
+            </p-dropdown>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>ListItemID</label>
+          <input pInputText [(ngModel)]="d.ListItemID" placeholder="Optional grouping key (e.g., experience-0, category-web)">
+        </div>
+
+        <div class="form-group">
+          <label>Photo</label>
+          <input pInputText [(ngModel)]="d.Photo" placeholder="Image URL or data URL (base64)">
+          <app-image-uploader
+            [currentImage]="d.Photo || null"
+            (imageUploaded)="onDraftImageUploaded($event)">
+          </app-image-uploader>
+        </div>
+      </div>
+
+      <div class="editor-col">
+        <div class="form-group">
+          <label>Text</label>
+          <textarea class="p-inputtext editor-textarea" [(ngModel)]="d.Text" rows="10" placeholder="Text content (string). Many records store JSON here."></textarea>
+          <div class="inline-actions">
+            <p-button
+              label="Format JSON"
+              icon="pi pi-code"
+              (onClick)="formatTextJson()"
+              styleClass="p-button-sm p-button-outlined">
+            </p-button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Metadata (JSON)</label>
+          <textarea class="p-inputtext editor-textarea" [(ngModel)]="d.metadataJson" rows="10" placeholder="{ }"></textarea>
+          <div class="inline-actions">
+            <p-button
+              label="Format JSON"
+              icon="pi pi-code"
+              (onClick)="formatMetadataJson()"
+              styleClass="p-button-sm p-button-outlined">
+            </p-button>
+          </div>
+        </div>
+
+        <div class="timestamps" *ngIf="!d.isNew">
+          <small>CreatedAt: <code>{{ d.CreatedAt || 'n/a' }}</code></small>
+          <small>UpdatedAt: <code>{{ d.UpdatedAt || 'n/a' }}</code></small>
+        </div>
+      </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+      <p-button
+        label="Cancel"
+        icon="pi pi-times"
+        (onClick)="closeEditor()"
+        styleClass="p-button-outlined">
+      </p-button>
+      <p-button
+        label="Save"
+        icon="pi pi-save"
+        (onClick)="saveDraft()"
+        [loading]="editorSaving"
+        styleClass="p-button-primary">
+      </p-button>
+    </ng-template>
+  </p-dialog>
+
+  <p-toast></p-toast>
+  <p-confirmDialog></p-confirmDialog>
+</div>

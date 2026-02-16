@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, throwError, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { RedisContent, PageID, PageContentID, BlogPostMetadata } from '../models/redis-content.model';
 
@@ -9,6 +9,8 @@ import { RedisContent, PageID, PageContentID, BlogPostMetadata } from '../models
   providedIn: 'root'
 })
 export class BlogApiService {
+  private readonly ENDPOINT_STORAGE_KEY = 'portfolio_redis_api_endpoint';
+  private readonly PROD_DEFAULT_API = 'https://api.grayson-wills.com/api';
   private apiUrl: string = environment.redisApiUrl;
   private headers: HttpHeaders;
 
@@ -16,13 +18,42 @@ export class BlogApiService {
     this.headers = new HttpHeaders({
       'Content-Type': 'application/json'
     });
+
+    const normalizedDefault = this.normalizeUrl(environment.redisApiUrl);
+    this.apiUrl = normalizedDefault || (environment.production ? this.PROD_DEFAULT_API : '');
+
+    // Persist endpoint across reloads so you can point at remote Redis API servers.
+    try {
+      const stored = localStorage.getItem(this.ENDPOINT_STORAGE_KEY);
+      if (stored && stored.trim()) {
+        const normalizedStored = this.normalizeUrl(stored);
+
+        // Ignore stale local endpoints in production (common after local dev).
+        if (environment.production && this.isLocalhostUrl(normalizedStored)) {
+          localStorage.removeItem(this.ENDPOINT_STORAGE_KEY);
+        } else if (normalizedStored) {
+          this.apiUrl = normalizedStored;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!this.apiUrl && environment.production) {
+      this.apiUrl = this.PROD_DEFAULT_API;
+    }
   }
 
   /**
    * Set Redis API endpoint
    */
   setApiEndpoint(url: string): void {
-    this.apiUrl = url;
+    this.apiUrl = this.normalizeUrl(url);
+    try {
+      localStorage.setItem(this.ENDPOINT_STORAGE_KEY, this.apiUrl);
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -30,6 +61,56 @@ export class BlogApiService {
    */
   getApiEndpoint(): string {
     return this.apiUrl;
+  }
+
+  /**
+   * ──────────────────────────────────────────────────────────────
+   * Generic Content CRUD (Portfolio Content Studio)
+   * ──────────────────────────────────────────────────────────────
+   */
+
+  getAllContent(): Observable<RedisContent[]> {
+    return this.http.get<RedisContent[]>(
+      `${this.apiUrl}/content`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getContentByPage(pageId: number): Observable<RedisContent[]> {
+    return this.http.get<RedisContent[]>(
+      `${this.apiUrl}/content/page/${pageId}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getContentById(id: string): Observable<RedisContent> {
+    return this.http.get<RedisContent>(
+      `${this.apiUrl}/content/${id}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  createContent(content: Partial<RedisContent>): Observable<RedisContent> {
+    return this.http.post<RedisContent>(
+      `${this.apiUrl}/content`,
+      content,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  updateContent(id: string, patch: Partial<RedisContent>): Observable<RedisContent> {
+    return this.http.put<RedisContent>(
+      `${this.apiUrl}/content/${id}`,
+      patch,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  deleteContent(id: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.apiUrl}/content/${id}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
   }
 
   /**
@@ -93,11 +174,83 @@ export class BlogApiService {
     tags: string[],
     image?: string
   ): Observable<RedisContent[]> {
-    // First, get existing post
-    return this.getBlogPost(listItemID).pipe(
-      // Then update it
-      catchError(this.handleError)
-    );
+    const metadata: BlogPostMetadata = {
+      title,
+      summary,
+      tags,
+      publishDate: new Date(),
+      status: 'published'
+    };
+
+    return new Observable<RedisContent[]>((observer) => {
+      this.getBlogPost(listItemID).subscribe({
+        next: (items) => {
+          const writes: Array<Observable<any>> = [];
+
+          const blogText = items.find((item) => item.PageContentID === PageContentID.BlogText);
+          const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
+          const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
+
+          // Update blog text (always)
+          if (blogText?.ID) {
+            writes.push(this.updateContent(blogText.ID, { Text: content, Metadata: metadata as any }));
+          }
+
+          // Update blog metadata record (if present)
+          if (blogItem?.ID) {
+            writes.push(this.updateContent(blogItem.ID, { Metadata: metadata as any }));
+          }
+
+          // Update/remove/create image record
+          if (image && image.trim()) {
+            if (blogImage?.ID) {
+              writes.push(this.updateContent(blogImage.ID, { Photo: image }));
+            } else {
+              writes.push(this.createContent({
+                Photo: image,
+                PageID: PageID.Blog,
+                PageContentID: PageContentID.BlogImage,
+                ListItemID: listItemID
+              } as any));
+            }
+          } else if (blogImage?.ID) {
+            writes.push(this.deleteContent(blogImage.ID));
+          }
+
+          if (writes.length === 0) {
+            observer.next(items);
+            observer.complete();
+            return;
+          }
+
+          // Execute writes sequentially to keep behavior predictable
+          let completed = 0;
+          const results: any[] = [];
+          writes.forEach((op) => {
+            op.subscribe({
+              next: (res) => { results.push(res); },
+              error: (err) => {
+                observer.error(err);
+              },
+              complete: () => {
+                completed++;
+                if (completed === writes.length) {
+                  // Return refreshed post group
+                  this.getBlogPost(listItemID).subscribe({
+                    next: (refreshed) => {
+                      observer.next(refreshed);
+                      observer.complete();
+                    },
+                    error: (err) => observer.error(err)
+                  });
+                }
+              }
+            });
+          });
+        },
+        error: (err) => observer.error(err)
+      });
+    }).pipe(catchError(this.handleError));
   }
 
   /**
@@ -147,13 +300,12 @@ export class BlogApiService {
       `${this.apiUrl}/upload/image`,
       formData
     ).pipe(
-      catchError(this.handleError),
-      // Map response to URL string
-      catchError(() => {
-        // If upload endpoint doesn't exist, convert to base64
+      map((res) => res.url),
+      catchError((err) => {
+        console.warn('Image upload failed; falling back to base64:', err);
         return this.convertToBase64(file);
       })
-    ) as Observable<string>;
+    );
   }
 
   /**
@@ -205,5 +357,13 @@ export class BlogApiService {
 
     console.error('Blog API Service Error:', errorMessage);
     return throwError(() => new Error(errorMessage));
+  }
+
+  private normalizeUrl(url: string): string {
+    return (url || '').trim().replace(/\/+$/, '');
+  }
+
+  private isLocalhostUrl(url: string): boolean {
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
   }
 }

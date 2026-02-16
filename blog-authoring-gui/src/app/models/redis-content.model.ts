@@ -23,7 +23,9 @@ export enum PageContentID {
   ProjectsCategoryPhoto = 9,
   ProjectsCategoryText = 10,
   ProjectsPhoto = 11,
-  ProjectsText = 12
+  ProjectsText = 12,
+  BlogBody = 13,
+  WorkSkillMetric = 14
 }
 
 export interface RedisContent {

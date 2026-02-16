@@ -4,7 +4,7 @@ import { AuthService } from '../../services/auth.service';
 import { BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
-import { RedisContent, ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
+import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID } from '../../models/redis-content.model';
 
 @Component({
   selector: 'app-dashboard',
@@ -103,7 +103,9 @@ export class DashboardComponent implements OnInit {
           groupedMap.get(listItemID)!.items.push(post);
         });
 
-        this.blogPosts = Array.from(groupedMap.values());
+        this.blogPosts = Array.from(groupedMap.values()).sort(
+          (a, b) => this.getPostDate(b).getTime() - this.getPostDate(a).getTime()
+        );
       },
       error: (error) => {
         console.error('Error loading blog posts:', error);
@@ -123,6 +125,10 @@ export class DashboardComponent implements OnInit {
     this.selectedPost = null;
     this.isEditing = false;
     this.showEditor = true;
+  }
+
+  goToContentStudio(): void {
+    this.router.navigate(['/content']);
   }
 
   /**
@@ -271,6 +277,13 @@ export class DashboardComponent implements OnInit {
     return textItem?.Text?.substring(0, 150) || 'No summary available';
   }
 
+  getPostImage(post: ContentGroup): string | null {
+    const imageItem = post.items.find(
+      (item) => item.PageContentID === PageContentID.BlogImage && !!item.Photo
+    ) || post.items.find((item) => !!item.Photo);
+    return imageItem?.Photo || null;
+  }
+
   getPostStatus(post: ContentGroup): string {
     const metadata = post.metadata as BlogPostMetadata;
     return metadata?.status || 'published';
@@ -317,5 +330,9 @@ export class DashboardComponent implements OnInit {
       case 'testing': return 'status-testing';
       default: return 'status-disconnected';
     }
+  }
+
+  getPostCountByStatus(status: string): number {
+    return this.blogPosts.filter((post) => this.getPostStatus(post) === status).length;
   }
 }
