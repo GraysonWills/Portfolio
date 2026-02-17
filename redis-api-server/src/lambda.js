@@ -45,14 +45,20 @@ async function ensureRedisConnected() {
 async function handleSnsEvent(rawEvent) {
   // Lazily require AWS SDK pieces to keep cold starts small for scheduler invokes.
   // eslint-disable-next-line global-require
-  const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+  const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
   // eslint-disable-next-line global-require
-  const { getDdbDoc } = require('./services/aws/clients');
+  const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
   // eslint-disable-next-line global-require
   const { sha256Hex, normalizeEmail, maskEmail } = require('./utils/crypto');
 
   const subscribersTable = process.env.SUBSCRIBERS_TABLE_NAME || 'portfolio-email-subscribers';
-  const ddb = getDdbDoc();
+  const ddbRegion = process.env.DDB_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-2';
+  const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: ddbRegion }), {
+    marshallOptions: {
+      removeUndefinedValues: true,
+      convertClassInstanceToMap: true
+    }
+  });
 
   const nowIso = new Date().toISOString();
   let processed = 0;

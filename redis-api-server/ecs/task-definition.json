@@ -44,6 +44,7 @@
         { "name": "SUBSCRIBERS_TABLE_NAME", "value": "portfolio-email-subscribers" },
         { "name": "TOKENS_TABLE_NAME", "value": "portfolio-email-tokens" },
         { "name": "SES_FROM_EMAIL", "value": "no-reply@grayson-wills.com" },
+        { "name": "SES_REGION", "value": "us-east-1" },
         { "name": "EMAIL_NOTIFICATIONS_ENABLED", "value": "true" },
 
         { "name": "SCHEDULER_GROUP_NAME", "value": "portfolio-email" },

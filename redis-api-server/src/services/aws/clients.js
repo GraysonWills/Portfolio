@@ -13,6 +13,11 @@ function getAwsRegion() {
   return process.env.AWS_REGION || process.env.S3_UPLOAD_REGION || 'us-east-2';
 }
 
+function getSesRegion() {
+  // SES production access is regional; keep this override separate from the app region.
+  return process.env.SES_REGION || getAwsRegion();
+}
+
 let ddbDoc = null;
 function getDdbDoc() {
   if (ddbDoc) return ddbDoc;
@@ -31,7 +36,7 @@ function getDdbDoc() {
 let ses = null;
 function getSes() {
   if (ses) return ses;
-  ses = new SESv2Client({ region: getAwsRegion() });
+  ses = new SESv2Client({ region: getSesRegion() });
   return ses;
 }
 
@@ -44,8 +49,8 @@ function getScheduler() {
 
 module.exports = {
   getAwsRegion,
+  getSesRegion,
   getDdbDoc,
   getSes,
   getScheduler,
 };
-
