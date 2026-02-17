@@ -18,11 +18,16 @@ function getSesRegion() {
   return process.env.SES_REGION || getAwsRegion();
 }
 
+function getDdbRegion() {
+  // DynamoDB is regional; allow explicit override to avoid coupling to app region.
+  return process.env.DDB_REGION || getAwsRegion();
+}
+
 let ddbDoc = null;
 function getDdbDoc() {
   if (ddbDoc) return ddbDoc;
 
-  const client = new DynamoDBClient({ region: getAwsRegion() });
+  const client = new DynamoDBClient({ region: getDdbRegion() });
   ddbDoc = DynamoDBDocumentClient.from(client, {
     marshallOptions: {
       // Keep behavior predictable and avoid writing empty/null attributes.
@@ -50,6 +55,7 @@ function getScheduler() {
 module.exports = {
   getAwsRegion,
   getSesRegion,
+  getDdbRegion,
   getDdbDoc,
   getSes,
   getScheduler,
