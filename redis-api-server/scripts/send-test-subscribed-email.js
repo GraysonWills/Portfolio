@@ -78,7 +78,7 @@ async function main() {
       FilterExpression: '#status = :s AND attribute_exists(#email)',
       ExpressionAttributeNames: { '#status': 'status', '#email': 'email' },
       ExpressionAttributeValues: { ':s': 'SUBSCRIBED' },
-      ProjectionExpression: 'emailHash, email, status'
+      ProjectionExpression: 'emailHash, #email, #status'
     }));
 
     if (Array.isArray(res?.Items)) recipients.push(...res.Items);
@@ -163,4 +163,3 @@ main().catch((err) => {
   console.error(`[test-subscribed] ERROR: ${err?.stack || err?.message || String(err)}`);
   process.exitCode = 1;
 });
-

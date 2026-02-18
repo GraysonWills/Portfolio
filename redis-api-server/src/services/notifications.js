@@ -231,7 +231,7 @@ async function listSubscribedRecipients({ topic = 'blog_posts' } = {}) {
         ':s': 'SUBSCRIBED',
         ':t': topic
       },
-      ProjectionExpression: 'emailHash, email, topics, status'
+      ProjectionExpression: 'emailHash, email, topics, #status'
     }));
 
     if (Array.isArray(res?.Items)) out.push(...res.Items);
