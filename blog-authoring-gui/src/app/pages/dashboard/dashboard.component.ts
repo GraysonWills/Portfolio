@@ -1,10 +1,11 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { BlogApiService } from '../../services/blog-api.service';
+import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID } from '../../models/redis-content.model';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-dashboard',
@@ -22,8 +23,11 @@ export class DashboardComponent implements OnInit {
   isConnecting: boolean = false;
 
   // Settings
-  redisEndpoint: string = '';
+  apiEndpoint: string = '';
   connectionStatus: 'connected' | 'disconnected' | 'testing' = 'disconnected';
+  apiHealth: ApiHealth | null = null;
+  appOrigin: string = '';
+  readonly isProd = environment.production;
 
   constructor(
     private authService: AuthService,
@@ -39,35 +43,49 @@ export class DashboardComponent implements OnInit {
       this.router.navigate(['/login']);
       return;
     }
-    this.redisEndpoint = this.blogApi.getApiEndpoint();
+    this.apiEndpoint = this.blogApi.getApiEndpoint();
+    this.appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     this.testConnection();
     this.loadBlogPosts();
   }
 
   /**
-   * Test Redis connection
+   * Test API connection (and surface backend store info).
    */
   testConnection(): void {
     this.isConnecting = true;
     this.connectionStatus = 'testing';
-    this.blogApi.testConnection().subscribe({
-      next: (connected) => {
+    this.blogApi.getHealth().subscribe({
+      next: (health) => {
         this.isConnecting = false;
-        if (connected) {
-          this.connectionStatus = 'connected';
+        this.apiHealth = health;
+
+        const ok = health?.status !== 'unhealthy';
+        this.connectionStatus = ok ? 'connected' : 'disconnected';
+
+        if (ok && health.status === 'degraded') {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Connected (Degraded)',
+            detail: `API reachable, but backend is degraded (${health.contentBackend || 'unknown'}).`
+          });
+          return;
+        }
+
+        if (ok) {
           this.messageService.add({
             severity: 'success',
             summary: 'Connected',
-            detail: 'Successfully connected to Redis'
+            detail: `Connected to API (${health.contentBackend || 'unknown'}).`
           });
-        } else {
-          this.connectionStatus = 'disconnected';
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Connection Warning',
-            detail: 'Could not verify Redis connection'
-          });
+          return;
         }
+
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Connection Failed',
+          detail: 'API is reporting unhealthy.'
+        });
       },
       error: () => {
         this.isConnecting = false;
@@ -75,7 +93,7 @@ export class DashboardComponent implements OnInit {
         this.messageService.add({
           severity: 'warn',
           summary: 'Connection Warning',
-          detail: 'Redis connection endpoint may need configuration'
+          detail: 'API endpoint may need configuration'
         });
       }
     });
@@ -241,13 +259,13 @@ export class DashboardComponent implements OnInit {
    * Save Redis endpoint setting
    */
   saveEndpoint(): void {
-    if (this.redisEndpoint.trim()) {
-      this.blogApi.setApiEndpoint(this.redisEndpoint.trim());
-      this.txLog.log('CONFIG', `Redis endpoint changed to: ${this.redisEndpoint.trim()}`);
+    if (this.apiEndpoint.trim()) {
+      this.blogApi.setApiEndpoint(this.apiEndpoint.trim());
+      this.txLog.log('CONFIG', `API endpoint changed to: ${this.apiEndpoint.trim()}`);
       this.messageService.add({
         severity: 'info',
         summary: 'Endpoint Updated',
-        detail: 'Redis API endpoint has been updated'
+        detail: 'API endpoint has been updated'
       });
       this.testConnection();
     }

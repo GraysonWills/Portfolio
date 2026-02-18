@@ -8,7 +8,13 @@
     <div class="header-actions">
       <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
         <i [ngClass]="getConnectionStatusIcon()"></i>
-        {{ connectionStatus === 'connected' ? 'Redis Connected' : connectionStatus === 'testing' ? 'Testing...' : 'Disconnected' }}
+        {{
+          connectionStatus === 'connected'
+            ? ('API Connected' + (apiHealth?.contentBackend ? ' (' + apiHealth?.contentBackend + ')' : ''))
+            : connectionStatus === 'testing'
+              ? 'Testing...'
+              : 'Disconnected'
+        }}
       </span>
       <p-button 
         label="Create New Post" 
@@ -47,28 +53,35 @@
   <!-- Settings Panel -->
   <p-card *ngIf="showSettings" class="settings-panel">
     <div class="settings-header">
-      <h3>Redis Connection Settings</h3>
+      <h3>API Connection Settings</h3>
     </div>
     <div class="settings-body">
       <div class="form-group">
-        <label for="endpoint">Redis API Endpoint</label>
+        <label for="endpoint">API Endpoint</label>
         <div class="endpoint-input">
           <input 
             type="text" 
             id="endpoint" 
-            [(ngModel)]="redisEndpoint"
+            [(ngModel)]="apiEndpoint"
             pInputText
             placeholder="http://localhost:3000/api"
-            class="full-width">
+            class="full-width"
+            [disabled]="isProd">
           <p-button 
             label="Save & Test" 
             icon="pi pi-check"
             (onClick)="saveEndpoint()"
-            styleClass="p-button-sm">
+            styleClass="p-button-sm"
+            *ngIf="!isProd">
           </p-button>
         </div>
         <small class="help-text">
-          The URL of your Redis API server (e.g., http://localhost:3000/api)
+          App: <code>{{ appOrigin }}</code>
+          <span *ngIf="apiHealth?.contentBackend"> • Content store: <code>{{ apiHealth?.contentBackend }}</code></span>
+          <span *ngIf="apiHealth?.version"> • API v<code>{{ apiHealth?.version }}</code></span>
+        </small>
+        <small class="help-text" *ngIf="isProd">
+          Endpoint is locked in production builds.
         </small>
       </div>
     </div>
@@ -99,7 +112,7 @@
 
   <!-- Connection Status -->
   <div class="connection-status" *ngIf="isConnecting">
-    <i class="pi pi-spin pi-spinner"></i> Testing Redis connection...
+    <i class="pi pi-spin pi-spinner"></i> Testing API connection...
   </div>
 
   <!-- Blog Posts List -->

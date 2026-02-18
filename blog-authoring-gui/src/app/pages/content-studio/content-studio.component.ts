@@ -2,9 +2,10 @@ import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { AuthService } from '../../services/auth.service';
-import { BlogApiService } from '../../services/blog-api.service';
+import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
+import { environment } from '../../../environments/environment';
 
 type Option<T> = { label: string; value: T };
 
@@ -29,10 +30,13 @@ type RedisContentDraft = {
 })
 export class ContentStudioComponent implements OnInit {
   // Connection
-  redisEndpoint: string = '';
+  apiEndpoint: string = '';
   connectionStatus: 'connected' | 'disconnected' | 'testing' = 'disconnected';
   isConnecting: boolean = false;
   showSettings: boolean = false;
+  apiHealth: ApiHealth | null = null;
+  appOrigin: string = '';
+  readonly isProd = environment.production;
 
   // Filters
   pageOptions: Option<number>[] = [
@@ -104,7 +108,8 @@ export class ContentStudioComponent implements OnInit {
       return;
     }
 
-    this.redisEndpoint = this.blogApi.getApiEndpoint();
+    this.apiEndpoint = this.blogApi.getApiEndpoint();
+    this.appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     this.buildContentOptions();
     this.pageOptionsEditable = this.pageOptions.filter((o) => o.value !== -1);
     this.contentOptionsEditable = this.contentOptions.filter((o) => o.value !== -1);
@@ -130,13 +135,13 @@ export class ContentStudioComponent implements OnInit {
   }
 
   saveEndpoint(): void {
-    if (!this.redisEndpoint.trim()) return;
-    this.blogApi.setApiEndpoint(this.redisEndpoint.trim());
-    this.txLog.log('CONFIG', `Redis endpoint changed to: ${this.redisEndpoint.trim()}`);
+    if (!this.apiEndpoint.trim()) return;
+    this.blogApi.setApiEndpoint(this.apiEndpoint.trim());
+    this.txLog.log('CONFIG', `API endpoint changed to: ${this.apiEndpoint.trim()}`);
     this.messageService.add({
       severity: 'info',
       summary: 'Endpoint Updated',
-      detail: 'Redis API endpoint has been updated'
+      detail: 'API endpoint has been updated'
     });
     this.testConnection();
     this.loadContent();
@@ -145,10 +150,11 @@ export class ContentStudioComponent implements OnInit {
   testConnection(): void {
     this.isConnecting = true;
     this.connectionStatus = 'testing';
-    this.blogApi.testConnection().subscribe({
-      next: (connected) => {
+    this.blogApi.getHealth().subscribe({
+      next: (health) => {
         this.isConnecting = false;
-        this.connectionStatus = connected ? 'connected' : 'disconnected';
+        this.apiHealth = health;
+        this.connectionStatus = health?.status !== 'unhealthy' ? 'connected' : 'disconnected';
       },
       error: () => {
         this.isConnecting = false;
@@ -211,7 +217,7 @@ export class ContentStudioComponent implements OnInit {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: 'Failed to load content from Redis API'
+          detail: 'Failed to load content from API'
         });
       }
     });

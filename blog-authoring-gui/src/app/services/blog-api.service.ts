@@ -5,11 +5,23 @@ import { catchError, map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { RedisContent, PageID, PageContentID, BlogPostMetadata } from '../models/redis-content.model';
 
+export type ApiHealthStatus = 'healthy' | 'degraded' | 'unhealthy';
+
+export type ApiHealth = {
+  status: ApiHealthStatus;
+  version?: string;
+  contentBackend?: string;
+  redis?: { status?: string; latencyMs?: number; contentKeys?: number | null; error?: string };
+  dynamodb?: { status?: string; latencyMs?: number; error?: string };
+  timestamp?: string;
+};
+
 @Injectable({
   providedIn: 'root'
 })
 export class BlogApiService {
-  private readonly ENDPOINT_STORAGE_KEY = 'portfolio_redis_api_endpoint';
+  private readonly ENDPOINT_STORAGE_KEY = 'portfolio_api_endpoint';
+  private readonly LEGACY_ENDPOINT_STORAGE_KEYS = ['portfolio_redis_api_endpoint'];
   private readonly PROD_DEFAULT_API = 'https://api.grayson-wills.com/api';
   private apiUrl: string = environment.redisApiUrl;
   private headers: HttpHeaders;
@@ -20,27 +32,35 @@ export class BlogApiService {
     });
 
     const normalizedDefault = this.normalizeUrl(environment.redisApiUrl);
-    this.apiUrl = normalizedDefault || (environment.production ? this.PROD_DEFAULT_API : '');
+    this.apiUrl = normalizedDefault || this.normalizeUrl(this.PROD_DEFAULT_API);
+
+    // In production builds, lock the API endpoint to the configured URL to avoid
+    // accidentally pointing at stale endpoints from localStorage.
+    if (environment.production) {
+      try {
+        localStorage.removeItem(this.ENDPOINT_STORAGE_KEY);
+        for (const k of this.LEGACY_ENDPOINT_STORAGE_KEYS) localStorage.removeItem(k);
+      } catch {
+        // ignore
+      }
+      return;
+    }
 
     // Persist endpoint across reloads so you can point at remote Redis API servers.
     try {
-      const stored = localStorage.getItem(this.ENDPOINT_STORAGE_KEY);
+      const stored =
+        localStorage.getItem(this.ENDPOINT_STORAGE_KEY)
+        || this.LEGACY_ENDPOINT_STORAGE_KEYS.map((k) => localStorage.getItem(k)).find((v) => v && v.trim())
+        || '';
+
       if (stored && stored.trim()) {
         const normalizedStored = this.normalizeUrl(stored);
-
-        // Ignore stale local endpoints in production (common after local dev).
-        if (environment.production && this.isLocalhostUrl(normalizedStored)) {
-          localStorage.removeItem(this.ENDPOINT_STORAGE_KEY);
-        } else if (normalizedStored) {
+        if (normalizedStored) {
           this.apiUrl = normalizedStored;
         }
       }
     } catch {
       // ignore
-    }
-
-    if (!this.apiUrl && environment.production) {
-      this.apiUrl = this.PROD_DEFAULT_API;
     }
   }
 
@@ -48,9 +68,11 @@ export class BlogApiService {
    * Set Redis API endpoint
    */
   setApiEndpoint(url: string): void {
+    if (environment.production) return;
     this.apiUrl = this.normalizeUrl(url);
     try {
       localStorage.setItem(this.ENDPOINT_STORAGE_KEY, this.apiUrl);
+      for (const k of this.LEGACY_ENDPOINT_STORAGE_KEYS) localStorage.removeItem(k);
     } catch {
       // ignore
     }
@@ -382,21 +404,28 @@ export class BlogApiService {
   }
 
   /**
-   * Test Redis connection
+   * Get backend health info (includes content backend such as DynamoDB).
+   */
+  getHealth(): Observable<ApiHealth> {
+    return this.http.get<ApiHealth>(`${this.apiUrl}/health`, { headers: this.headers }).pipe(
+      catchError((error) => {
+        // If the API returns JSON with a 503 status, keep the body so UIs can show "unhealthy" details.
+        if (error?.error && typeof error.error === 'object') {
+          return of(error.error as ApiHealth);
+        }
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Basic connectivity check (UI uses getHealth() for details).
    */
   testConnection(): Observable<boolean> {
-    return new Observable<boolean>(observer => {
-      this.http.get<any>(`${this.apiUrl}/health`, { headers: this.headers }).subscribe({
-        next: () => {
-          observer.next(true);
-          observer.complete();
-        },
-        error: () => {
-          observer.next(false);
-          observer.complete();
-        }
-      });
-    });
+    return this.getHealth().pipe(
+      map((h) => h?.status !== 'unhealthy'),
+      catchError(() => of(false))
+    );
   }
 
   /**
@@ -417,9 +446,5 @@ export class BlogApiService {
 
   private normalizeUrl(url: string): string {
     return (url || '').trim().replace(/\/+$/, '');
-  }
-
-  private isLocalhostUrl(url: string): boolean {
-    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
   }
 }
