@@ -34,6 +34,41 @@
   color: var(--text-muted);
 }
 
+.confirm-card {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(11, 79, 159, 0.06);
+}
+
+.confirm-title {
+  font-weight: 900;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.confirm-detail {
+  margin: 0 0 0.6rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.confirm-note {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+}
+
 .status-row {
   display: flex;
   gap: 0.9rem;
@@ -96,4 +131,3 @@
     padding: 2.5rem 1rem 2rem;
   }
 }
-

@@ -2,7 +2,34 @@
   <div class="container">
     <section class="panel" appScrollReveal>
       <h1 class="title">Unsubscribe</h1>
-      <p class="subtitle">Updating your email notification preferences.</p>
+      <p class="subtitle">Confirm that you want to unsubscribe from blog update emails.</p>
+
+      <div *ngIf="state === 'confirm'" class="confirm-card">
+        <div class="confirm-title">Are you sure?</div>
+        <p class="confirm-detail">
+          This will stop all future blog update emails. You can resubscribe anytime.
+        </p>
+        <p class="confirm-note">
+          We ask you to confirm to protect you from automatic email link scanners.
+        </p>
+        <div class="confirm-actions">
+          <button
+            pButton
+            type="button"
+            label="Confirm Unsubscribe"
+            icon="pi pi-times-circle"
+            (click)="confirmUnsubscribe()">
+          </button>
+          <button
+            pButton
+            type="button"
+            class="p-button-outlined"
+            label="Keep Me Subscribed"
+            icon="pi pi-arrow-left"
+            (click)="cancel()">
+          </button>
+        </div>
+      </div>
 
       <div *ngIf="state === 'loading'" class="status-row">
         <span class="spinner" aria-hidden="true"></span>
@@ -27,4 +54,3 @@
     </section>
   </div>
 </div>
-
