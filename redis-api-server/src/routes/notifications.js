@@ -68,6 +68,12 @@ router.post('/schedule', async (req, res) => {
     });
     res.json(result);
   } catch (err) {
+    console.error('[notifications] schedule failed:', {
+      listItemID: req.body?.listItemID,
+      publishAt: req.body?.publishAt,
+      message: String(err?.message || err),
+      name: err?.name || null
+    });
     res.status(err.status || 500).json({ error: err.message });
   }
 });

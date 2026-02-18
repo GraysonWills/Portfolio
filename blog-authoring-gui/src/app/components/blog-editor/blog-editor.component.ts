@@ -198,8 +198,9 @@ export class BlogEditorComponent implements OnInit {
           this.blogApi.schedulePublish(listItemID, formValue.publishDate, sendEmailUpdate, 'blog_posts').subscribe({
             next: () => onDone(),
             error: (err) => {
-              this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${err.message}`);
-              this.messageService.add({ severity: 'warn', summary: 'Saved', detail: 'Post saved, but scheduling failed.' });
+              const reason = err?.error?.error || err?.message || 'Unknown error';
+              this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${reason}`);
+              this.messageService.add({ severity: 'warn', summary: 'Saved', detail: `Post saved, but scheduling failed: ${reason}` });
               this.isSaving = false;
               this.saved.emit();
             }
