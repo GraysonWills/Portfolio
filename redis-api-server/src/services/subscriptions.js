@@ -2,7 +2,7 @@ const { PutCommand, GetCommand, UpdateCommand, DeleteCommand } = require('@aws-s
 const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { getDdbDoc, getSes } = require('./aws/clients');
 const { sha256Hex, randomToken, normalizeEmail, maskEmail } = require('../utils/crypto');
-const { buildConfirmEmail } = require('./email/templates');
+const { buildConfirmEmail, buildSubscribedEmail, buildUnsubscribedEmail } = require('./email/templates');
 
 const DEFAULT_SUBSCRIBERS_TABLE = 'portfolio-email-subscribers';
 const DEFAULT_TOKENS_TABLE = 'portfolio-email-tokens';
@@ -59,6 +59,42 @@ async function sendSesEmail({ to, subject, text, html }) {
   return await ses.send(cmd);
 }
 
+async function createToken({ emailHash, action, ttlSeconds }) {
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+
+  const token = randomToken(32);
+  const tokenHash = sha256Hex(token);
+  const nowIso = new Date().toISOString();
+  const expiresAtEpoch = Math.floor(Date.now() / 1000) + (ttlSeconds || 24 * 60 * 60);
+
+  await ddb.send(new PutCommand({
+    TableName: cfg.tokensTable,
+    Item: {
+      tokenHash,
+      emailHash,
+      action,
+      expiresAtEpoch,
+      createdAt: nowIso
+    }
+  }));
+
+  return token;
+}
+
+async function getSubscriberEmail(emailHash) {
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+
+  const res = await ddb.send(new GetCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash }
+  }));
+
+  const email = res?.Item?.email || null;
+  return email ? String(email).toLowerCase() : null;
+}
+
 async function requestSubscription({ email, topics, source, consentIp, consentUserAgent }) {
   const cfg = getConfig();
   const normalized = normalizeEmail(email);
@@ -113,20 +149,7 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
   }));
 
   // Create confirm token (24h TTL)
-  const token = randomToken(32);
-  const tokenHash = sha256Hex(token);
-  const expiresAtEpoch = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-
-  await ddb.send(new PutCommand({
-    TableName: cfg.tokensTable,
-    Item: {
-      tokenHash,
-      emailHash,
-      action: 'confirm',
-      expiresAtEpoch,
-      createdAt: nowIso
-    }
-  }));
+  const token = await createToken({ emailHash, action: 'confirm', ttlSeconds: 24 * 60 * 60 });
 
   const confirmUrl = `${cfg.publicSiteUrl}/notifications/confirm?token=${encodeURIComponent(token)}`;
   const { subject, text, html } = buildConfirmEmail({ confirmUrl });
@@ -209,6 +232,24 @@ async function confirmSubscription({ token }) {
   // Single-use confirm token
   await ddb.send(new DeleteCommand({ TableName: cfg.tokensTable, Key: { tokenHash } }));
 
+  // Best-effort: send a "subscribed" confirmation email.
+  try {
+    const email = await getSubscriberEmail(tokenItem.emailHash);
+    if (email) {
+      const unsubToken = await createToken({
+        emailHash: tokenItem.emailHash,
+        action: 'unsubscribe',
+        ttlSeconds: 30 * 24 * 60 * 60
+      });
+      const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+      const blogUrl = `${cfg.publicSiteUrl}/blog`;
+      const { subject, text, html } = buildSubscribedEmail({ blogUrl, unsubscribeUrl });
+      await sendSesEmail({ to: email, subject, text, html });
+    }
+  } catch (err) {
+    console.error('[subscriptions] Subscribed email failed:', { message: String(err?.message || err) });
+  }
+
   return { ok: true, status: 'SUBSCRIBED' };
 }
 
@@ -264,6 +305,19 @@ async function unsubscribe({ token }) {
   }));
 
   await ddb.send(new DeleteCommand({ TableName: cfg.tokensTable, Key: { tokenHash } }));
+
+  // Best-effort: send unsubscribe confirmation.
+  try {
+    const email = await getSubscriberEmail(tokenItem.emailHash);
+    if (email) {
+      const blogUrl = `${cfg.publicSiteUrl}/blog`;
+      const resubscribeUrl = blogUrl;
+      const { subject, text, html } = buildUnsubscribedEmail({ resubscribeUrl, blogUrl });
+      await sendSesEmail({ to: email, subject, text, html });
+    }
+  } catch (err) {
+    console.error('[subscriptions] Unsubscribed email failed:', { message: String(err?.message || err) });
+  }
 
   return { ok: true, status: 'UNSUBSCRIBED' };
 }

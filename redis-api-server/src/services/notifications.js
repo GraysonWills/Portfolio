@@ -5,12 +5,16 @@ const { CreateScheduleCommand, DeleteScheduleCommand } = require('@aws-sdk/clien
 const redisClient = require('../config/redis');
 const { getContentWhere, addToIndex } = require('../utils/content-index');
 const { getDdbDoc, getSes, getScheduler, getAwsRegion } = require('./aws/clients');
+const { isContentDdbEnabled, ddbGetContentByListItemId, ddbPutContent } = require('./content-ddb');
 const { sha256Hex, randomToken, maskEmail } = require('../utils/crypto');
 const { buildNewPostEmail } = require('./email/templates');
 
 const DEFAULT_SUBSCRIBERS_TABLE = 'portfolio-email-subscribers';
 const DEFAULT_TOKENS_TABLE = 'portfolio-email-tokens';
 const DEFAULT_SCHEDULE_GROUP = 'portfolio-email';
+
+const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
+const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
 
 function getConfig() {
   return {
@@ -52,9 +56,33 @@ async function setRedisDocument(contentId, doc) {
   await addToIndex(contentId);
 }
 
+async function setContentDocument(doc) {
+  if (useDdbAsPrimary) {
+    await ddbPutContent(doc);
+    return;
+  }
+
+  await setRedisDocument(doc.ID, doc);
+  if (isContentDdbEnabled()) {
+    // Keep multi-region DR store in sync.
+    await ddbPutContent(doc);
+  }
+}
+
 async function getBlogGroup(listItemID) {
-  const items = await getContentWhere((item) => item.ListItemID === listItemID);
-  return items || [];
+  if (useDdbAsPrimary) {
+    return (await ddbGetContentByListItemId(listItemID)) || [];
+  }
+
+  try {
+    const items = await getContentWhere((item) => item.ListItemID === listItemID);
+    return items || [];
+  } catch (err) {
+    if (isContentDdbEnabled()) {
+      return (await ddbGetContentByListItemId(listItemID)) || [];
+    }
+    throw err;
+  }
 }
 
 function extractBlogMetadata(items) {
@@ -73,6 +101,33 @@ function hasBlogContent(items) {
   return items.some((i) => (i.PageContentID === 13 || i.PageContentID === 4) && typeof i.Text === 'string' && i.Text.trim());
 }
 
+function extractBlogHeroImage(items) {
+  const img = items.find((i) => i.PageContentID === 5 && typeof i.Photo === 'string' && i.Photo.trim())
+    || items.find((i) => typeof i.Photo === 'string' && i.Photo.trim());
+  const url = img ? String(img.Photo).trim() : '';
+  if (!url) return null;
+  if (!/^https?:\/\//i.test(url)) return null; // don't embed data URLs in email
+  return url;
+}
+
+function stripHtml(value) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function estimateReadTimeMinutesFromItems(items) {
+  const body = items.find((i) => i.PageContentID === 13 && typeof i.Text === 'string' && i.Text.trim())
+    || items.find((i) => i.PageContentID === 4 && typeof i.Text === 'string' && i.Text.trim());
+
+  const text = stripHtml(body?.Text || '');
+  if (!text) return null;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const minutes = Math.max(1, Math.round(words / 200));
+  return minutes;
+}
+
 async function assertBlogPostExists(listItemID) {
   const items = await getBlogGroup(listItemID);
   if (!items.length || !hasBlogContent(items)) {
@@ -88,7 +143,7 @@ async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
   const existing = items.find(i => i.PageContentID === 3);
   if (existing) return existing;
 
-  const id = `blog-item-${sha256Hex(listItemID).slice(0, 12)}`;
+  const id = `blog-item-${String(listItemID || '').trim()}`;
   const nowIso = new Date().toISOString();
   const doc = {
     ID: id,
@@ -101,7 +156,7 @@ async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
     UpdatedAt: nowIso
   };
 
-  await setRedisDocument(id, doc);
+  await setContentDocument(doc);
   return doc;
 }
 
@@ -121,15 +176,23 @@ async function updateBlogMetadata(listItemID, patch) {
     UpdatedAt: new Date().toISOString()
   };
 
-  await setRedisDocument(blogItem.ID, next);
+  await setContentDocument(next);
   return next;
 }
 
-async function sendNewPostEmail({ to, title, summary, postUrl, unsubscribeUrl }) {
+async function sendNewPostEmail({ to, title, summary, postUrl, unsubscribeUrl, imageUrl, tags, readTimeMinutes }) {
   const cfg = getConfig();
   if (!cfg.sesFromEmail) throw new Error('SES_FROM_EMAIL not configured');
 
-  const { subject, text, html } = buildNewPostEmail({ title, summary, postUrl, unsubscribeUrl });
+  const { subject, text, html } = buildNewPostEmail({
+    title,
+    summary,
+    postUrl,
+    unsubscribeUrl,
+    imageUrl,
+    tags,
+    readTimeMinutes
+  });
 
   const ses = getSes();
   const cmd = new SendEmailCommand({
@@ -215,7 +278,9 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts' }) {
 
   const items = await assertBlogPostExists(listItemID);
 
-  const { title, summary } = extractBlogMetadata(items);
+  const { title, summary, tags } = extractBlogMetadata(items);
+  const imageUrl = extractBlogHeroImage(items);
+  const readTimeMinutes = estimateReadTimeMinutesFromItems(items);
   const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(listItemID)}`;
 
   const recipients = await listSubscribedRecipients({ topic });
@@ -229,7 +294,16 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts' }) {
     try {
       const unsubToken = await createUnsubscribeToken(r.emailHash);
       const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
-      await sendNewPostEmail({ to: email, title, summary, postUrl, unsubscribeUrl });
+      await sendNewPostEmail({
+        to: email,
+        title,
+        summary,
+        postUrl,
+        unsubscribeUrl,
+        imageUrl,
+        tags,
+        readTimeMinutes
+      });
       sent++;
     } catch (err) {
       failed++;
