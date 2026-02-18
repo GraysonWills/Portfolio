@@ -5,6 +5,7 @@ Backend API server that connects to Redis database and provides REST endpoints f
 ## Features
 
 - RESTful API endpoints for content CRUD operations
+- Content storage backend: **Redis (default)** or **DynamoDB (recommended for multi-region DR)**
 - Image upload (S3 when configured, otherwise base64 fallback)
 - Health check endpoint
 - Redis JSON storage support (with fallback to string storage)
@@ -140,6 +141,18 @@ These are used for **management/admin operations** only (not for data):
 | `ALLOWED_ORIGINS` | Comma-separated frontend origins for CORS | `http://localhost:4200,http://localhost:3000` |
 | `CACHE_TTL_MS` | In-memory GET cache TTL (milliseconds) | `60000` |
 
+### Optional: DynamoDB Content Store (Recommended)
+
+ElastiCache Global Datastore requires **large** instance classes and is usually
+overkill/too expensive for a portfolio site. To get multi-region durability
+without changing your frontend/API payloads, you can store content in DynamoDB
+(and optionally use DynamoDB Global Tables for cross-region replication).
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CONTENT_BACKEND` | `redis` or `dynamodb` | `redis` |
+| `CONTENT_TABLE_NAME` | DynamoDB table name for content (required if `CONTENT_BACKEND=dynamodb`) | *(none)* |
+
 ### Optional: Cognito Auth (Recommended)
 
 If set, all **write** endpoints require `Authorization: Bearer <Cognito ID token>`.
@@ -213,6 +226,7 @@ Content is stored in Redis with the following structure:
 **Storage Format:**
 - Redis JSON module: `content:{ID}` (if RedisJSON is available)
 - Fallback: String storage with JSON serialization
+- DynamoDB: store the same JSON document as an item (PK: `ID`)
 
 **PageID Values:**
 - `0` - Landing
@@ -384,3 +398,16 @@ For production deployment:
 4. Enable HTTPS with SSL certificates
 5. Set up environment variables on your hosting platform
 6. Keep `.env` file secure and never commit it
+
+## DynamoDB Migration
+
+If you are switching `CONTENT_BACKEND` from Redis to DynamoDB, you can migrate the
+existing Redis-backed content to DynamoDB by pulling it from the live API and
+writing it into the DynamoDB table:
+
+```bash
+AWS_PROFILE=grayson-sso node redis-api-server/scripts/migrate-content-to-ddb.js \
+  --api-url https://api.grayson-wills.com/api \
+  --region us-east-2 \
+  --table portfolio-content
+```

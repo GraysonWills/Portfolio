@@ -41,9 +41,11 @@
         { "name": "S3_UPLOAD_PREFIX", "value": "uploads/" },
 
         { "name": "PUBLIC_SITE_URL", "value": "https://www.grayson-wills.com" },
+        { "name": "CONTENT_BACKEND", "value": "dynamodb" },
+        { "name": "CONTENT_TABLE_NAME", "value": "portfolio-content" },
         { "name": "SUBSCRIBERS_TABLE_NAME", "value": "portfolio-email-subscribers" },
         { "name": "TOKENS_TABLE_NAME", "value": "portfolio-email-tokens" },
-        { "name": "DDB_REGION", "value": "us-east-1" },
+        { "name": "DDB_REGION", "value": "us-east-2" },
         { "name": "SES_FROM_EMAIL", "value": "no-reply@grayson-wills.com" },
         { "name": "SES_REGION", "value": "us-east-1" },
         { "name": "EMAIL_NOTIFICATIONS_ENABLED", "value": "true" },

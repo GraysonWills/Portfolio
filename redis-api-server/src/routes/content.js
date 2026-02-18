@@ -17,6 +17,21 @@ const {
   getAllContent,
   getContentWhere,
 } = require('../utils/content-index');
+const {
+  isContentDdbEnabled,
+  ddbScanAllContent,
+  ddbGetContentById,
+  ddbGetContentByPageId,
+  ddbGetContentByPageAndContentId,
+  ddbGetContentByListItemId,
+  ddbPutContent,
+  ddbBatchPutContent,
+  ddbDeleteContentById,
+  ddbDeleteContentByListItemId,
+} = require('../services/content-ddb');
+
+const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
+const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
 
 // Public reads; authenticated writes.
 router.use((req, res, next) => {
@@ -30,8 +45,22 @@ router.use((req, res, next) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const contents = await getAllContent();
-    res.json(contents);
+    if (useDdbAsPrimary) {
+      const contents = await ddbScanAllContent();
+      return res.json(contents);
+    }
+
+    try {
+      const contents = await getAllContent();
+      return res.json(contents);
+    } catch (err) {
+      // Redis down? Fall back to DynamoDB if configured.
+      if (isContentDdbEnabled()) {
+        const contents = await ddbScanAllContent();
+        return res.json(contents);
+      }
+      throw err;
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -44,8 +73,21 @@ router.get('/', async (req, res) => {
 router.get('/page/:pageId', async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
-    const contents = await getContentWhere(item => item.PageID === pageId);
-    res.json(contents);
+    if (useDdbAsPrimary) {
+      const contents = await ddbGetContentByPageId(pageId);
+      return res.json(contents);
+    }
+
+    try {
+      const contents = await getContentWhere(item => item.PageID === pageId);
+      return res.json(contents);
+    } catch (err) {
+      if (isContentDdbEnabled()) {
+        const contents = await ddbGetContentByPageId(pageId);
+        return res.json(contents);
+      }
+      throw err;
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -59,10 +101,23 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
     const contentId = parseInt(req.params.contentId);
-    const contents = await getContentWhere(
-      item => item.PageID === pageId && item.PageContentID === contentId
-    );
-    res.json(contents);
+    if (useDdbAsPrimary) {
+      const contents = await ddbGetContentByPageAndContentId(pageId, contentId);
+      return res.json(contents);
+    }
+
+    try {
+      const contents = await getContentWhere(
+        item => item.PageID === pageId && item.PageContentID === contentId
+      );
+      return res.json(contents);
+    } catch (err) {
+      if (isContentDdbEnabled()) {
+        const contents = await ddbGetContentByPageAndContentId(pageId, contentId);
+        return res.json(contents);
+      }
+      throw err;
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -75,8 +130,21 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
 router.get('/list-item/:listItemId', async (req, res) => {
   try {
     const listItemId = req.params.listItemId;
-    const contents = await getContentWhere(item => item.ListItemID === listItemId);
-    res.json(contents);
+    if (useDdbAsPrimary) {
+      const contents = await ddbGetContentByListItemId(listItemId);
+      return res.json(contents);
+    }
+
+    try {
+      const contents = await getContentWhere(item => item.ListItemID === listItemId);
+      return res.json(contents);
+    } catch (err) {
+      if (isContentDdbEnabled()) {
+        const contents = await ddbGetContentByListItemId(listItemId);
+        return res.json(contents);
+      }
+      throw err;
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -88,6 +156,12 @@ router.get('/list-item/:listItemId', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
+    if (useDdbAsPrimary) {
+      const content = await ddbGetContentById(req.params.id);
+      if (!content) return res.status(404).json({ error: 'Content not found' });
+      return res.json(content);
+    }
+
     const key = `content:${req.params.id}`;
     let content;
 
@@ -98,9 +172,11 @@ router.get('/:id', async (req, res) => {
       if (str) content = JSON.parse(str);
     }
 
-    if (!content) {
-      return res.status(404).json({ error: 'Content not found' });
+    if (!content && isContentDdbEnabled()) {
+      content = await ddbGetContentById(req.params.id);
     }
+
+    if (!content) return res.status(404).json({ error: 'Content not found' });
 
     res.json(content);
   } catch (error) {
@@ -124,15 +200,24 @@ router.post('/', async (req, res) => {
     }
     content.UpdatedAt = new Date().toISOString();
 
-    const key = `content:${content.ID}`;
-    try {
-      await redisClient.json.set(key, '$', content);
-    } catch (err) {
-      await redisClient.set(key, JSON.stringify(content));
-    }
+    if (useDdbAsPrimary) {
+      await ddbPutContent(content);
+    } else {
+      const key = `content:${content.ID}`;
+      try {
+        await redisClient.json.set(key, '$', content);
+      } catch (err) {
+        await redisClient.set(key, JSON.stringify(content));
+      }
 
-    // Maintain the index
-    await addToIndex(content.ID);
+      // Maintain the index
+      await addToIndex(content.ID);
+
+      // Optional: keep DynamoDB in sync for multi-region DR.
+      if (isContentDdbEnabled()) {
+        await ddbPutContent(content);
+      }
+    }
 
     res.status(201).json(content);
   } catch (error) {
@@ -150,23 +235,28 @@ router.post('/batch', async (req, res) => {
     const created = [];
 
     for (const content of contents) {
-      if (!content.ID) {
-        content.ID = uuidv4();
-      }
-      if (!content.CreatedAt) {
-        content.CreatedAt = new Date().toISOString();
-      }
+      if (!content.ID) content.ID = uuidv4();
+      if (!content.CreatedAt) content.CreatedAt = new Date().toISOString();
       content.UpdatedAt = new Date().toISOString();
+      created.push(content);
+    }
 
-      const key = `content:${content.ID}`;
-      try {
-        await redisClient.json.set(key, '$', content);
-      } catch (err) {
-        await redisClient.set(key, JSON.stringify(content));
+    if (useDdbAsPrimary) {
+      await ddbBatchPutContent(created);
+    } else {
+      for (const content of created) {
+        const key = `content:${content.ID}`;
+        try {
+          await redisClient.json.set(key, '$', content);
+        } catch (err) {
+          await redisClient.set(key, JSON.stringify(content));
+        }
+        await addToIndex(content.ID);
       }
 
-      await addToIndex(content.ID);
-      created.push(content);
+      if (isContentDdbEnabled()) {
+        await ddbBatchPutContent(created);
+      }
     }
 
     res.status(201).json(created);
@@ -181,6 +271,21 @@ router.post('/batch', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
+    if (useDdbAsPrimary) {
+      const existing = await ddbGetContentById(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Content not found' });
+
+      const updated = {
+        ...existing,
+        ...req.body,
+        ID: req.params.id,
+        UpdatedAt: new Date().toISOString()
+      };
+
+      await ddbPutContent(updated);
+      return res.json(updated);
+    }
+
     const key = `content:${req.params.id}`;
     let existing;
 
@@ -191,9 +296,11 @@ router.put('/:id', async (req, res) => {
       if (str) existing = JSON.parse(str);
     }
 
-    if (!existing) {
-      return res.status(404).json({ error: 'Content not found' });
+    if (!existing && isContentDdbEnabled()) {
+      existing = await ddbGetContentById(req.params.id);
     }
+
+    if (!existing) return res.status(404).json({ error: 'Content not found' });
 
     const updated = {
       ...existing,
@@ -211,7 +318,11 @@ router.put('/:id', async (req, res) => {
     // Ensure index is current (idempotent)
     await addToIndex(req.params.id);
 
-    res.json(updated);
+    if (isContentDdbEnabled()) {
+      await ddbPutContent(updated);
+    }
+
+    return res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -223,17 +334,32 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
+    if (useDdbAsPrimary) {
+      const existing = await ddbGetContentById(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Content not found' });
+
+      await ddbDeleteContentById(req.params.id);
+      return res.json({ message: 'Content deleted successfully' });
+    }
+
     const key = `content:${req.params.id}`;
     const exists = await redisClient.exists(key);
 
-    if (!exists) {
+    if (!exists && isContentDdbEnabled()) {
+      const existing = await ddbGetContentById(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Content not found' });
+    } else if (!exists) {
       return res.status(404).json({ error: 'Content not found' });
     }
 
     await redisClient.del(key);
     await removeFromIndex(req.params.id);
 
-    res.json({ message: 'Content deleted successfully' });
+    if (isContentDdbEnabled()) {
+      await ddbDeleteContentById(req.params.id);
+    }
+
+    return res.json({ message: 'Content deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -246,6 +372,14 @@ router.delete('/:id', async (req, res) => {
 router.delete('/list-item/:listItemId', async (req, res) => {
   try {
     const listItemId = req.params.listItemId;
+    if (useDdbAsPrimary) {
+      const deleted = await ddbDeleteContentByListItemId(listItemId);
+      return res.json({
+        message: `Deleted ${deleted} content item(s)`,
+        deleted
+      });
+    }
+
     const matching = await getContentWhere(item => item.ListItemID === listItemId);
     let deleted = 0;
 
@@ -255,7 +389,12 @@ router.delete('/list-item/:listItemId', async (req, res) => {
       deleted++;
     }
 
-    res.json({
+    if (isContentDdbEnabled()) {
+      // Keep DDB in sync (may delete more if Redis was out-of-sync).
+      await ddbDeleteContentByListItemId(listItemId);
+    }
+
+    return res.json({
       message: `Deleted ${deleted} content item(s)`,
       deleted
     });

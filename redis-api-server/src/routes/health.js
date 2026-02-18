@@ -6,50 +6,80 @@
 const express = require('express');
 const router = express.Router();
 const redisClient = require('../config/redis');
+const { isContentDdbEnabled, ddbPing } = require('../services/content-ddb');
 
 /**
  * GET /api/health
  * Comprehensive health check endpoint
  */
 router.get('/', async (req, res) => {
-  const start = Date.now();
+  const backend = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
+  const ddbPrimary = backend === 'dynamodb' || backend === 'ddb';
 
   try {
-    // Test Redis connection with a ping
-    await redisClient.ping();
-    const redisLatency = Date.now() - start;
+    const checks = await Promise.allSettled([
+      (async () => {
+        const start = Date.now();
+        await redisClient.ping();
+        const redisLatency = Date.now() - start;
 
-    // Gather content key count (lightweight)
-    let keyCount = 0;
-    try {
-      const keys = await redisClient.keys('content:*');
-      keyCount = keys.length;
-    } catch (_) { /* non-critical */ }
+        let keyCount = null;
+        try {
+          const keys = await redisClient.keys('content:*');
+          keyCount = keys.length;
+        } catch (_) { /* non-critical */ }
 
-    res.json({
-      status: 'healthy',
-      version: '2.0.0',
+        return { ok: true, latencyMs: redisLatency, contentKeys: keyCount };
+      })(),
+      (async () => {
+        if (!isContentDdbEnabled()) return null;
+        return await ddbPing();
+      })()
+    ]);
+
+    const redisRes = checks[0].status === 'fulfilled' ? checks[0].value : null;
+    const redisErr = checks[0].status === 'rejected' ? checks[0].reason : null;
+    const ddbRes = checks[1].status === 'fulfilled' ? checks[1].value : null;
+    const ddbErr = checks[1].status === 'rejected' ? checks[1].reason : null;
+
+    const primaryOk = ddbPrimary ? Boolean(ddbRes?.ok) : Boolean(redisRes?.ok);
+    const anyOk = Boolean(redisRes?.ok) || Boolean(ddbRes?.ok);
+    const status = primaryOk ? 'healthy' : (anyOk ? 'degraded' : 'unhealthy');
+
+    const body = {
+      status,
+      version: '2.1.0',
       uptime: Math.floor(process.uptime()),
-      redis: {
+      contentBackend: backend,
+      redis: redisRes?.ok ? {
         status: 'connected',
-        latencyMs: redisLatency,
-        contentKeys: keyCount
+        latencyMs: redisRes.latencyMs,
+        contentKeys: redisRes.contentKeys
+      } : {
+        status: 'disconnected',
+        error: redisErr ? String(redisErr?.message || redisErr) : 'unknown'
       },
+      dynamodb: isContentDdbEnabled() ? (ddbRes?.ok ? {
+        status: 'connected',
+        latencyMs: ddbRes.latencyMs
+      } : {
+        status: 'disconnected',
+        error: ddbErr ? String(ddbErr?.message || ddbErr) : 'unknown'
+      }) : { status: 'disabled' },
       memory: {
         rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
         heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
       },
       timestamp: new Date().toISOString()
-    });
+    };
+
+    res.status(status === 'unhealthy' ? 503 : 200).json(body);
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
-      version: '2.0.0',
+      version: '2.1.0',
       uptime: Math.floor(process.uptime()),
-      redis: {
-        status: 'disconnected',
-        error: error.message
-      },
+      error: error.message,
       timestamp: new Date().toISOString()
     });
   }
@@ -68,8 +98,15 @@ router.get('/liveness', (req, res) => {
  * Readiness probe — only 200 if Redis is reachable
  */
 router.get('/readiness', async (req, res) => {
+  const backend = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
+  const ddbPrimary = backend === 'dynamodb' || backend === 'ddb';
+
   try {
-    await redisClient.ping();
+    if (ddbPrimary) {
+      await ddbPing();
+    } else {
+      await redisClient.ping();
+    }
     res.json({ status: 'ready', timestamp: new Date().toISOString() });
   } catch (error) {
     res.status(503).json({

@@ -95,6 +95,7 @@ backup/
 *.backup
 portfolio-backup-*/
 **/*-backup/
+ops/ddb-backups/
 
 # ============================================
 # IDE and Editor Files
