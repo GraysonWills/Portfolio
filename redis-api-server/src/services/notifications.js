@@ -46,6 +46,31 @@ function safeScheduleName(listItemID) {
   return `blog-${hash}-${ts}`.slice(0, 64);
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function getBlogGroupWithRetry(listItemID, { maxWaitMs = 5000, requireBody = false } = {}) {
+  // DynamoDB GSIs (used for ListItemID) are eventually consistent. When the authoring
+  // UI saves a post then immediately schedules it, the query can briefly return 0 items.
+  // We retry a few times to avoid false 404s.
+  const deadline = Date.now() + Math.max(0, Number(maxWaitMs) || 0);
+  let attempt = 0;
+
+  while (true) {
+    const items = await getBlogGroup(listItemID);
+    const ok = requireBody ? (items.length && hasBlogContent(items)) : items.length;
+    if (ok) return items;
+
+    if (!useDdbAsPrimary) return items || [];
+    if (Date.now() >= deadline) return items || [];
+
+    attempt += 1;
+    const backoff = Math.min(1000, 120 * Math.pow(2, attempt));
+    await sleep(backoff);
+  }
+}
+
 async function setRedisDocument(contentId, doc) {
   const key = `content:${contentId}`;
   try {
@@ -129,7 +154,7 @@ function estimateReadTimeMinutesFromItems(items) {
 }
 
 async function assertBlogPostExists(listItemID) {
-  const items = await getBlogGroup(listItemID);
+  const items = await getBlogGroupWithRetry(listItemID, { maxWaitMs: 5000, requireBody: true });
   if (!items.length || !hasBlogContent(items)) {
     const err = new Error('Blog post not found');
     err.status = 404;
@@ -139,7 +164,7 @@ async function assertBlogPostExists(listItemID) {
 }
 
 async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
-  const items = await getBlogGroup(listItemID);
+  const items = await getBlogGroupWithRetry(listItemID, { maxWaitMs: 5000, requireBody: false });
   const existing = items.find(i => i.PageContentID === 3);
   if (existing) return existing;
 
@@ -161,7 +186,7 @@ async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
 }
 
 async function updateBlogMetadata(listItemID, patch) {
-  const items = await getBlogGroup(listItemID);
+  const items = await getBlogGroupWithRetry(listItemID, { maxWaitMs: 5000, requireBody: false });
   const metaCandidate = items.find(i => i.PageContentID === 3) || items.find(i => i.Metadata);
   const baseMeta = (metaCandidate?.Metadata && typeof metaCandidate.Metadata === 'object') ? metaCandidate.Metadata : {};
 
