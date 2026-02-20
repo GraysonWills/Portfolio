@@ -178,8 +178,8 @@
 .article-body {
   padding-bottom: 3rem;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 /* Markdown rendered paragraphs */
@@ -189,8 +189,8 @@
   font-size: 1.05rem;
   line-height: 1.8;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 
   ::ng-deep {
     * {
@@ -200,8 +200,8 @@
 
     p {
       margin-bottom: 1rem;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
     }
 
     strong, b {
@@ -257,8 +257,8 @@
     ul, ol {
       padding-left: 1.5rem;
       margin-bottom: 1rem;
-      overflow-wrap: anywhere;
-      word-break: break-word;
+      overflow-wrap: break-word;
+      word-break: normal;
 
       li {
         margin-bottom: 0.35rem;

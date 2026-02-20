@@ -97,9 +97,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.coverAlt = imgItem?.Metadata?.['alt'] || this.title;
 
         // Parse body blocks
-        if (bypassVisibility && textItem?.Text) {
-          this.bodyBlocks = [{ type: 'paragraph', content: textItem.Text }];
-        } else if (bodyItem?.Text) {
+        if (bodyItem?.Text) {
           try {
             this.bodyBlocks = JSON.parse(bodyItem.Text);
           } catch {

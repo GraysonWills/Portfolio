@@ -284,6 +284,7 @@ export class DashboardComponent implements OnInit {
 
     const blogItem = post.items.find((item) => item.PageContentID === PageContentID.BlogItem);
     const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText);
+    const bodyItem = post.items.find((item) => item.PageContentID === PageContentID.BlogBody);
     const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage);
     const metadata = { ...((post.metadata as any) || {}), previewBypassVisibility: true };
     const nowIso = new Date().toISOString();
@@ -308,6 +309,19 @@ export class DashboardComponent implements OnInit {
         ListItemID: listItemID,
         Text: textItem?.Text || this.getPostSummary(post),
         Metadata: metadata,
+        UpdatedAt: nowIso as any
+      });
+    }
+
+    const fallbackBody = textItem?.Text || this.getPostSummary(post);
+    if (bodyItem?.Text || fallbackBody) {
+      upserts.push({
+        ID: bodyItem?.ID || `blog-body-${listItemID}`,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogBody,
+        ListItemID: listItemID,
+        Text: bodyItem?.Text || JSON.stringify([{ type: 'paragraph', content: fallbackBody }]),
+        Metadata: { previewBypassVisibility: true },
         UpdatedAt: nowIso as any
       });
     }

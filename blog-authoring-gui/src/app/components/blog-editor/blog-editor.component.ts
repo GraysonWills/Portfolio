@@ -391,7 +391,9 @@ export class BlogEditorComponent implements OnInit {
 
     const blogItemId = this.initialData?.blogItemId || `blog-item-${listItemID}`;
     const blogTextId = this.initialData?.blogTextId || `blog-text-${listItemID}`;
+    const blogBodyId = this.initialData?.blogBodyId || `blog-body-${listItemID}`;
     const blogImageId = this.initialData?.blogImageId || `blog-image-${listItemID}`;
+    const contentValue = String(this.blogForm.get('content')?.value || '');
 
     const upserts: Partial<RedisContent>[] = [
       {
@@ -408,8 +410,19 @@ export class BlogEditorComponent implements OnInit {
         PageID: PageID.Blog,
         PageContentID: PageContentID.BlogText,
         ListItemID: listItemID,
-        Text: String(this.blogForm.get('content')?.value || ''),
+        Text: contentValue,
         Metadata: metadata,
+        UpdatedAt: nowIso as any
+      },
+      {
+        ID: blogBodyId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogBody,
+        ListItemID: listItemID,
+        Text: JSON.stringify([
+          { type: 'paragraph', content: contentValue || this.getPreviewSummary() }
+        ]),
+        Metadata: { previewBypassVisibility: true },
         UpdatedAt: nowIso as any
       }
     ];
