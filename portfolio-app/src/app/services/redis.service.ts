@@ -11,10 +11,17 @@
 
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError, timer } from 'rxjs';
-import { catchError, map, retry, shareReplay } from 'rxjs/operators';
+import { Observable, combineLatest, of, throwError, timer } from 'rxjs';
+import { catchError, map, retry, shareReplay, switchMap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { RedisContent, PageID, PageContentID, ContentGroup } from '../models/redis-content.model';
+
+type PreviewSessionPayload = {
+  upserts?: Partial<RedisContent>[];
+  deleteIds?: string[];
+  deleteListItemIds?: string[];
+  forceVisibleListItemIds?: string[];
+};
 
 @Injectable({
   providedIn: 'root'
@@ -25,6 +32,9 @@ export class RedisService {
 
   // Cached observables for data that rarely changes
   private allContent$: Observable<RedisContent[]> | null = null;
+  private previewToken: string | null = null;
+  private previewSession$: Observable<PreviewSessionPayload | null> | null = null;
+  private previewSessionSnapshot: PreviewSessionPayload | null = null;
 
   constructor(private http: HttpClient) {
     this.apiUrl = environment.redisApiUrl || '';
@@ -39,6 +49,30 @@ export class RedisService {
   setApiEndpoint(url: string): void {
     this.apiUrl = url;
     this.invalidateCache();
+  }
+
+  setPreviewSessionToken(token: string | null): void {
+    const normalized = (token || '').trim() || null;
+    if (this.previewToken === normalized) return;
+    this.previewToken = normalized;
+    this.previewSession$ = null;
+    this.previewSessionSnapshot = null;
+    this.invalidateCache();
+  }
+
+  clearPreviewSessionToken(): void {
+    this.setPreviewSessionToken(null);
+  }
+
+  isPreviewModeActive(): boolean {
+    return !!this.previewToken;
+  }
+
+  isPreviewListItemForcedVisible(listItemId: string): boolean {
+    const value = String(listItemId || '').trim();
+    if (!value) return false;
+    const forced = this.previewSessionSnapshot?.forceVisibleListItemIds || [];
+    return forced.includes(value);
   }
 
   /**
@@ -61,13 +95,33 @@ export class RedisService {
           catchError(this.handleError)
         );
     }
-    return this.allContent$;
+
+    if (!this.previewToken) {
+      return this.allContent$;
+    }
+
+    return combineLatest([this.allContent$, this.getPreviewSession()]).pipe(
+      map(([content, session]) => this.applyPreviewOverlay(content, session))
+    );
   }
 
   /**
    * Get content by ID
    */
   getContentById(id: string): Observable<RedisContent> {
+    if (this.previewToken) {
+      return this.getAllContent().pipe(
+        map((items) => items.find((item) => item.ID === id) || null),
+        switchMap((found) => {
+          if (found) return of(found);
+          return this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers }).pipe(
+            retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) })
+          );
+        }),
+        catchError(this.handleError)
+      );
+    }
+
     return this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
       .pipe(
         retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
@@ -79,22 +133,20 @@ export class RedisService {
    * Get content filtered by PageID
    */
   getContentByPageID(pageID: PageID): Observable<RedisContent[]> {
-    return this.http.get<RedisContent[]>(`${this.apiUrl}/content/page/${pageID}`, { headers: this.headers })
-      .pipe(
-        retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
-        catchError(this.handleError)
-      );
+    return this.getAllContent().pipe(
+      map((content: RedisContent[]) => content.filter((item) => item.PageID === pageID)),
+      catchError(this.handleError)
+    );
   }
 
   /**
    * Get content filtered by PageID and PageContentID
    */
   getContentByPageAndContentID(pageID: PageID, pageContentID: PageContentID): Observable<RedisContent[]> {
-    return this.http.get<RedisContent[]>(
-      `${this.apiUrl}/content/page/${pageID}/content/${pageContentID}`,
-      { headers: this.headers }
-    ).pipe(
-      retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
+    return this.getAllContent().pipe(
+      map((content: RedisContent[]) =>
+        content.filter((item) => item.PageID === pageID && item.PageContentID === pageContentID)
+      ),
       catchError(this.handleError)
     );
   }
@@ -214,14 +266,15 @@ export class RedisService {
           const meta: any = g.metadata || {};
           const status = meta?.status || 'published';
           const publishDate = meta?.publishDate ? new Date(meta.publishDate).getTime() : null;
+          const bypassVisibility = !!meta?.previewBypassVisibility || this.isPreviewListItemForcedVisible(g.listItemID);
           const hasContent = g.items.some((i) =>
             (i.PageContentID === PageContentID.BlogBody || i.PageContentID === PageContentID.BlogText) &&
             typeof i.Text === 'string' &&
             i.Text.trim().length > 0
           );
 
-          if (status !== 'published') return false;
-          if (publishDate && publishDate > now) return false;
+          if (!bypassVisibility && status !== 'published') return false;
+          if (!bypassVisibility && publishDate && publishDate > now) return false;
           if (!hasContent) return false;
           return true;
         });
@@ -233,6 +286,13 @@ export class RedisService {
    * Get a single blog post by ListItemID (all related content items)
    */
   getBlogPostByListItemId(listItemId: string): Observable<RedisContent[]> {
+    if (this.previewToken) {
+      return this.getAllContent().pipe(
+        map((items) => items.filter((item) => item.ListItemID === listItemId)),
+        catchError(this.handleError)
+      );
+    }
+
     return this.http.get<RedisContent[]>(
       `${this.apiUrl}/content/list-item/${listItemId}`,
       { headers: this.headers }
@@ -306,5 +366,64 @@ export class RedisService {
 
     console.error(`[RedisService] ${error.status} ${error.url}: ${error.message}`);
     return throwError(() => new Error(userMessage));
+  }
+
+  private getPreviewSession(): Observable<PreviewSessionPayload | null> {
+    if (!this.previewToken) return of(null);
+    if (!this.previewSession$) {
+      this.previewSession$ = this.http.get<PreviewSessionPayload>(
+        `${this.apiUrl}/content/preview/${encodeURIComponent(this.previewToken)}`,
+        { headers: this.headers }
+      ).pipe(
+        map((session) => {
+          this.previewSessionSnapshot = session || null;
+          return this.previewSessionSnapshot;
+        }),
+        catchError(() => {
+          this.previewSessionSnapshot = null;
+          return of(null);
+        }),
+        shareReplay({ bufferSize: 1, refCount: true, windowTime: 60_000 })
+      );
+    }
+    return this.previewSession$;
+  }
+
+  private applyPreviewOverlay(content: RedisContent[], preview: PreviewSessionPayload | null): RedisContent[] {
+    if (!preview) return content;
+
+    const deleteIds = new Set((preview.deleteIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+    const deleteListItemIds = new Set((preview.deleteListItemIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+    const byId = new Map<string, RedisContent>();
+
+    for (const item of content) {
+      if (!item?.ID) continue;
+      if (deleteIds.has(item.ID)) continue;
+      if (item.ListItemID && deleteListItemIds.has(item.ListItemID)) continue;
+      byId.set(item.ID, { ...item });
+    }
+
+    const upserts = Array.isArray(preview.upserts) ? preview.upserts : [];
+    for (const patch of upserts) {
+      if (!patch || typeof patch !== 'object') continue;
+      const id = String(patch.ID || '').trim();
+      if (!id) continue;
+
+      const existing = byId.get(id);
+      const merged: RedisContent = {
+        ...(existing || {} as RedisContent),
+        ...(patch as RedisContent),
+        ID: id,
+      };
+
+      if (merged.ListItemID && deleteListItemIds.has(merged.ListItemID)) {
+        byId.delete(id);
+        continue;
+      }
+
+      byId.set(id, merged);
+    }
+
+    return Array.from(byId.values());
   }
 }

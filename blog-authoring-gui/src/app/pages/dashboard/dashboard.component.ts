@@ -4,7 +4,7 @@ import { AuthService } from '../../services/auth.service';
 import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
-import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID } from '../../models/redis-content.model';
+import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID, PageID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
 
 @Component({
@@ -176,21 +176,26 @@ export class DashboardComponent implements OnInit {
       rejectLabel: 'Cancel',
       accept: () => {
         const textItem = post.items.find(item => item.Text);
-        const imageItem = post.items.find(item => item.Photo);
+        const textRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text) || textItem;
+        const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage && !!item.Photo) || post.items.find(item => item.Photo);
         const metadata = post.metadata as any;
 
         this.selectedPost = {
           listItemID: post.listItemID,
           title: metadata?.title || '',
-          summary: metadata?.summary || textItem?.Text?.substring(0, 150) || '',
-          content: textItem?.Text || '',
+          summary: metadata?.summary || textRecord?.Text?.substring(0, 150) || '',
+          content: textRecord?.Text || '',
           image: imageItem?.Photo || null,
           tags: metadata?.tags || [],
           publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
           status: metadata?.status || 'published',
           category: metadata?.category || '',
           scheduleName: metadata?.scheduleName || null,
-          sendEmailUpdate: metadata?.notifyEmail ?? true
+          sendEmailUpdate: metadata?.notifyEmail ?? true,
+          blogItemId: post.items.find((item) => item.PageContentID === PageContentID.BlogItem)?.ID || null,
+          blogTextId: post.items.find((item) => item.PageContentID === PageContentID.BlogText)?.ID || null,
+          blogBodyId: post.items.find((item) => item.PageContentID === PageContentID.BlogBody)?.ID || null,
+          blogImageId: post.items.find((item) => item.PageContentID === PageContentID.BlogImage)?.ID || null
         };
 
         this.isEditing = true;
@@ -264,6 +269,79 @@ export class DashboardComponent implements OnInit {
   closePreview(): void {
     this.showPreviewDialog = false;
     this.previewPost = null;
+  }
+
+  openPortfolioPreview(post: ContentGroup, target: 'list' | 'post' = 'post'): void {
+    const listItemID = (post.listItemID || '').trim();
+    if (!listItemID) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Preview Unavailable',
+        detail: 'This post is missing a ListItemID.'
+      });
+      return;
+    }
+
+    const blogItem = post.items.find((item) => item.PageContentID === PageContentID.BlogItem);
+    const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText);
+    const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage);
+    const metadata = { ...((post.metadata as any) || {}), previewBypassVisibility: true };
+    const nowIso = new Date().toISOString();
+
+    const upserts: Partial<RedisContent>[] = [];
+
+    upserts.push({
+      ID: blogItem?.ID || `blog-item-${listItemID}`,
+      PageID: PageID.Blog,
+      PageContentID: PageContentID.BlogItem,
+      ListItemID: listItemID,
+      Text: metadata.title || this.getPostTitle(post),
+      Metadata: metadata,
+      UpdatedAt: nowIso as any
+    });
+
+    if (textItem?.Text || this.getPostSummary(post)) {
+      upserts.push({
+        ID: textItem?.ID || `blog-text-${listItemID}`,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogText,
+        ListItemID: listItemID,
+        Text: textItem?.Text || this.getPostSummary(post),
+        Metadata: metadata,
+        UpdatedAt: nowIso as any
+      });
+    }
+
+    if (imageItem?.Photo) {
+      upserts.push({
+        ID: imageItem.ID,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogImage,
+        ListItemID: listItemID,
+        Photo: imageItem.Photo,
+        Metadata: { ...(imageItem.Metadata || {}), previewBypassVisibility: true },
+        UpdatedAt: nowIso as any
+      });
+    }
+
+    const path = target === 'list' ? '/blog' : `/blog/${encodeURIComponent(listItemID)}`;
+    this.blogApi.createPreviewSession({
+      upserts,
+      forceVisibleListItemIds: [listItemID],
+      source: 'blog-dashboard'
+    }).subscribe({
+      next: (session) => {
+        const url = this.blogApi.buildPortfolioPreviewUrl(session.token, path);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Preview Failed',
+          detail: 'Could not create a cloud preview session.'
+        });
+      }
+    });
   }
 
   /**

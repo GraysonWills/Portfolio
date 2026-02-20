@@ -124,6 +124,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.7rem;
+  flex-wrap: wrap;
   margin-top: 1.25rem;
   padding-top: 1rem;
   border-top: 1px solid var(--bg-tertiary);

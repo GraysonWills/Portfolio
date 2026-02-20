@@ -62,6 +62,7 @@ export class ContentStudioComponent implements OnInit {
   editorOpen: boolean = false;
   editorSaving: boolean = false;
   draft: RedisContentDraft | null = null;
+  isPreviewOpening: boolean = false;
 
   private pageLabels = new Map<number, string>([
     [0, 'Landing'],
@@ -428,6 +429,38 @@ export class ContentStudioComponent implements OnInit {
     });
   }
 
+  previewCurrentPageOnSite(): void {
+    const draftItem = this.buildPreviewItemFromDraft();
+    const pageForRoute = draftItem?.PageID ?? (this.selectedPageId === -1 ? PageID.Landing : this.selectedPageId);
+    const targetPath = this.getPortfolioPathForPage(pageForRoute);
+
+    if (!draftItem) {
+      const liveUrl = this.resolvePortfolioUrl(targetPath);
+      window.open(liveUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    this.isPreviewOpening = true;
+    this.blogApi.createPreviewSession({
+      upserts: [draftItem],
+      source: 'content-studio'
+    }).subscribe({
+      next: (session) => {
+        this.isPreviewOpening = false;
+        const previewUrl = this.blogApi.buildPortfolioPreviewUrl(session.token, targetPath);
+        window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      },
+      error: () => {
+        this.isPreviewOpening = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Preview Failed',
+          detail: 'Could not create a cloud preview session.'
+        });
+      }
+    });
+  }
+
   private openDraft(draft: RedisContentDraft): void {
     this.draft = draft;
     this.editorOpen = true;
@@ -445,6 +478,59 @@ export class ContentStudioComponent implements OnInit {
       metadataJson: JSON.stringify(item.Metadata || {}, null, 2),
       CreatedAt: (item as any).CreatedAt,
       UpdatedAt: (item as any).UpdatedAt
+    };
+  }
+
+  private getPortfolioPathForPage(pageId: number): string {
+    switch (Number(pageId)) {
+      case PageID.Work:
+        return '/work';
+      case PageID.Projects:
+        return '/projects';
+      case PageID.Blog:
+        return '/blog';
+      case PageID.Landing:
+      default:
+        return '/';
+    }
+  }
+
+  private resolvePortfolioUrl(path: string): string {
+    const base = (this.blogApi.getPortfolioPreviewUrl() || '').replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${normalizedPath}`;
+  }
+
+  private buildPreviewItemFromDraft(): Partial<RedisContent> | null {
+    if (!this.draft) return null;
+
+    const id = (this.draft.ID || '').trim() || `preview-${Date.now()}`;
+    const metadataRaw = (this.draft.metadataJson || '').trim();
+    let metadata: Record<string, any> = {};
+
+    if (metadataRaw && metadataRaw !== '{}' && metadataRaw !== 'null') {
+      try {
+        metadata = JSON.parse(metadataRaw);
+      } catch {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Invalid Metadata',
+          detail: 'Metadata must be valid JSON before preview.'
+        });
+        return null;
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    return {
+      ID: id,
+      PageID: Number(this.draft.PageID) as any,
+      PageContentID: Number(this.draft.PageContentID) as any,
+      ListItemID: (this.draft.ListItemID || '').trim() || undefined,
+      Text: this.draft.Text ?? '',
+      Photo: this.draft.Photo ?? '',
+      Metadata: metadata,
+      UpdatedAt: nowIso as any
     };
   }
 }

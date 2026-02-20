@@ -5,6 +5,7 @@
 export const environment = {
   production: true,
   redisApiUrl: 'https://api.grayson-wills.com/api',
+  portfolioPreviewUrl: 'https://www.grayson-wills.com',
   appName: 'Blog Authoring GUI',
   cognito: {
     region: 'us-east-2',

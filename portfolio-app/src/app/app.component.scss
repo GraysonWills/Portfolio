@@ -4,6 +4,33 @@
   min-height: 100vh;
 }
 
+.preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.65rem 1rem;
+  background: linear-gradient(90deg, rgba(11, 79, 159, 0.95) 0%, rgba(191, 87, 0, 0.9) 100%);
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 18px rgba(11, 79, 159, 0.18);
+}
+
+.preview-exit {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.preview-exit:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .main-content {
   flex: 1;
   display: flex;

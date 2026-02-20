@@ -17,6 +17,8 @@ import { routeTransition } from './animations/route-animations';
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Grayson Wills - Portfolio';
   private routerSub!: Subscription;
+  previewModeActive = false;
+  private readonly previewStorageKey = 'portfolio_preview_token_v1';
 
   constructor(
     private redisService: RedisService,
@@ -27,6 +29,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
+    this.initializePreviewMode();
 
     this.routerSub = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
@@ -52,5 +55,65 @@ export class AppComponent implements OnInit, OnDestroy {
 
   getRouteAnimationData(outlet: RouterOutlet): string {
     return outlet?.activatedRouteData?.['title'] || '';
+  }
+
+  exitPreviewMode(): void {
+    this.previewModeActive = false;
+    this.redisService.clearPreviewSessionToken();
+
+    if (typeof window === 'undefined') return;
+
+    try {
+      sessionStorage.removeItem(this.previewStorageKey);
+    } catch {
+      // ignore
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('previewToken');
+    url.searchParams.delete('previewClear');
+    window.location.assign(url.toString());
+  }
+
+  private initializePreviewMode(): void {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const clearRequested = params.get('previewClear') === '1';
+    if (clearRequested) {
+      this.redisService.clearPreviewSessionToken();
+      this.previewModeActive = false;
+      try {
+        sessionStorage.removeItem(this.previewStorageKey);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const queryToken = (params.get('previewToken') || '').trim();
+    let token = queryToken;
+
+    if (!token) {
+      try {
+        token = (sessionStorage.getItem(this.previewStorageKey) || '').trim();
+      } catch {
+        token = '';
+      }
+    }
+
+    if (!token) {
+      this.redisService.clearPreviewSessionToken();
+      this.previewModeActive = false;
+      return;
+    }
+
+    this.redisService.setPreviewSessionToken(token);
+    this.previewModeActive = true;
+    try {
+      sessionStorage.setItem(this.previewStorageKey, token);
+    } catch {
+      // ignore
+    }
   }
 }

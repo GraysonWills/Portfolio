@@ -155,6 +155,18 @@
       <!-- Actions -->
       <div class="editor-actions">
         <p-button
+          label="Preview on Site (Card)"
+          icon="pi pi-external-link"
+          (onClick)="openPortfolioPreview('list')"
+          styleClass="p-button-outlined">
+        </p-button>
+        <p-button
+          label="Preview on Site (Full)"
+          icon="pi pi-external-link"
+          (onClick)="openPortfolioPreview('post')"
+          styleClass="p-button-outlined">
+        </p-button>
+        <p-button
           label="Preview Card"
           icon="pi pi-image"
           (onClick)="openPreview('card')"

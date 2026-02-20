@@ -12,6 +12,7 @@ A secure, standalone Angular application for creating and managing blog posts th
 - **Redis Connectivity** — Configurable API endpoint, connection testing with visual status indicator, and robust error feedback.
 - **Confirmation Dialogs** — PrimeNG `ConfirmDialog` for publish, edit, delete, and discard-changes actions.
 - **Transaction Log** — All create, update, delete, and config-change operations are logged and persisted in the browser for audit review.
+- **CloudFront Full-Site Preview** — Generate draft preview sessions and open the deployed portfolio routes (`/`, `/work`, `/projects`, `/blog`, `/blog/:id`) without publishing.
 
 ## Prerequisites
 
@@ -73,6 +74,13 @@ The post is written to Redis as paired content entries (text + optional image) u
 - Click **Edit** on any post card to re-open it in the editor.
 - Click **Delete** to permanently remove a post (confirmation required).
 - If you have unsaved changes and click Cancel, you'll be prompted to discard or keep editing.
+
+## Cloud Preview Workflow
+
+- In **Blog Editor**, use `Preview on Site (Card)` or `Preview on Site (Full)` to open CloudFront preview routes with unsaved draft data.
+- In **Dashboard**, each post includes `Site Card` and `Site Full` preview actions.
+- In **Content Studio**, click `Preview in Site` (or `Preview Draft in Site` inside the editor dialog) to preview non-blog page changes on deployed routes.
+- Preview links use short-lived tokenized sessions from the API and do not publish content.
 
 ## Redis Connection Settings
 

@@ -82,11 +82,12 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.tags = meta.tags || [];
         this.category = meta.category || 'General';
         this.publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
+        const bypassVisibility = !!meta.previewBypassVisibility || this.redisService.isPreviewListItemForcedVisible(listItemId);
 
         // Hide drafts/scheduled posts from public view.
         const status = meta.status || 'published';
         const publishTs = meta.publishDate ? new Date(meta.publishDate).getTime() : null;
-        if (status !== 'published' || (publishTs && publishTs > Date.now())) {
+        if (!bypassVisibility && (status !== 'published' || (publishTs && publishTs > Date.now()))) {
           this.notFound = true;
           this.isLoading = false;
           return;
@@ -96,7 +97,9 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.coverAlt = imgItem?.Metadata?.['alt'] || this.title;
 
         // Parse body blocks
-        if (bodyItem?.Text) {
+        if (bypassVisibility && textItem?.Text) {
+          this.bodyBlocks = [{ type: 'paragraph', content: textItem.Text }];
+        } else if (bodyItem?.Text) {
           try {
             this.bodyBlocks = JSON.parse(bodyItem.Text);
           } catch {

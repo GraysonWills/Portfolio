@@ -16,6 +16,19 @@ export type ApiHealth = {
   timestamp?: string;
 };
 
+export type PreviewSessionPayload = {
+  upserts: Partial<RedisContent>[];
+  deleteIds?: string[];
+  deleteListItemIds?: string[];
+  forceVisibleListItemIds?: string[];
+  source?: string;
+};
+
+export type PreviewSessionResponse = {
+  token: string;
+  expiresInSeconds: number;
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -23,7 +36,9 @@ export class BlogApiService {
   private readonly ENDPOINT_STORAGE_KEY = 'portfolio_api_endpoint';
   private readonly LEGACY_ENDPOINT_STORAGE_KEYS = ['portfolio_redis_api_endpoint'];
   private readonly PROD_DEFAULT_API = 'https://api.grayson-wills.com/api';
+  private readonly PROD_DEFAULT_PORTFOLIO_PREVIEW_URL = 'https://www.grayson-wills.com';
   private apiUrl: string = environment.redisApiUrl;
+  private portfolioPreviewUrl: string = environment.portfolioPreviewUrl || this.PROD_DEFAULT_PORTFOLIO_PREVIEW_URL;
   private headers: HttpHeaders;
 
   constructor(private http: HttpClient) {
@@ -83,6 +98,10 @@ export class BlogApiService {
    */
   getApiEndpoint(): string {
     return this.apiUrl;
+  }
+
+  getPortfolioPreviewUrl(): string {
+    return this.portfolioPreviewUrl;
   }
 
   /**
@@ -426,6 +445,30 @@ export class BlogApiService {
       map((h) => h?.status !== 'unhealthy'),
       catchError(() => of(false))
     );
+  }
+
+  createPreviewSession(payload: PreviewSessionPayload): Observable<PreviewSessionResponse> {
+    return this.http.post<PreviewSessionResponse>(
+      `${this.apiUrl}/content/preview/session`,
+      payload,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  buildPortfolioPreviewUrl(token: string, path: string = '/'): string {
+    const safeToken = String(token || '').trim();
+    if (!safeToken) return this.portfolioPreviewUrl || this.PROD_DEFAULT_PORTFOLIO_PREVIEW_URL;
+
+    let base = this.portfolioPreviewUrl || this.PROD_DEFAULT_PORTFOLIO_PREVIEW_URL;
+    base = base.replace(/\/+$/, '');
+
+    let normalizedPath = (path || '/').trim();
+    if (!normalizedPath.startsWith('/')) normalizedPath = `/${normalizedPath}`;
+
+    const target = `${base}${normalizedPath}`;
+    const url = new URL(target);
+    url.searchParams.set('previewToken', safeToken);
+    return url.toString();
   }
 
   /**

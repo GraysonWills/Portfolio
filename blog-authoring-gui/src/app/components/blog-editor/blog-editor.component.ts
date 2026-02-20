@@ -3,7 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
-import { BlogPostMetadata } from '../../models/redis-content.model';
+import { BlogPostMetadata, PageContentID, PageID, RedisContent } from '../../models/redis-content.model';
 
 @Component({
   selector: 'app-blog-editor',
@@ -38,6 +38,7 @@ export class BlogEditorComponent implements OnInit {
       ['clean']
     ]
   };
+  private previewListItemID: string = '';
 
   constructor(
     private fb: FormBuilder,
@@ -61,6 +62,7 @@ export class BlogEditorComponent implements OnInit {
     if (this.initialData) {
       this.loadInitialData();
     }
+    this.previewListItemID = this.initialData?.listItemID || `blog-preview-${Date.now()}`;
   }
 
   /**
@@ -279,6 +281,32 @@ export class BlogEditorComponent implements OnInit {
     this.showPreviewDialog = false;
   }
 
+  openPortfolioPreview(target: 'list' | 'post' = 'post'): void {
+    const payload = this.buildPortfolioPreviewPayload();
+    const previewPath = target === 'list'
+      ? '/blog'
+      : `/blog/${encodeURIComponent(payload.listItemID)}`;
+
+    this.blogApi.createPreviewSession({
+      upserts: payload.upserts,
+      deleteIds: payload.deleteIds,
+      forceVisibleListItemIds: [payload.listItemID],
+      source: 'blog-editor'
+    }).subscribe({
+      next: (session) => {
+        const url = this.blogApi.buildPortfolioPreviewUrl(session.token, previewPath);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Preview Failed',
+          detail: 'Could not create a cloud preview session.'
+        });
+      }
+    });
+  }
+
   getPreviewTitle(): string {
     const title = String(this.blogForm.get('title')?.value || '').trim();
     return title || 'Untitled Draft';
@@ -336,5 +364,71 @@ export class BlogEditorComponent implements OnInit {
     const contentText = contentHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     const summary = String(this.blogForm.get('summary')?.value || '').trim();
     return `${summary} ${contentText}`.trim();
+  }
+
+  private buildPortfolioPreviewPayload(): {
+    listItemID: string;
+    upserts: Partial<RedisContent>[];
+    deleteIds: string[];
+  } {
+    const listItemID = (this.initialData?.listItemID || this.previewListItemID || `blog-preview-${Date.now()}`).trim();
+    this.previewListItemID = listItemID;
+
+    const formValue = this.blogForm.value;
+    const publishDate = formValue.publishDate ? new Date(formValue.publishDate) : new Date();
+    const safePublishDate = Number.isNaN(publishDate.getTime()) ? new Date() : publishDate;
+    const nowIso = new Date().toISOString();
+
+    const metadata: BlogPostMetadata & Record<string, any> = {
+      title: this.getPreviewTitle(),
+      summary: this.getPreviewSummary(),
+      tags: this.getPreviewTags(),
+      publishDate: safePublishDate,
+      status: (formValue.status || 'draft'),
+      ...(formValue.category ? { category: String(formValue.category).trim() } : {}),
+      previewBypassVisibility: true
+    };
+
+    const blogItemId = this.initialData?.blogItemId || `blog-item-${listItemID}`;
+    const blogTextId = this.initialData?.blogTextId || `blog-text-${listItemID}`;
+    const blogImageId = this.initialData?.blogImageId || `blog-image-${listItemID}`;
+
+    const upserts: Partial<RedisContent>[] = [
+      {
+        ID: blogItemId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogItem,
+        ListItemID: listItemID,
+        Text: this.getPreviewTitle(),
+        Metadata: metadata,
+        UpdatedAt: nowIso as any
+      },
+      {
+        ID: blogTextId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogText,
+        ListItemID: listItemID,
+        Text: String(this.blogForm.get('content')?.value || ''),
+        Metadata: metadata,
+        UpdatedAt: nowIso as any
+      }
+    ];
+
+    const deleteIds: string[] = [];
+    if (this.getPreviewImage()) {
+      upserts.push({
+        ID: blogImageId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogImage,
+        ListItemID: listItemID,
+        Photo: this.getPreviewImage() || undefined,
+        Metadata: { alt: `${this.getPreviewTitle()} cover image`, previewBypassVisibility: true },
+        UpdatedAt: nowIso as any
+      });
+    } else if (this.initialData?.blogImageId) {
+      deleteIds.push(this.initialData.blogImageId);
+    }
+
+    return { listItemID, upserts, deleteIds };
   }
 }

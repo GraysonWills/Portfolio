@@ -1,6 +1,10 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-container">
   <app-header></app-header>
+  <div class="preview-banner" *ngIf="previewModeActive" role="status" aria-live="polite">
+    <span>Preview mode is active. You are viewing draft content from authoring.</span>
+    <button type="button" class="preview-exit" (click)="exitPreviewMode()">Exit preview</button>
+  </div>
   <main id="main-content" class="main-content" role="main" tabindex="-1" [@routeTransition]="getRouteAnimationData(outlet)">
     <router-outlet #outlet="outlet"></router-outlet>
   </main>

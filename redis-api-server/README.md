@@ -140,6 +140,10 @@ These are used for **management/admin operations** only (not for data):
 | `NODE_ENV` | Environment | `development` |
 | `ALLOWED_ORIGINS` | Comma-separated frontend origins for CORS | `http://localhost:4200,http://localhost:3000` |
 | `CACHE_TTL_MS` | In-memory GET cache TTL (milliseconds) | `60000` |
+| `PREVIEW_TTL_SECONDS` | Preview session TTL in seconds | `21600` |
+| `PREVIEW_MAX_BYTES` | Max preview payload size in bytes | `1048576` |
+| `PREVIEW_MAX_UPSERTS` | Max upsert records per preview session | `500` |
+| `PREVIEW_MAX_DELETES` | Max delete IDs/listItemIDs per preview session | `500` |
 
 ### Optional: DynamoDB Content Store (Recommended)
 
@@ -186,8 +190,10 @@ If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
 - **GET** `/api/content/:id` - Get content by ID
 - **GET** `/api/content/page/:pageId` - Get content by PageID
 - **GET** `/api/content/list-item/:listItemId` - Get content by ListItemID
+- **GET** `/api/content/preview/:token` - Get tokenized draft preview payload
 - **POST** `/api/content` - Create new content item (auth required)
 - **POST** `/api/content/batch` - Create multiple content items (auth required)
+- **POST** `/api/content/preview/session` - Create short-lived preview session (auth required)
 - **PUT** `/api/content/:id` - Update content by ID (auth required)
 - **DELETE** `/api/content/:id` - Delete content by ID (auth required)
 - **DELETE** `/api/content/list-item/:listItemId` - Delete all content by ListItemID (auth required)

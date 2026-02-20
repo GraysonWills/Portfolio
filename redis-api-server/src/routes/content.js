@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const redisClient = require('../config/redis');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const requireAuth = require('../middleware/requireAuth');
 const {
   addToIndex,
@@ -32,6 +33,11 @@ const {
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
+const PREVIEW_KEY_PREFIX = 'content:preview:';
+const PREVIEW_TTL_SECONDS = Math.max(300, parseInt(process.env.PREVIEW_TTL_SECONDS || '21600', 10) || 21600);
+const PREVIEW_MAX_UPSERTS = Math.max(1, parseInt(process.env.PREVIEW_MAX_UPSERTS || '500', 10) || 500);
+const PREVIEW_MAX_DELETES = Math.max(0, parseInt(process.env.PREVIEW_MAX_DELETES || '500', 10) || 500);
+const PREVIEW_MAX_BYTES = Math.max(16_384, parseInt(process.env.PREVIEW_MAX_BYTES || '1048576', 10) || 1048576);
 
 // Public reads; authenticated writes.
 router.use((req, res, next) => {
@@ -63,6 +69,87 @@ router.get('/', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/content/preview/session
+ * Create a short-lived preview session payload used by portfolio CloudFront previews.
+ */
+router.post('/preview/session', async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const upserts = Array.isArray(body.upserts) ? body.upserts : [];
+    const deleteIds = Array.isArray(body.deleteIds) ? body.deleteIds : [];
+    const deleteListItemIds = Array.isArray(body.deleteListItemIds) ? body.deleteListItemIds : [];
+    const forceVisibleListItemIds = Array.isArray(body.forceVisibleListItemIds) ? body.forceVisibleListItemIds : [];
+
+    if (upserts.length > PREVIEW_MAX_UPSERTS) {
+      return res.status(400).json({ error: `Too many upserts (max ${PREVIEW_MAX_UPSERTS})` });
+    }
+    if (deleteIds.length > PREVIEW_MAX_DELETES || deleteListItemIds.length > PREVIEW_MAX_DELETES) {
+      return res.status(400).json({ error: `Too many deletes (max ${PREVIEW_MAX_DELETES})` });
+    }
+
+    for (const item of upserts) {
+      if (!item || typeof item !== 'object') {
+        return res.status(400).json({ error: 'Invalid upsert entry' });
+      }
+      if (!item.ID || typeof item.ID !== 'string') {
+        return res.status(400).json({ error: 'Each upsert must include string ID' });
+      }
+    }
+
+    const payload = {
+      upserts,
+      deleteIds: deleteIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()),
+      deleteListItemIds: deleteListItemIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()),
+      forceVisibleListItemIds: forceVisibleListItemIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()),
+      createdAt: new Date().toISOString(),
+      source: typeof body.source === 'string' ? body.source : 'authoring',
+    };
+
+    const encoded = JSON.stringify(payload);
+    const bytes = Buffer.byteLength(encoded, 'utf8');
+    if (bytes > PREVIEW_MAX_BYTES) {
+      return res.status(400).json({ error: `Preview payload too large (${bytes} bytes; max ${PREVIEW_MAX_BYTES})` });
+    }
+
+    const token = crypto.randomBytes(18).toString('hex');
+    const key = `${PREVIEW_KEY_PREFIX}${token}`;
+    await redisClient.set(key, encoded, { EX: PREVIEW_TTL_SECONDS });
+
+    return res.status(201).json({
+      token,
+      expiresInSeconds: PREVIEW_TTL_SECONDS
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/preview/:token
+ * Fetch preview payload by token.
+ */
+router.get('/preview/:token', async (req, res) => {
+  try {
+    const token = String(req.params.token || '').trim();
+    if (!/^[a-f0-9]{20,128}$/i.test(token)) {
+      return res.status(400).json({ error: 'Invalid preview token' });
+    }
+
+    const key = `${PREVIEW_KEY_PREFIX}${token}`;
+    const raw = await redisClient.get(key);
+    if (!raw) {
+      return res.status(404).json({ error: 'Preview session not found or expired' });
+    }
+
+    const payload = JSON.parse(raw);
+    res.set('Cache-Control', 'no-store');
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 

@@ -8,6 +8,7 @@ export const environment = {
   // For local development: http://localhost:3000/api
   // For production: https://your-api-domain.com/api
   redisApiUrl: 'http://localhost:3000/api',
+  portfolioPreviewUrl: 'http://localhost:4200',
   appName: 'Blog Authoring GUI',
   cognito: {
     region: 'us-east-2',

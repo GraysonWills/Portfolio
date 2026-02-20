@@ -172,6 +172,18 @@
 
           <div class="post-actions">
             <p-button
+              label="Site Card"
+              icon="pi pi-external-link"
+              (onClick)="openPortfolioPreview(post, 'list')"
+              styleClass="p-button-outlined p-button-sm">
+            </p-button>
+            <p-button
+              label="Site Full"
+              icon="pi pi-external-link"
+              (onClick)="openPortfolioPreview(post, 'post')"
+              styleClass="p-button-outlined p-button-sm">
+            </p-button>
+            <p-button
               label="Preview Card"
               icon="pi pi-image"
               (onClick)="openPreview(post, 'card')"

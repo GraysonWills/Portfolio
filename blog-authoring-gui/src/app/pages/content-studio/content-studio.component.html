@@ -23,6 +23,13 @@
         styleClass="p-button-outlined">
       </p-button>
       <p-button
+        label="Preview in Site"
+        icon="pi pi-external-link"
+        (onClick)="previewCurrentPageOnSite()"
+        [loading]="isPreviewOpening"
+        styleClass="p-button-outlined">
+      </p-button>
+      <p-button
         label="New Item"
         icon="pi pi-plus"
         (onClick)="newItem()"
@@ -278,6 +285,13 @@
     </div>
 
     <ng-template pTemplate="footer">
+      <p-button
+        label="Preview Draft in Site"
+        icon="pi pi-external-link"
+        (onClick)="previewCurrentPageOnSite()"
+        [loading]="isPreviewOpening"
+        styleClass="p-button-outlined">
+      </p-button>
       <p-button
         label="Cancel"
         icon="pi pi-times"

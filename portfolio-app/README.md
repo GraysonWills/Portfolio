@@ -6,6 +6,7 @@ A fully-featured, multi-page Angular portfolio website using PrimeNG, designed f
 
 - **Multi-page Architecture**: Landing, Work, Projects, and Blog pages
 - **Dynamic Content Loading**: Content loaded from Redis database using PageID and PageContentID schema
+- **Tokenized Preview Mode**: Supports draft overlays from authoring via `?previewToken=...` across all routes
 - **LinkedIn Integration**: ATS-optimized profile data integration
 - **Blog Authoring GUI**: Secure blog post creation and management
 - **Mailchimp Integration**: Newsletter subscription functionality
