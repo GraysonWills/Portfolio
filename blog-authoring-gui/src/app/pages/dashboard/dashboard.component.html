@@ -171,6 +171,18 @@
           </div>
 
           <div class="post-actions">
+            <p-button
+              label="Preview Card"
+              icon="pi pi-image"
+              (onClick)="openPreview(post, 'card')"
+              styleClass="p-button-outlined p-button-sm">
+            </p-button>
+            <p-button
+              label="Preview Full"
+              icon="pi pi-eye"
+              (onClick)="openPreview(post, 'full')"
+              styleClass="p-button-outlined p-button-sm">
+            </p-button>
             <p-button 
               label="Edit" 
               icon="pi pi-pencil"
@@ -196,6 +208,68 @@
     (saved)="onEditorSaved()"
     (cancelled)="onEditorCancelled()">
   </app-blog-editor>
+
+  <p-dialog
+    [(visible)]="showPreviewDialog"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [dismissableMask]="true"
+    (onHide)="closePreview()"
+    [style]="{ width: 'min(980px, 94vw)' }"
+    [header]="'Blog Preview: ' + (previewMode === 'card' ? 'Title Card' : 'Full Post')">
+    <div class="preview-toolbar">
+      <p-button
+        label="Title Card"
+        icon="pi pi-image"
+        (onClick)="setPreviewMode('card')"
+        [styleClass]="previewMode === 'card' ? 'p-button-sm' : 'p-button-sm p-button-outlined'">
+      </p-button>
+      <p-button
+        label="Full Post"
+        icon="pi pi-eye"
+        (onClick)="setPreviewMode('full')"
+        [styleClass]="previewMode === 'full' ? 'p-button-sm' : 'p-button-sm p-button-outlined'">
+      </p-button>
+    </div>
+
+    <section *ngIf="previewPost && previewMode === 'card'" class="preview-card-frame">
+      <div class="preview-card-media" *ngIf="getPostImage(previewPost) as imageUrl">
+        <img [src]="imageUrl" [alt]="getPostTitle(previewPost) + ' cover image'" loading="lazy" />
+      </div>
+      <div class="preview-card-content">
+        <div class="preview-card-meta">
+          <span><i class="pi pi-calendar"></i> {{ getPostDate(previewPost) | date:'mediumDate' }}</span>
+          <span><i class="pi pi-clock"></i> {{ getPreviewReadTime(previewPost) }} min read</span>
+          <span><i class="pi pi-bookmark"></i> {{ getPostStatus(previewPost) }}</span>
+        </div>
+        <h3>{{ getPostTitle(previewPost) }}</h3>
+        <p>{{ getPostSummary(previewPost) }}</p>
+        <div class="preview-tags" *ngIf="getPostTags(previewPost).length > 0">
+          <p-tag *ngFor="let tag of getPostTags(previewPost)" [value]="tag"></p-tag>
+        </div>
+      </div>
+    </section>
+
+    <article *ngIf="previewPost && previewMode === 'full'" class="preview-post">
+      <div class="preview-hero" *ngIf="getPostImage(previewPost) as imageUrl">
+        <img [src]="imageUrl" [alt]="getPostTitle(previewPost) + ' hero image'" loading="lazy" />
+      </div>
+      <header class="preview-post-header">
+        <h1>{{ getPostTitle(previewPost) }}</h1>
+        <p class="preview-post-summary">{{ getPostSummary(previewPost) }}</p>
+        <div class="preview-card-meta">
+          <span><i class="pi pi-calendar"></i> {{ getPostDate(previewPost) | date:'mediumDate' }}</span>
+          <span><i class="pi pi-clock"></i> {{ getPreviewReadTime(previewPost) }} min read</span>
+          <span><i class="pi pi-bookmark"></i> {{ getPostStatus(previewPost) }}</span>
+        </div>
+        <div class="preview-tags" *ngIf="getPostTags(previewPost).length > 0">
+          <p-tag *ngFor="let tag of getPostTags(previewPost)" [value]="tag"></p-tag>
+        </div>
+      </header>
+      <div class="preview-post-body" [innerHTML]="getPreviewContentHtml(previewPost)"></div>
+    </article>
+  </p-dialog>
 
   <p-toast></p-toast>
   <p-confirmDialog></p-confirmDialog>

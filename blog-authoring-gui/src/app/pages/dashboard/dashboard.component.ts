@@ -18,6 +18,9 @@ export class DashboardComponent implements OnInit {
   isEditing: boolean = false;
   selectedPost: any = null;
   showEditor: boolean = false;
+  showPreviewDialog: boolean = false;
+  previewMode: 'card' | 'full' = 'card';
+  previewPost: ContentGroup | null = null;
   showSettings: boolean = false;
   showTransactionLog: boolean = false;
   isConnecting: boolean = false;
@@ -248,6 +251,21 @@ export class DashboardComponent implements OnInit {
     this.isEditing = false;
   }
 
+  openPreview(post: ContentGroup, mode: 'card' | 'full' = 'card'): void {
+    this.previewPost = post;
+    this.previewMode = mode;
+    this.showPreviewDialog = true;
+  }
+
+  setPreviewMode(mode: 'card' | 'full'): void {
+    this.previewMode = mode;
+  }
+
+  closePreview(): void {
+    this.showPreviewDialog = false;
+    this.previewPost = null;
+  }
+
   /**
    * Toggle settings panel
    */
@@ -366,5 +384,27 @@ export class DashboardComponent implements OnInit {
 
   getPostCountByStatus(status: string): number {
     return this.blogPosts.filter((post) => this.getPostStatus(post) === status).length;
+  }
+
+  getPreviewContentHtml(post: ContentGroup | null): string {
+    if (!post) return '<p>No post selected.</p>';
+    const body = post.items.find((item) => item.PageContentID === PageContentID.BlogBody && item.Text)
+      || post.items.find((item) => item.PageContentID === PageContentID.BlogText && item.Text);
+
+    const raw = String(body?.Text || '').trim();
+    if (!raw) return '<p>No content available.</p>';
+    if (raw.includes('<')) return raw;
+    return raw
+      .split(/\n+/)
+      .map((line) => `<p>${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+      .join('');
+  }
+
+  getPreviewReadTime(post: ContentGroup | null): number {
+    if (!post) return 1;
+    const raw = this.getPreviewContentHtml(post);
+    const text = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    return Math.max(1, Math.ceil(words / 200));
   }
 }

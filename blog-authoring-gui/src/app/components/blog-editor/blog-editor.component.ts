@@ -18,6 +18,8 @@ export class BlogEditorComponent implements OnInit {
 
   blogForm: FormGroup;
   isSaving: boolean = false;
+  showPreviewDialog: boolean = false;
+  previewMode: 'card' | 'full' = 'card';
   uploadedImage: string | null = null;
   tags: string[] = [];
   currentTag: string = '';
@@ -262,5 +264,77 @@ export class BlogEditorComponent implements OnInit {
    */
   removeImage(): void {
     this.uploadedImage = null;
+  }
+
+  openPreview(mode: 'card' | 'full' = 'card'): void {
+    this.previewMode = mode;
+    this.showPreviewDialog = true;
+  }
+
+  setPreviewMode(mode: 'card' | 'full'): void {
+    this.previewMode = mode;
+  }
+
+  closePreview(): void {
+    this.showPreviewDialog = false;
+  }
+
+  getPreviewTitle(): string {
+    const title = String(this.blogForm.get('title')?.value || '').trim();
+    return title || 'Untitled Draft';
+  }
+
+  getPreviewSummary(): string {
+    const summary = String(this.blogForm.get('summary')?.value || '').trim();
+    if (summary) return summary;
+    const text = this.getPreviewPlainText();
+    if (!text) return 'Add a summary to preview your blog card description.';
+    return text.slice(0, 180);
+  }
+
+  getPreviewPublishDate(): Date {
+    const raw = this.blogForm.get('publishDate')?.value;
+    return raw ? new Date(raw) : new Date();
+  }
+
+  getPreviewStatus(): string {
+    return String(this.blogForm.get('status')?.value || 'draft');
+  }
+
+  getPreviewImage(): string | null {
+    if (!this.uploadedImage) return null;
+    const img = String(this.uploadedImage).trim();
+    return img || null;
+  }
+
+  getPreviewTags(): string[] {
+    return this.tags || [];
+  }
+
+  getPreviewReadTimeMinutes(): number {
+    const text = this.getPreviewPlainText();
+    if (!text) return 1;
+    const words = text.split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil(words / 200));
+  }
+
+  getPreviewContentHtml(): string {
+    const raw = String(this.blogForm.get('content')?.value || '').trim();
+    if (!raw) {
+      return '<p>Add content to preview the full post body.</p>';
+    }
+    // Editor content is HTML (Quill). If plain text is entered, render it safely in paragraphs.
+    if (raw.includes('<')) return raw;
+    return raw
+      .split(/\n+/)
+      .map((line) => `<p>${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+      .join('');
+  }
+
+  private getPreviewPlainText(): string {
+    const contentHtml = String(this.blogForm.get('content')?.value || '');
+    const contentText = contentHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const summary = String(this.blogForm.get('summary')?.value || '').trim();
+    return `${summary} ${contentText}`.trim();
   }
 }
