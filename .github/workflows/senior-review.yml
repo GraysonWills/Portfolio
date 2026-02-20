@@ -60,17 +60,19 @@ jobs:
           REVIEW_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           node scripts/senior_review.mjs
-          echo "## Senior Engineer Review" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Report generated at \`artifacts/senior-review-report.md\`." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Senior Engineer Review"
+            echo ""
+            echo "Report generated at \`artifacts/senior-review-report.md\`."
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
           # Include a readable excerpt (full report is in artifact)
           python - <<'PY'
-import pathlib
-p = pathlib.Path("artifacts/senior-review-report.md")
-text = p.read_text(encoding="utf-8")
-print(text[:12000])
-PY
+          import pathlib
+          p = pathlib.Path("artifacts/senior-review-report.md")
+          text = p.read_text(encoding="utf-8")
+          print(text[:12000])
+          PY
 
       - name: Upload Review Artifact
         uses: actions/upload-artifact@v4
@@ -106,4 +108,3 @@ PY
                 owner, repo, issue_number, body
               });
             }
-
