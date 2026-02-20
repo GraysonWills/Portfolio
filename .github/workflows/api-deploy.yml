@@ -51,13 +51,34 @@ jobs:
           role-to-assume: ${{ env.AWS_API_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Ensure Lambda runtime is current
+      - name: Check Lambda runtime
+        id: runtime_check
         run: |
+          RUNTIME="$(aws lambda get-function-configuration \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --query 'Runtime' \
+            --output text || echo unknown)"
+          echo "runtime=${RUNTIME}" >> "$GITHUB_OUTPUT"
+          echo "Detected runtime: ${RUNTIME}"
+          if [ "${RUNTIME}" = "nodejs20.x" ]; then
+            echo "::warning::Lambda runtime is nodejs20.x (AWS Lambda deprecates it on 2026-04-30; updates blocked after 2026-09-30)."
+          fi
+
+      - name: Attempt runtime upgrade (non-blocking)
+        if: steps.runtime_check.outputs.runtime != env.LAMBDA_RUNTIME
+        run: |
+          set +e
           aws lambda update-function-configuration \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
             --runtime "${LAMBDA_RUNTIME}"
-          aws lambda wait function-updated \
-            --function-name "${LAMBDA_FUNCTION_NAME}"
+          UPDATE_EXIT=$?
+          if [ "$UPDATE_EXIT" -eq 0 ]; then
+            aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}"
+            echo "Runtime updated to ${LAMBDA_RUNTIME}"
+          else
+            echo "::warning::Could not auto-update runtime to ${LAMBDA_RUNTIME}. Ensure deploy role has lambda:UpdateFunctionConfiguration."
+          fi
+          exit 0
 
       - name: Deploy to Lambda
         run: |
