@@ -12,6 +12,7 @@ env:
   AWS_REGION: us-east-2
   AWS_API_DEPLOY_ROLE_ARN: arn:aws:iam::381492289909:role/GitHubActionsApiDeploy
   LAMBDA_FUNCTION_NAME: portfolio-redis-api
+  LAMBDA_RUNTIME: nodejs22.x
 
 jobs:
   deploy:
@@ -50,9 +51,16 @@ jobs:
           role-to-assume: ${{ env.AWS_API_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Ensure Lambda runtime is current
+        run: |
+          aws lambda update-function-configuration \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --runtime "${LAMBDA_RUNTIME}"
+          aws lambda wait function-updated \
+            --function-name "${LAMBDA_FUNCTION_NAME}"
+
       - name: Deploy to Lambda
         run: |
           aws lambda update-function-code \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
             --zip-file "fileb://redis-api-lambda.zip"
-
