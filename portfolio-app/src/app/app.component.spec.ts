@@ -9,6 +9,8 @@ import { RedisService } from './services/redis.service';
 
 class RedisServiceStub {
   setApiEndpoint(): void {}
+  setPreviewSessionToken(): void {}
+  clearPreviewSessionToken(): void {}
 }
 
 class MailchimpServiceStub {
