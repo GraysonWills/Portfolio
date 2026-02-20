@@ -299,6 +299,8 @@
   color: var(--text-primary);
   margin-bottom: 0.5rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .blog-summary {
@@ -307,6 +309,8 @@
   margin-bottom: 1rem;
   flex: 1;
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ── Blog Footer (tags + read more) ── */

@@ -94,6 +94,7 @@
   border-radius: var(--radius-lg);
   background: linear-gradient(180deg, #ffffff 0%, #f8fafd 100%);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .article-category {
@@ -176,6 +177,9 @@
 /* ── Article Body ── */
 .article-body {
   padding-bottom: 3rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Markdown rendered paragraphs */
@@ -184,10 +188,20 @@
   color: var(--text-secondary);
   font-size: 1.05rem;
   line-height: 1.8;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 
   ::ng-deep {
+    * {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
     p {
       margin-bottom: 1rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     strong, b {
@@ -224,10 +238,12 @@
       color: #cdd6f4;
       padding: 1.25rem;
       border-radius: var(--radius-md);
+      max-width: 100%;
       overflow-x: auto;
       margin: 1.5rem 0;
       font-size: 0.9rem;
       line-height: 1.6;
+      white-space: pre;
 
       code {
         background: none;
@@ -241,6 +257,8 @@
     ul, ol {
       padding-left: 1.5rem;
       margin-bottom: 1rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
 
       li {
         margin-bottom: 0.35rem;
@@ -253,6 +271,30 @@
       height: 1px;
       background: var(--bg-tertiary);
       margin: 2rem 0;
+    }
+
+    img,
+    video,
+    canvas,
+    svg {
+      display: block;
+      max-width: 100% !important;
+      height: auto !important;
+    }
+
+    iframe {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      aspect-ratio: 16 / 9;
+      border: 0;
+    }
+
+    table {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
     }
   }
 }
@@ -490,6 +532,8 @@
   color: var(--text-primary);
   margin-bottom: 0.5rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .blog-summary {
@@ -502,6 +546,8 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .blog-footer {
