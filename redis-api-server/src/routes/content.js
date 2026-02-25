@@ -30,10 +30,16 @@ const {
   ddbDeleteContentById,
   ddbDeleteContentByListItemId,
 } = require('../services/content-ddb');
+const {
+  isPreviewSessionsDdbEnabled,
+  putPreviewSession,
+  getPreviewSession
+} = require('../services/preview-session-ddb');
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
 const PREVIEW_KEY_PREFIX = 'content:preview:';
+const redisConfigured = !!redisClient.isConfigured;
 const PREVIEW_TTL_SECONDS = Math.max(300, parseInt(process.env.PREVIEW_TTL_SECONDS || '21600', 10) || 21600);
 const PREVIEW_MAX_UPSERTS = Math.max(1, parseInt(process.env.PREVIEW_MAX_UPSERTS || '500', 10) || 500);
 const PREVIEW_MAX_DELETES = Math.max(0, parseInt(process.env.PREVIEW_MAX_DELETES || '500', 10) || 500);
@@ -116,8 +122,25 @@ router.post('/preview/session', async (req, res) => {
     }
 
     const token = crypto.randomBytes(18).toString('hex');
-    const key = `${PREVIEW_KEY_PREFIX}${token}`;
-    await redisClient.set(key, encoded, { EX: PREVIEW_TTL_SECONDS });
+    let stored = false;
+
+    if (isPreviewSessionsDdbEnabled()) {
+      try {
+        await putPreviewSession(token, payload, PREVIEW_TTL_SECONDS);
+        stored = true;
+      } catch (err) {
+        if (!redisConfigured) throw err;
+        console.warn('[preview] Failed to store preview session in DynamoDB, falling back to Redis:', err.message);
+      }
+    }
+
+    if (!stored) {
+      if (!redisConfigured) {
+        return res.status(500).json({ error: 'Preview session store is not configured' });
+      }
+      const key = `${PREVIEW_KEY_PREFIX}${token}`;
+      await redisClient.set(key, encoded, { EX: PREVIEW_TTL_SECONDS });
+    }
 
     return res.status(201).json({
       token,
@@ -139,13 +162,30 @@ router.get('/preview/:token', async (req, res) => {
       return res.status(400).json({ error: 'Invalid preview token' });
     }
 
-    const key = `${PREVIEW_KEY_PREFIX}${token}`;
-    const raw = await redisClient.get(key);
-    if (!raw) {
+    let payload = null;
+    let ddbError = null;
+
+    if (isPreviewSessionsDdbEnabled()) {
+      try {
+        payload = await getPreviewSession(token);
+      } catch (err) {
+        ddbError = err;
+      }
+    }
+
+    if (!payload && redisConfigured) {
+      const key = `${PREVIEW_KEY_PREFIX}${token}`;
+      const raw = await redisClient.get(key);
+      if (raw) {
+        payload = JSON.parse(raw);
+      }
+    }
+
+    if (!payload) {
+      if (ddbError && !redisConfigured) throw ddbError;
       return res.status(404).json({ error: 'Preview session not found or expired' });
     }
 
-    const payload = JSON.parse(raw);
     res.set('Cache-Control', 'no-store');
     return res.json(payload);
   } catch (error) {

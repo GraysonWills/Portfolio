@@ -1,12 +1,12 @@
 # Redis API Server
 
-Backend API server that connects to Redis database and provides REST endpoints for portfolio and blog content management.
+Backend API server for portfolio/blog content management. Supports DynamoDB-first operation with optional Redis compatibility mode.
 
 ## Features
 
 - RESTful API endpoints for content CRUD operations
-- Content storage backend: **Redis (default)** or **DynamoDB (recommended for multi-region DR)**
-- Image upload (S3 when configured, otherwise base64 fallback)
+- Content storage backend: **DynamoDB (recommended)** or **Redis compatibility mode**
+- Image upload (S3-backed)
 - Health check endpoint
 - Redis JSON storage support (with fallback to string storage)
 - CORS enabled for Angular frontend
@@ -14,15 +14,14 @@ Backend API server that connects to Redis database and provides REST endpoints f
 - Auto-detects TLS for RedisLabs connections
 - **Optional**: Redis Cloud API integration for management operations
 - **Write auth:** POST/PUT/DELETE + uploads can be protected with Cognito JWTs (read endpoints stay public)
+- **Optional**: Queue-backed blog notification delivery via SQS + Lambda consumer
 
 ## Prerequisites
 
 - Node.js (LTS version 18.x or higher)
 - npm or yarn
-- **Redis Cloud** database access (host, port, password)
-  - This setup is configured for **Redis Cloud** (not local Redis)
-  - Your Redis Cloud endpoint (e.g., `redis-15545.c14.us-east-1-2.ec2.cloud.redislabs.com:15545`)
-  - Your Redis Cloud database password
+- **DynamoDB** table access for content and preview sessions
+- **Optional** Redis access only if you run legacy compatibility mode
 - **Optional**: Redis Cloud API keys (Account Key + User Key) for admin operations
 
 ## Quick Setup
@@ -65,19 +64,19 @@ The setup script will prompt you for:
    cp .env.example .env
    ```
 
-3. **Edit `.env` with your Redis Cloud credentials:**
+3. **Edit `.env` with your runtime configuration:**
    ```env
-   # Required: Redis Cloud Database Connection (for data operations)
-   # Note: This is configured for Redis Cloud, not local Redis
-   REDIS_HOST=redis-15545.c14.us-east-1-2.ec2.cloud.redislabs.com
-   REDIS_PORT=15545
-   REDIS_PASSWORD=your-redis-cloud-database-password
-   REDIS_TLS=true
-   REDIS_DB=0
-   
-   # Optional: Redis Cloud API Keys (for management operations)
-   REDIS_CLOUD_ACCOUNT_KEY=your-account-key
-   REDIS_CLOUD_USER_KEY=your-user-key
+   # Recommended: DynamoDB content backend
+   CONTENT_BACKEND=dynamodb
+   CONTENT_TABLE_NAME=portfolio-content
+   PREVIEW_SESSIONS_TABLE_NAME=portfolio-content-preview-sessions
+   DDB_REGION=us-east-2
+
+   # Optional: Redis compatibility mode (only if needed)
+   # REDIS_HOST=redis-host
+   # REDIS_PORT=6379
+   # REDIS_PASSWORD=...
+   # REDIS_TLS=true
    
    # Server Configuration
    PORT=3000
@@ -95,22 +94,21 @@ The setup script will prompt you for:
 
 ## Configuration
 
-### Required: Redis Cloud Database Connection
+### Optional: Redis Compatibility Connection
 
 These are used for **data operations** (storing/retrieving content):
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `REDIS_HOST` | Redis Cloud server hostname | ✅ Yes |
-| `REDIS_PORT` | Redis Cloud server port (typically 15545) | ✅ Yes |
-| `REDIS_PASSWORD` | Redis Cloud database password | ✅ Yes |
-| `REDIS_TLS` | Enable TLS connection | ✅ Yes (auto-enabled for Redis Cloud) |
+| `REDIS_HOST` | Redis host | ❌ Optional |
+| `REDIS_PORT` | Redis port | ❌ Optional |
+| `REDIS_PASSWORD` | Redis password | ❌ Optional |
+| `REDIS_TLS` | Enable TLS connection | ❌ Optional |
 | `REDIS_DB` | Redis database number | No (default: 0) |
 
 **Note:** 
-- This setup is configured for **Redis Cloud**, not local Redis
-- TLS is automatically enabled for port 15545 and Redis Cloud hostnames
-- The connection defaults to secure TLS when connecting to `*.cloud.redislabs.com` domains
+- If `REDIS_HOST` is unset, Redis is disabled.
+- DynamoDB mode does not require Redis.
 
 ### Optional: Redis Cloud REST API Keys
 
@@ -141,6 +139,7 @@ These are used for **management/admin operations** only (not for data):
 | `ALLOWED_ORIGINS` | Comma-separated frontend origins for CORS | `http://localhost:4200,http://localhost:3000` |
 | `CACHE_TTL_MS` | In-memory GET cache TTL (milliseconds) | `60000` |
 | `PREVIEW_TTL_SECONDS` | Preview session TTL in seconds | `21600` |
+| `PREVIEW_SESSIONS_TABLE_NAME` | DynamoDB table for preview payloads | `portfolio-content-preview-sessions` |
 | `PREVIEW_MAX_BYTES` | Max preview payload size in bytes | `1048576` |
 | `PREVIEW_MAX_UPSERTS` | Max upsert records per preview session | `500` |
 | `PREVIEW_MAX_DELETES` | Max delete IDs/listItemIDs per preview session | `500` |
@@ -178,11 +177,22 @@ If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
 | `S3_UPLOAD_REGION` | S3 bucket region | ✅ Yes |
 | `S3_UPLOAD_PREFIX` | Key prefix (default: `uploads/`) | ❌ Optional |
 
+### Optional: Notification Queue (Recommended for production)
+
+If configured, blog publish notifications are enqueued to SQS and sent asynchronously by Lambda.
+If not configured, the API falls back to direct SES sends.
+Signup confirmation emails are currently direct-send; queueing those is a planned follow-up.
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `NOTIFICATION_QUEUE_ENABLED` | Enable queue-backed sends (`true`/`false`) | ❌ Optional (default `true` when queue URL exists) |
+| `NOTIFICATION_QUEUE_URL` | SQS queue URL used for blog notification jobs | ✅ Yes (to enable queue mode) |
+
 ## API Endpoints
 
 ### Health Check
 
-- **GET** `/api/health` - Check server and Redis connection status
+- **GET** `/api/health` - Check server/database status (Redis + DynamoDB sections)
 
 ### Content Operations
 
@@ -209,7 +219,7 @@ If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
 - **POST** `/api/upload/image` - Upload image (auth required)
   - Content-Type: `multipart/form-data`
   - Form field: `image` (file)
-  - Returns `{ url }` (S3 URL when configured, otherwise base64 data URL fallback)
+  - Returns `{ url }` (S3 URL)
 
 ## Redis Data Structure
 
@@ -371,7 +381,7 @@ curl http://localhost:3000/api/admin/databases
 
 ## Troubleshooting
 
-### Connection Issues
+### Connection Issues (Redis compatibility mode)
 
 1. **Check Redis credentials** in `.env`
 2. **Verify TLS settings** - RedisLabs requires TLS on port 15545
@@ -388,7 +398,14 @@ curl http://localhost:3000/api/admin/databases
 
 ### Redis JSON Module Not Available
 
-The server automatically falls back to string storage if RedisJSON module is not available. This is handled transparently - no action needed.
+When Redis compatibility mode is enabled, the server automatically falls back to string storage if RedisJSON module is not available.
+
+### Preview Session Errors
+
+If preview links fail with 404/500:
+1. Verify `PREVIEW_SESSIONS_TABLE_NAME` is configured.
+2. Ensure the table exists with partition key `token` (String).
+3. Enable DynamoDB TTL on attribute `expiresAtEpoch`.
 
 ## Deployment
 
@@ -407,9 +424,7 @@ For production deployment:
 
 ## DynamoDB Migration
 
-If you are switching `CONTENT_BACKEND` from Redis to DynamoDB, you can migrate the
-existing Redis-backed content to DynamoDB by pulling it from the live API and
-writing it into the DynamoDB table:
+To migrate existing content from the live API into DynamoDB:
 
 ```bash
 AWS_PROFILE=grayson-sso node redis-api-server/scripts/migrate-content-to-ddb.js \

@@ -7,7 +7,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const redisClient = require('../config/redis');
 const requireAuth = require('../middleware/requireAuth');
 const path = require('path');
 
@@ -33,7 +32,7 @@ function getS3() {
   };
 }
 
-// Configure multer for memory storage (images stored as base64 in Redis)
+// Configure multer for memory storage.
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
@@ -56,8 +55,6 @@ const upload = multer({
  *
  * If S3 is configured via env vars (S3_UPLOAD_BUCKET), the image is uploaded
  * to S3 and a public URL is returned.
- *
- * Otherwise, it falls back to base64 data URLs stored in Redis (7-day TTL).
  */
 router.post('/image', requireAuth, upload.single('image'), async (req, res) => {
   try {
@@ -94,20 +91,8 @@ router.post('/image', requireAuth, upload.single('image'), async (req, res) => {
       });
     }
 
-    // Fallback: Convert to base64 and store in Redis (7 days)
-    const base64 = req.file.buffer.toString('base64');
-    const dataUrl = `data:${req.file.mimetype};base64,${base64}`;
-
-    const imageId = uuidv4();
-    const imageKey = `image:${imageId}`;
-    await redisClient.set(imageKey, dataUrl);
-    await redisClient.expire(imageKey, 3600 * 24 * 7);
-
-    return res.json({
-      url: dataUrl,
-      id: imageId,
-      mimetype: req.file.mimetype,
-      size: req.file.size
+    return res.status(503).json({
+      error: 'Image upload storage is not configured. Set S3_UPLOAD_BUCKET and S3_UPLOAD_REGION.'
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

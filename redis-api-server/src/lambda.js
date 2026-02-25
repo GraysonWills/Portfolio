@@ -17,6 +17,13 @@ function isSnsEvent(event) {
   return src === 'aws:sns';
 }
 
+function isSqsEvent(event) {
+  const records = event?.Records;
+  if (!Array.isArray(records) || !records.length) return false;
+  const src = records[0]?.eventSource || records[0]?.EventSource;
+  return src === 'aws:sqs';
+}
+
 async function getHttpHandler() {
   if (httpHandler) return httpHandler;
 
@@ -35,6 +42,7 @@ async function getHttpHandler() {
 async function ensureRedisConnected() {
   // eslint-disable-next-line global-require
   const redisClient = require('./config/redis');
+  if (!redisClient.isConfigured) return;
   if (redisClient.isOpen) return;
   if (!redisConnectPromise) {
     redisConnectPromise = redisClient.connect();
@@ -189,6 +197,17 @@ async function handleSnsEvent(rawEvent) {
   };
 }
 
+async function handleSqsEvent(rawEvent) {
+  // Lazy load to avoid pulling notification service on HTTP-only invocations.
+  // eslint-disable-next-line global-require
+  const { processNotificationQueueRecords } = require('./services/notifications');
+
+  const out = await processNotificationQueueRecords(Array.isArray(rawEvent?.Records) ? rawEvent.Records : []);
+  return {
+    batchItemFailures: out.batchItemFailures || []
+  };
+}
+
 async function handleInternalEvent(rawEvent) {
   let event = rawEvent;
   if (typeof event === 'string') {
@@ -243,6 +262,10 @@ module.exports.handler = async (event, context) => {
 
   if (isSnsEvent(event)) {
     return await handleSnsEvent(event);
+  }
+
+  if (isSqsEvent(event)) {
+    return await handleSqsEvent(event);
   }
 
   if (isApiGatewayEvent(event)) {

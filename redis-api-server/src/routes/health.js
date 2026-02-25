@@ -15,10 +15,12 @@ const { isContentDdbEnabled, ddbPing } = require('../services/content-ddb');
 router.get('/', async (req, res) => {
   const backend = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
   const ddbPrimary = backend === 'dynamodb' || backend === 'ddb';
+  const redisConfigured = !!redisClient.isConfigured;
 
   try {
     const checks = await Promise.allSettled([
       (async () => {
+        if (!redisConfigured) return null;
         const start = Date.now();
         await redisClient.ping();
         const redisLatency = Date.now() - start;
@@ -42,8 +44,8 @@ router.get('/', async (req, res) => {
     const ddbRes = checks[1].status === 'fulfilled' ? checks[1].value : null;
     const ddbErr = checks[1].status === 'rejected' ? checks[1].reason : null;
 
-    const primaryOk = ddbPrimary ? Boolean(ddbRes?.ok) : Boolean(redisRes?.ok);
-    const anyOk = Boolean(redisRes?.ok) || Boolean(ddbRes?.ok);
+    const primaryOk = ddbPrimary ? Boolean(ddbRes?.ok) : (redisConfigured && Boolean(redisRes?.ok));
+    const anyOk = (redisConfigured && Boolean(redisRes?.ok)) || Boolean(ddbRes?.ok);
     const status = primaryOk ? 'healthy' : (anyOk ? 'degraded' : 'unhealthy');
 
     const body = {
@@ -51,14 +53,16 @@ router.get('/', async (req, res) => {
       version: '2.1.0',
       uptime: Math.floor(process.uptime()),
       contentBackend: backend,
-      redis: redisRes?.ok ? {
-        status: 'connected',
-        latencyMs: redisRes.latencyMs,
-        contentKeys: redisRes.contentKeys
-      } : {
-        status: 'disconnected',
-        error: redisErr ? String(redisErr?.message || redisErr) : 'unknown'
-      },
+      redis: !redisConfigured ? { status: 'disabled' } : (
+        redisRes?.ok ? {
+          status: 'connected',
+          latencyMs: redisRes.latencyMs,
+          contentKeys: redisRes.contentKeys
+        } : {
+          status: 'disconnected',
+          error: redisErr ? String(redisErr?.message || redisErr) : 'unknown'
+        }
+      ),
       dynamodb: isContentDdbEnabled() ? (ddbRes?.ok ? {
         status: 'connected',
         latencyMs: ddbRes.latencyMs
@@ -100,11 +104,15 @@ router.get('/liveness', (req, res) => {
 router.get('/readiness', async (req, res) => {
   const backend = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
   const ddbPrimary = backend === 'dynamodb' || backend === 'ddb';
+  const redisConfigured = !!redisClient.isConfigured;
 
   try {
     if (ddbPrimary) {
       await ddbPing();
     } else {
+      if (!redisConfigured) {
+        throw new Error('Redis is not configured while CONTENT_BACKEND=redis');
+      }
       await redisClient.ping();
     }
     res.json({ status: 'ready', timestamp: new Date().toISOString() });

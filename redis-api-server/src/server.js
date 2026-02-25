@@ -12,8 +12,12 @@ let server;
 
 async function startServer() {
   try {
-    await redisClient.connect();
-    console.log('  Connected to Redis database');
+    if (redisClient.isConfigured) {
+      await redisClient.connect();
+      console.log('  Connected to Redis database');
+    } else {
+      console.log('  Redis disabled for this runtime');
+    }
 
     server = app.listen(PORT, () => {
       console.log(`  Server running on port ${PORT}`);
@@ -35,11 +39,13 @@ async function shutdown(signal) {
     server.close(() => console.log('  HTTP server closed'));
   }
 
-  try {
-    await redisClient.quit();
-    console.log('  Redis connection closed');
-  } catch (e) {
-    console.error('  Error closing Redis:', e.message);
+  if (redisClient.isConfigured && redisClient.isOpen) {
+    try {
+      await redisClient.quit();
+      console.log('  Redis connection closed');
+    } catch (e) {
+      console.error('  Error closing Redis:', e.message);
+    }
   }
 
   process.exit(0);
@@ -47,4 +53,3 @@ async function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-

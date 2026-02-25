@@ -21,11 +21,6 @@
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "3000" },
 
-        { "name": "REDIS_HOST", "value": "master.portfolio-redis.gbuhvm.use2.cache.amazonaws.com" },
-        { "name": "REDIS_PORT", "value": "6379" },
-        { "name": "REDIS_TLS", "value": "true" },
-        { "name": "REDIS_DB", "value": "0" },
-
         {
           "name": "ALLOWED_ORIGINS",
           "value": "http://localhost:4300,http://localhost:4301,https://www.grayson-wills.com,https://d39s45clv1oor3.cloudfront.net"
@@ -43,6 +38,7 @@
         { "name": "PUBLIC_SITE_URL", "value": "https://www.grayson-wills.com" },
         { "name": "CONTENT_BACKEND", "value": "dynamodb" },
         { "name": "CONTENT_TABLE_NAME", "value": "portfolio-content" },
+        { "name": "PREVIEW_SESSIONS_TABLE_NAME", "value": "portfolio-content-preview-sessions" },
         { "name": "SUBSCRIBERS_TABLE_NAME", "value": "portfolio-email-subscribers" },
         { "name": "TOKENS_TABLE_NAME", "value": "portfolio-email-tokens" },
         { "name": "DDB_REGION", "value": "us-east-2" },
@@ -61,10 +57,6 @@
         }
       ],
       "secrets": [
-        {
-          "name": "REDIS_PASSWORD",
-          "valueFrom": "arn:aws:ssm:us-east-2:381492289909:parameter/portfolio/elasticache/auth-token"
-        },
         {
           "name": "SCHEDULER_WEBHOOK_SECRET",
           "valueFrom": "arn:aws:ssm:us-east-2:381492289909:parameter/portfolio/scheduler/webhook-secret"
