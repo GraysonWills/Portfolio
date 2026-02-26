@@ -80,6 +80,10 @@
   box-shadow: var(--shadow-sm);
 }
 
+.image-actions {
+  margin-top: 0.35rem;
+}
+
 .tags-input {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -118,6 +122,76 @@
 .help-text {
   color: var(--ink-500);
   font-size: 0.78rem;
+}
+
+.signature-library-card {
+  gap: 0.75rem;
+}
+
+.signature-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.signature-item {
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.7rem 0.75rem;
+}
+
+.signature-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.default-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0b7551;
+  background: rgba(11, 117, 81, 0.12);
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+}
+
+.signature-quote {
+  margin: 0.45rem 0 0.3rem;
+  color: var(--ink-800);
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+
+.signature-meta {
+  margin: 0;
+  color: var(--ink-600);
+  font-size: 0.78rem;
+}
+
+.signature-signoff {
+  margin: 0.22rem 0 0;
+  color: var(--ink-800);
+  font-style: italic;
+  font-size: 0.92rem;
+}
+
+.signature-item-actions {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.signature-create {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
 }
 
 .editor-actions {
@@ -231,6 +305,40 @@
 .preview-post-body {
   padding: 0.25rem 1rem 1.15rem;
   line-height: 1.75;
+  color: var(--ink-900);
+}
+
+.preview-signature {
+  margin: 0 1rem 1rem;
+  padding: 1rem;
+  border-top: 1px solid rgba(11, 79, 159, 0.14);
+  background: linear-gradient(180deg, rgba(11, 79, 159, 0.03), rgba(11, 79, 159, 0.06));
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  display: grid;
+  gap: 0.42rem;
+}
+
+.preview-signature p {
+  margin: 0;
+}
+
+.preview-signature-quote {
+  color: var(--ink-800);
+  font-style: italic;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+.preview-signature-author {
+  color: var(--ink-600);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.preview-signature-name {
+  margin-top: 0.2rem;
+  font-size: 1.2rem;
+  font-family: "Brush Script MT", "Lucida Handwriting", cursive;
   color: var(--ink-900);
 }
 
