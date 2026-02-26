@@ -19,10 +19,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.878.0",
     "@aws-sdk/client-dynamodb": "^3.878.0",
+    "@aws-sdk/client-s3": "^3.878.0",
     "@aws-sdk/client-scheduler": "^3.878.0",
     "@aws-sdk/client-sesv2": "^3.878.0",
+    "@aws-sdk/client-sqs": "^3.995.0",
     "@aws-sdk/lib-dynamodb": "^3.878.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",

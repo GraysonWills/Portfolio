@@ -8,6 +8,7 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const { SESv2Client } = require('@aws-sdk/client-sesv2');
 const { SchedulerClient } = require('@aws-sdk/client-scheduler');
+const { SQSClient } = require('@aws-sdk/client-sqs');
 
 function getAwsRegion() {
   return process.env.AWS_REGION || process.env.S3_UPLOAD_REGION || 'us-east-2';
@@ -52,6 +53,13 @@ function getScheduler() {
   return scheduler;
 }
 
+let sqs = null;
+function getSqs() {
+  if (sqs) return sqs;
+  sqs = new SQSClient({ region: getAwsRegion() });
+  return sqs;
+}
+
 module.exports = {
   getAwsRegion,
   getSesRegion,
@@ -59,4 +67,5 @@ module.exports = {
   getDdbDoc,
   getSes,
   getScheduler,
+  getSqs,
 };
