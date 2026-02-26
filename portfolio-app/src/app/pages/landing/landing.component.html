@@ -12,7 +12,15 @@
       class="hero-carousel">
       <ng-template let-slide pTemplate="item">
         <div class="hero-image-container">
-          <img [src]="slide.photo" [alt]="slide.alt" class="hero-image" loading="eager" />
+          <img
+            [src]="slide.photo"
+            [alt]="slide.alt"
+            class="hero-image"
+            loading="eager"
+            decoding="async"
+            fetchpriority="high"
+            referrerpolicy="no-referrer"
+            (error)="onHeroImageError($event)" />
         </div>
       </ng-template>
     </p-carousel>

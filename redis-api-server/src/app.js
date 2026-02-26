@@ -42,7 +42,9 @@ function createApp() {
 
   app.use(helmet({
     contentSecurityPolicy: false, // Allow inline scripts for portfolio
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    // Allow cross-origin image embedding for media served from api.* used by www.*
+    crossOriginResourcePolicy: false
   }));
 
   // ─── CORS ────────────────────────────────────────────────────

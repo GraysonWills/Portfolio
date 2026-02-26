@@ -19,6 +19,28 @@ export class LandingComponent implements OnInit {
   topSkills: string[] = [];
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   education: Array<{degree: string; institution: string; location: string; graduationDate?: string}> = [];
+  private readonly defaultHeroSlides: Array<{ photo: string; alt: string; order: number }> = [
+    {
+      photo: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1920&q=80',
+      alt: 'Artificial intelligence neural network visualization',
+      order: 1
+    },
+    {
+      photo: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1920&q=80',
+      alt: 'Machine learning data flow concept',
+      order: 2
+    },
+    {
+      photo: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1920&q=80',
+      alt: 'Data analytics dashboard visualization',
+      order: 3
+    },
+    {
+      photo: 'https://images.unsplash.com/photo-1518432031352-d6fc5c10da5a?w=1920&q=80',
+      alt: 'Abstract technology and coding environment',
+      order: 4
+    }
+  ];
 
   constructor(
     private redisService: RedisService,
@@ -104,11 +126,27 @@ export class LandingComponent implements OnInit {
   }
 
   getCarouselItems(): { photo: string; alt: string }[] {
-    return this.landingPhotos
+    const items = this.landingPhotos
       .filter(item => item.Photo)
+      .sort((a, b) => {
+        const aOrder = Number(a.Metadata?.['order']) || Number.MAX_SAFE_INTEGER;
+        const bOrder = Number(b.Metadata?.['order']) || Number.MAX_SAFE_INTEGER;
+        return aOrder - bOrder;
+      })
       .map(item => ({
         photo: item.Photo as string,
         alt: item.Metadata?.['alt'] || 'Portfolio hero image'
       }));
+
+    return items.length > 0
+      ? items
+      : this.defaultHeroSlides.map(({ photo, alt }) => ({ photo, alt }));
+  }
+
+  onHeroImageError(event: Event): void {
+    const img = event.target as HTMLImageElement | null;
+    if (!img || img.dataset['fallbackApplied'] === '1') return;
+    img.dataset['fallbackApplied'] = '1';
+    img.src = '/og-image.png';
   }
 }

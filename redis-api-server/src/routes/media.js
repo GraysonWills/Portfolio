@@ -58,6 +58,7 @@ router.get('/:key(*)', async (req, res) => {
 
     const payload = await bodyToBuffer(result.Body);
     res.set('Cache-Control', 'public,max-age=31536000,immutable');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.set('Content-Type', result.ContentType || 'application/octet-stream');
     if (Number.isFinite(result.ContentLength)) {
       res.set('Content-Length', String(result.ContentLength));
