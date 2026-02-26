@@ -45,14 +45,38 @@ create_bucket_if_missing() {
 }
 
 secure_bucket() {
-  log "Applying encryption + public access block + lifecycle to $PHOTO_BUCKET"
+  log "Applying encryption + ownership controls + public access block + CORS + lifecycle to $PHOTO_BUCKET"
   aws --profile "$PROFILE" --region "$REGION" s3api put-bucket-encryption \
     --bucket "$PHOTO_BUCKET" \
     --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' >/dev/null
 
+  aws --profile "$PROFILE" --region "$REGION" s3api put-bucket-ownership-controls \
+    --bucket "$PHOTO_BUCKET" \
+    --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]' >/dev/null
+
   aws --profile "$PROFILE" --region "$REGION" s3api put-public-access-block \
     --bucket "$PHOTO_BUCKET" \
     --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true >/dev/null
+
+  # Required for browser-to-S3 presigned PUT uploads from authoring UIs.
+  aws --profile "$PROFILE" --region "$REGION" s3api put-bucket-cors \
+    --bucket "$PHOTO_BUCKET" \
+    --cors-configuration '{
+      "CORSRules": [
+        {
+          "AllowedOrigins": [
+            "https://d39s45clv1oor3.cloudfront.net",
+            "https://www.grayson-wills.com",
+            "http://localhost:4200",
+            "http://localhost:4300"
+          ],
+          "AllowedMethods": ["GET", "HEAD", "PUT"],
+          "AllowedHeaders": ["*"],
+          "ExposeHeaders": ["ETag", "x-amz-request-id", "x-amz-id-2"],
+          "MaxAgeSeconds": 3000
+        }
+      ]
+    }' >/dev/null
 
   aws --profile "$PROFILE" --region "$REGION" s3api put-bucket-lifecycle-configuration \
     --bucket "$PHOTO_BUCKET" \

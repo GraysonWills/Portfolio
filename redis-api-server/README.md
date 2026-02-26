@@ -196,6 +196,11 @@ This reduces API memory/CPU pressure and creates a queryable asset catalog.
 | `PHOTO_ASSETS_ALLOWED_MIME` | Allowed MIME list (comma-separated) | ❌ Optional |
 | `PHOTO_ASSETS_CDN_BASE_URL` | Optional CloudFront/CDN base URL for delivery | ❌ Optional |
 
+Bucket hardening for signed browser uploads:
+- Enable S3 CORS for authoring origins with `PUT/GET/HEAD`.
+- Use bucket ownership controls (`BucketOwnerEnforced`), encryption at rest, and public access block.
+- `scripts/setup_photo_assets_stack.sh` configures these defaults automatically.
+
 ### Optional: Notification Queue (Recommended for production)
 
 If configured, blog publish notifications are enqueued to SQS and sent asynchronously by Lambda.
@@ -479,3 +484,7 @@ AWS_PROFILE=grayson-sso node redis-api-server/scripts/migrate-content-to-ddb.js 
   --region us-east-2 \
   --table portfolio-content
 ```
+
+AI Disclosure: Drafted with AI assistance.  
+Validated By: Codex (GPT-5)  
+Validation Date: 2026-02-26
