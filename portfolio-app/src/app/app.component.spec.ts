@@ -3,9 +3,13 @@ import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Title } from '@angular/platform-browser';
 import { RouterTestingModule } from '@angular/router/testing';
+import { of } from 'rxjs';
 import { AppComponent } from './app.component';
-import { MailchimpService } from './services/mailchimp.service';
 import { RedisService } from './services/redis.service';
+import { SeoService } from './services/seo.service';
+import { SubscriptionService } from './services/subscription.service';
+import { AnalyticsService } from './services/analytics.service';
+import { MessageService } from 'primeng/api';
 
 class RedisServiceStub {
   setApiEndpoint(): void {}
@@ -13,12 +17,29 @@ class RedisServiceStub {
   clearPreviewSessionToken(): void {}
 }
 
-class MailchimpServiceStub {
-  loadMailchimpScript(): void {}
-}
-
 class TitleStub {
   setTitle(): void {}
+}
+
+class SeoServiceStub {
+  update(): void {}
+}
+
+class SubscriptionServiceStub {
+  request() { return of({}); }
+  getPromptState() { return null; }
+  setPromptState(): void {}
+  isPromptDismissedForSession() { return false; }
+  setPromptDismissedForSession(): void {}
+}
+
+class AnalyticsServiceStub {
+  trackPageView(): void {}
+  track(): void {}
+}
+
+class MessageServiceStub {
+  add(): void {}
 }
 
 describe('AppComponent', () => {
@@ -28,7 +49,10 @@ describe('AppComponent', () => {
       declarations: [AppComponent],
       providers: [
         { provide: RedisService, useClass: RedisServiceStub },
-        { provide: MailchimpService, useClass: MailchimpServiceStub },
+        { provide: SeoService, useClass: SeoServiceStub },
+        { provide: SubscriptionService, useClass: SubscriptionServiceStub },
+        { provide: AnalyticsService, useClass: AnalyticsServiceStub },
+        { provide: MessageService, useClass: MessageServiceStub },
         { provide: Title, useClass: TitleStub },
       ],
       schemas: [NO_ERRORS_SCHEMA],
