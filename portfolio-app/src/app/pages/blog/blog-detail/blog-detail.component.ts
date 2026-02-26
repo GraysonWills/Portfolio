@@ -53,7 +53,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     private seo: SeoService,
     private messageService: MessageService
   ) {
-    marked.setOptions({ breaks: true, gfm: true });
+    marked.setOptions({ breaks: false, gfm: true });
   }
 
   ngOnInit(): void {

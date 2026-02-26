@@ -20,6 +20,7 @@ const {
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const requireAuth = require('../middleware/requireAuth');
 const { getAwsRegion } = require('../services/aws/clients');
+const { buildPublicMediaUrlForKey, encodeS3PathSegments } = require('../utils/media-url');
 const {
   isPhotoAssetsEnabled,
   createPendingPhotoAsset,
@@ -100,21 +101,15 @@ function toSafeFilename(filename) {
   return `${safeBase}${safeExt}`;
 }
 
-function encodeS3PathSegments(key) {
-  return String(key || '')
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-}
-
-function toPublicUrl(cfg, key) {
+function toPublicUrl(cfg, key, req) {
   if (cfg.cdnBaseUrl) {
     return `${cfg.cdnBaseUrl}/${encodeS3PathSegments(key)}`;
   }
-  if (cfg.region === 'us-east-1') {
-    return `https://${cfg.bucket}.s3.amazonaws.com/${encodeS3PathSegments(key)}`;
-  }
-  return `https://${cfg.bucket}.s3.${cfg.region}.amazonaws.com/${encodeS3PathSegments(key)}`;
+  return buildPublicMediaUrlForKey(req, key, {
+    bucket: cfg.bucket,
+    region: cfg.region,
+    cdnBaseUrl: ''
+  });
 }
 
 function isAllowedMime(contentType, cfg) {
@@ -168,7 +163,7 @@ router.post('/upload-url', requireAuth, async (req, res) => {
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(now.getUTCDate()).padStart(2, '0');
     const objectKey = `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
-    const publicUrl = toPublicUrl(cfg, objectKey);
+    const publicUrl = toPublicUrl(cfg, objectKey, req);
     const createdAt = now.toISOString();
 
     const metadata = {
@@ -246,7 +241,7 @@ router.post('/:assetId/complete', requireAuth, async (req, res) => {
 
     const updated = await markPhotoAssetReady(assetId, {
       ready_at: new Date().toISOString(),
-      public_url: current.public_url || toPublicUrl(cfg, current.storage_key),
+      public_url: current.public_url || toPublicUrl(cfg, current.storage_key, req),
       content_type: String(head.ContentType || current.content_type || '').trim().toLowerCase(),
       size_bytes: Number.isFinite(Number(head.ContentLength)) ? Number(head.ContentLength) : current.size_bytes,
       e_tag: String(head.ETag || '').replace(/^"+|"+$/g, ''),
@@ -337,4 +332,3 @@ router.delete('/:assetId', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
-

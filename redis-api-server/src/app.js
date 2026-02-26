@@ -20,6 +20,7 @@ const subscriptionsRoutes = require('./routes/subscriptions');
 const notificationsRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
 const photoAssetsRoutes = require('./routes/photo-assets');
+const mediaRoutes = require('./routes/media');
 
 function createApp() {
   const app = express();
@@ -140,7 +141,7 @@ function createApp() {
     const now = Date.now();
     evictExpired(now);
 
-    const key = req.originalUrl;
+    const key = `${String(req.headers.host || '').toLowerCase()}|${req.originalUrl}`;
     const cached = cache.get(key);
 
     if (cached && now - cached.timestamp < CACHE_TTL) {
@@ -181,6 +182,7 @@ function createApp() {
   app.use('/api/notifications', writeLimiter, notificationsRoutes);
   app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
   app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
+  app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
     res.json({
@@ -195,7 +197,8 @@ function createApp() {
         subscriptions: '/api/subscriptions',
         notifications: '/api/notifications (requires auth)',
         analytics: '/api/analytics/events (public)',
-        photoAssets: '/api/photo-assets (requires auth)'
+        photoAssets: '/api/photo-assets (requires auth)',
+        media: '/media/:key (public S3 proxy)'
       }
     });
   });

@@ -57,7 +57,7 @@ export class FooterComponent implements OnInit {
    */
   getFooterIcons(): RedisContent[] {
     return this.footerContent.filter(
-      item => item.PageContentID === PageContentID.FooterIcon
+      item => item.PageContentID === PageContentID.FooterIcon && !this.shouldHideFooterIcon(item)
     );
   }
 
@@ -66,5 +66,15 @@ export class FooterComponent implements OnInit {
    */
   getIconUrl(icon: RedisContent): string {
     return icon.Metadata?.['url'] || '#';
+  }
+
+  private shouldHideFooterIcon(icon: RedisContent): boolean {
+    const label = String(icon?.Text || '').trim().toLowerCase();
+    const url = String(this.getIconUrl(icon) || '').trim().toLowerCase();
+
+    if (label === 'website' || label === 'site') return true;
+    if (url.includes('grayson-wills.com')) return true;
+
+    return false;
   }
 }

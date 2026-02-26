@@ -35,6 +35,7 @@ const {
   putPreviewSession,
   getPreviewSession
 } = require('../services/preview-session-ddb');
+const { rewriteContentItemMediaUrls } = require('../utils/media-url');
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
@@ -44,6 +45,16 @@ const PREVIEW_TTL_SECONDS = Math.max(300, parseInt(process.env.PREVIEW_TTL_SECON
 const PREVIEW_MAX_UPSERTS = Math.max(1, parseInt(process.env.PREVIEW_MAX_UPSERTS || '500', 10) || 500);
 const PREVIEW_MAX_DELETES = Math.max(0, parseInt(process.env.PREVIEW_MAX_DELETES || '500', 10) || 500);
 const PREVIEW_MAX_BYTES = Math.max(16_384, parseInt(process.env.PREVIEW_MAX_BYTES || '1048576', 10) || 1048576);
+
+function normalizeContentArray(items, req) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => rewriteContentItemMediaUrls(item, req));
+}
+
+function normalizeContentRecord(item, req) {
+  if (!item || typeof item !== 'object') return item;
+  return rewriteContentItemMediaUrls(item, req);
+}
 
 // Public reads; authenticated writes.
 router.use((req, res, next) => {
@@ -59,17 +70,17 @@ router.get('/', async (req, res) => {
   try {
     if (useDdbAsPrimary) {
       const contents = await ddbScanAllContent();
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     }
 
     try {
       const contents = await getAllContent();
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     } catch (err) {
       // Redis down? Fall back to DynamoDB if configured.
       if (isContentDdbEnabled()) {
         const contents = await ddbScanAllContent();
-        return res.json(contents);
+        return res.json(normalizeContentArray(contents, req));
       }
       throw err;
     }
@@ -202,16 +213,16 @@ router.get('/page/:pageId', async (req, res) => {
     const pageId = parseInt(req.params.pageId);
     if (useDdbAsPrimary) {
       const contents = await ddbGetContentByPageId(pageId);
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     }
 
     try {
       const contents = await getContentWhere(item => item.PageID === pageId);
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     } catch (err) {
       if (isContentDdbEnabled()) {
         const contents = await ddbGetContentByPageId(pageId);
-        return res.json(contents);
+        return res.json(normalizeContentArray(contents, req));
       }
       throw err;
     }
@@ -230,18 +241,18 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
     const contentId = parseInt(req.params.contentId);
     if (useDdbAsPrimary) {
       const contents = await ddbGetContentByPageAndContentId(pageId, contentId);
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     }
 
     try {
       const contents = await getContentWhere(
         item => item.PageID === pageId && item.PageContentID === contentId
       );
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     } catch (err) {
       if (isContentDdbEnabled()) {
         const contents = await ddbGetContentByPageAndContentId(pageId, contentId);
-        return res.json(contents);
+        return res.json(normalizeContentArray(contents, req));
       }
       throw err;
     }
@@ -259,16 +270,16 @@ router.get('/list-item/:listItemId', async (req, res) => {
     const listItemId = req.params.listItemId;
     if (useDdbAsPrimary) {
       const contents = await ddbGetContentByListItemId(listItemId);
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     }
 
     try {
       const contents = await getContentWhere(item => item.ListItemID === listItemId);
-      return res.json(contents);
+      return res.json(normalizeContentArray(contents, req));
     } catch (err) {
       if (isContentDdbEnabled()) {
         const contents = await ddbGetContentByListItemId(listItemId);
-        return res.json(contents);
+        return res.json(normalizeContentArray(contents, req));
       }
       throw err;
     }
@@ -286,7 +297,7 @@ router.get('/:id', async (req, res) => {
     if (useDdbAsPrimary) {
       const content = await ddbGetContentById(req.params.id);
       if (!content) return res.status(404).json({ error: 'Content not found' });
-      return res.json(content);
+      return res.json(normalizeContentRecord(content, req));
     }
 
     const key = `content:${req.params.id}`;
@@ -305,7 +316,7 @@ router.get('/:id', async (req, res) => {
 
     if (!content) return res.status(404).json({ error: 'Content not found' });
 
-    res.json(content);
+    res.json(normalizeContentRecord(content, req));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

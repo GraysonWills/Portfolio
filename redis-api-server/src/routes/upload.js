@@ -15,6 +15,7 @@ const {
   markPhotoAssetReady,
   markPhotoAssetDeleted
 } = require('../services/photo-assets-ddb');
+const { buildPublicMediaUrlForKey, encodeS3PathSegments } = require('../utils/media-url');
 
 let s3Client = null;
 let PutObjectCommand = null;
@@ -47,20 +48,15 @@ function getOwnerFromRequest(req) {
   return String(raw || 'unknown').trim().toLowerCase() || 'unknown';
 }
 
-function encodeS3PathSegments(key) {
-  return String(key || '')
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-}
-
-function toPublicUrl(s3, key) {
+function toPublicUrl(s3, key, req) {
   if (s3.cdnBaseUrl) {
     return `${s3.cdnBaseUrl}/${encodeS3PathSegments(key)}`;
   }
-  return s3.region === 'us-east-1'
-    ? `https://${s3.bucket}.s3.amazonaws.com/${encodeS3PathSegments(key)}`
-    : `https://${s3.bucket}.s3.${s3.region}.amazonaws.com/${encodeS3PathSegments(key)}`;
+  return buildPublicMediaUrlForKey(req, key, {
+    bucket: s3.bucket,
+    region: s3.region,
+    cdnBaseUrl: ''
+  });
 }
 
 // Configure multer for memory storage.
@@ -114,7 +110,7 @@ router.post('/image', requireAuth, upload.single('image'), async (req, res) => {
       const objectKey = metadataEnabled
         ? `${s3.prefix}${yyyy}/${mm}/${dd}/${assetId}/${fileBaseName}${safeExt}`
         : `${s3.prefix}${uuidv4()}${safeExt}`;
-      const publicUrl = toPublicUrl(s3, objectKey);
+      const publicUrl = toPublicUrl(s3, objectKey, req);
       const owner = getOwnerFromRequest(req);
 
       if (metadataEnabled) {
