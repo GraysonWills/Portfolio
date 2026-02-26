@@ -19,6 +19,7 @@ const adminRoutes = require('./routes/admin');
 const subscriptionsRoutes = require('./routes/subscriptions');
 const notificationsRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
+const photoAssetsRoutes = require('./routes/photo-assets');
 
 function createApp() {
   const app = express();
@@ -179,6 +180,7 @@ function createApp() {
   app.use('/api/subscriptions', writeLimiter, subscriptionsRoutes);
   app.use('/api/notifications', writeLimiter, notificationsRoutes);
   app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
+  app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
 
   app.get('/', (req, res) => {
     res.json({
@@ -192,7 +194,8 @@ function createApp() {
         admin: '/api/admin (requires API keys)',
         subscriptions: '/api/subscriptions',
         notifications: '/api/notifications (requires auth)',
-        analytics: '/api/analytics/events (public)'
+        analytics: '/api/analytics/events (public)',
+        photoAssets: '/api/photo-assets (requires auth)'
       }
     });
   });

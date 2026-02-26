@@ -37,7 +37,8 @@
     "multer": "^2.0.2",
     "redis": "^5.10.0",
     "serverless-http": "^3.2.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "@aws-sdk/s3-request-presigner": "^3.995.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

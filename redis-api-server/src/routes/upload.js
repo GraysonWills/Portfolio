@@ -9,27 +9,58 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const requireAuth = require('../middleware/requireAuth');
 const path = require('path');
+const {
+  isPhotoAssetsEnabled,
+  createPendingPhotoAsset,
+  markPhotoAssetReady,
+  markPhotoAssetDeleted
+} = require('../services/photo-assets-ddb');
 
 let s3Client = null;
 let PutObjectCommand = null;
+let DeleteObjectCommand = null;
 try {
   // Lazy require: local dev can run without AWS SDK installed.
-  ({ S3Client: s3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+  ({ S3Client: s3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3'));
 } catch {
   // ignore
 }
 
 function getS3() {
-  const bucket = process.env.S3_UPLOAD_BUCKET;
+  const bucket = process.env.PHOTO_ASSETS_BUCKET || process.env.S3_UPLOAD_BUCKET;
   if (!bucket) return null;
   if (!s3Client || !PutObjectCommand) return null;
-  const region = process.env.S3_UPLOAD_REGION || process.env.AWS_REGION || 'us-east-2';
+  const region = process.env.PHOTO_ASSETS_REGION || process.env.S3_UPLOAD_REGION || process.env.AWS_REGION || 'us-east-2';
   return {
     client: new s3Client({ region }),
     bucket,
     region,
-    prefix: (process.env.S3_UPLOAD_PREFIX || 'uploads/').replace(/^\/+/, '').replace(/\/?$/, '/')
+    prefix: (process.env.PHOTO_ASSETS_PREFIX || process.env.S3_UPLOAD_PREFIX || 'uploads/')
+      .replace(/^\/+/, '')
+      .replace(/\/?$/, '/'),
+    cdnBaseUrl: String(process.env.PHOTO_ASSETS_CDN_BASE_URL || '').trim().replace(/\/+$/, ''),
   };
+}
+
+function getOwnerFromRequest(req) {
+  const raw = req?.user?.['cognito:username'] || req?.user?.username || req?.user?.sub || '';
+  return String(raw || 'unknown').trim().toLowerCase() || 'unknown';
+}
+
+function encodeS3PathSegments(key) {
+  return String(key || '')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function toPublicUrl(s3, key) {
+  if (s3.cdnBaseUrl) {
+    return `${s3.cdnBaseUrl}/${encodeS3PathSegments(key)}`;
+  }
+  return s3.region === 'us-east-1'
+    ? `https://${s3.bucket}.s3.amazonaws.com/${encodeS3PathSegments(key)}`
+    : `https://${s3.bucket}.s3.${s3.region}.amazonaws.com/${encodeS3PathSegments(key)}`;
 }
 
 // Configure multer for memory storage.
@@ -66,28 +97,88 @@ router.post('/image', requireAuth, upload.single('image'), async (req, res) => {
     if (s3) {
       const ext = (path.extname(req.file.originalname || '') || '').toLowerCase();
       const safeExt = ext && ext.length <= 10 ? ext : '';
-      const objectKey = `${s3.prefix}${uuidv4()}${safeExt}`;
+      const fileBaseName = path.basename(String(req.file.originalname || ''), ext)
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80) || 'image';
 
-      const cmd = new PutObjectCommand({
-        Bucket: s3.bucket,
-        Key: objectKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        CacheControl: 'public,max-age=31536000,immutable'
-      });
+      const metadataEnabled = isPhotoAssetsEnabled();
+      const assetId = metadataEnabled ? `asset-${uuidv4()}` : '';
+      const now = new Date();
+      const yyyy = String(now.getUTCFullYear());
+      const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(now.getUTCDate()).padStart(2, '0');
 
-      await s3.client.send(cmd);
+      const objectKey = metadataEnabled
+        ? `${s3.prefix}${yyyy}/${mm}/${dd}/${assetId}/${fileBaseName}${safeExt}`
+        : `${s3.prefix}${uuidv4()}${safeExt}`;
+      const publicUrl = toPublicUrl(s3, objectKey);
+      const owner = getOwnerFromRequest(req);
 
-      const publicUrl = s3.region === 'us-east-1'
-        ? `https://${s3.bucket}.s3.amazonaws.com/${objectKey}`
-        : `https://${s3.bucket}.s3.${s3.region}.amazonaws.com/${objectKey}`;
+      if (metadataEnabled) {
+        await createPendingPhotoAsset({
+          asset_id: assetId,
+          owner,
+          status: 'pending',
+          storage_bucket: s3.bucket,
+          storage_key: objectKey,
+          public_url: publicUrl,
+          original_filename: `${fileBaseName}${safeExt}`,
+          content_type: req.file.mimetype,
+          size_bytes: req.file.size,
+          usage: 'legacy-upload',
+          tags: [],
+          metadata: {
+            source: 'upload.image'
+          },
+          created_at: now.toISOString(),
+          updated_at: now.toISOString()
+        });
+      }
+
+      let putResult = null;
+      try {
+        const cmd = new PutObjectCommand({
+          Bucket: s3.bucket,
+          Key: objectKey,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype,
+          CacheControl: 'public,max-age=31536000,immutable'
+        });
+        putResult = await s3.client.send(cmd);
+
+        if (metadataEnabled) {
+          await markPhotoAssetReady(assetId, {
+            ready_at: new Date().toISOString(),
+            public_url: publicUrl,
+            content_type: req.file.mimetype,
+            size_bytes: req.file.size,
+            e_tag: String(putResult?.ETag || '').replace(/^"+|"+$/g, '')
+          });
+        }
+      } catch (error) {
+        if (metadataEnabled) {
+          try {
+            if (DeleteObjectCommand) {
+              await s3.client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: objectKey }));
+            }
+            await markPhotoAssetDeleted(assetId, { hard_deleted: true });
+          } catch {
+            // ignore cleanup failures
+          }
+        }
+        throw error;
+      }
 
       return res.json({
         url: publicUrl,
         key: objectKey,
         bucket: s3.bucket,
         mimetype: req.file.mimetype,
-        size: req.file.size
+        size: req.file.size,
+        ...(metadataEnabled ? { assetId } : {})
       });
     }
 

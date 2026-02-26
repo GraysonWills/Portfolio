@@ -34,6 +34,13 @@
         { "name": "S3_UPLOAD_BUCKET", "value": "grayson-wills-media-381492289909" },
         { "name": "S3_UPLOAD_REGION", "value": "us-east-2" },
         { "name": "S3_UPLOAD_PREFIX", "value": "uploads/" },
+        { "name": "PHOTO_ASSETS_BUCKET", "value": "grayson-wills-media-381492289909" },
+        { "name": "PHOTO_ASSETS_REGION", "value": "us-east-2" },
+        { "name": "PHOTO_ASSETS_PREFIX", "value": "photo-assets/" },
+        { "name": "PHOTO_ASSETS_TABLE_NAME", "value": "portfolio-photo-assets" },
+        { "name": "PHOTO_ASSETS_PRESIGN_EXPIRES_SECONDS", "value": "900" },
+        { "name": "PHOTO_ASSETS_MAX_FILE_BYTES", "value": "15728640" },
+        { "name": "PHOTO_ASSETS_ALLOWED_MIME", "value": "image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml" },
 
         { "name": "PUBLIC_SITE_URL", "value": "https://www.grayson-wills.com" },
         { "name": "CONTENT_BACKEND", "value": "dynamodb" },

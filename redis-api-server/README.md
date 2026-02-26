@@ -16,6 +16,7 @@ Backend API server for portfolio/blog content management. Supports DynamoDB-firs
 - **Write auth:** POST/PUT/DELETE + uploads can be protected with Cognito JWTs (read endpoints stay public)
 - **Optional**: Queue-backed blog notification delivery via SQS + Lambda consumer
 - **Optional**: Queue-backed analytics ingestion (SQS) with S3 landing files for Athena/QuickSight
+- **Recommended**: Photo asset architecture (S3 binaries + DynamoDB metadata + signed uploads)
 
 ## Prerequisites
 
@@ -178,6 +179,23 @@ If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
 | `S3_UPLOAD_REGION` | S3 bucket region | ✅ Yes |
 | `S3_UPLOAD_PREFIX` | Key prefix (default: `uploads/`) | ❌ Optional |
 
+### Recommended: Photo Assets (S3 + DynamoDB)
+
+This architecture stores image binaries in S3 and tracks metadata/state in DynamoDB.
+The authoring app requests a signed URL, uploads directly to S3, then marks the asset as ready.
+This reduces API memory/CPU pressure and creates a queryable asset catalog.
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PHOTO_ASSETS_TABLE_NAME` | DynamoDB table for photo metadata | ✅ Yes |
+| `PHOTO_ASSETS_BUCKET` | S3 bucket for photo files | ✅ Yes |
+| `PHOTO_ASSETS_REGION` | S3 bucket region | ❌ Optional (`AWS_REGION`) |
+| `PHOTO_ASSETS_PREFIX` | Object key prefix (default `photo-assets/`) | ❌ Optional |
+| `PHOTO_ASSETS_PRESIGN_EXPIRES_SECONDS` | Signed upload URL TTL seconds | ❌ Optional (`900`) |
+| `PHOTO_ASSETS_MAX_FILE_BYTES` | Max upload file size bytes | ❌ Optional (`15728640`) |
+| `PHOTO_ASSETS_ALLOWED_MIME` | Allowed MIME list (comma-separated) | ❌ Optional |
+| `PHOTO_ASSETS_CDN_BASE_URL` | Optional CloudFront/CDN base URL for delivery | ❌ Optional |
+
 ### Optional: Notification Queue (Recommended for production)
 
 If configured, blog publish notifications are enqueued to SQS and sent asynchronously by Lambda.
@@ -237,6 +255,17 @@ Athena can query this directly and QuickSight can build dashboards on top.
   - Content-Type: `multipart/form-data`
   - Form field: `image` (file)
   - Returns `{ url }` (S3 URL)
+
+### Photo Assets
+
+- **POST** `/api/photo-assets/upload-url` - Create pending asset + signed upload URL (auth required)
+- **POST** `/api/photo-assets/:assetId/complete` - Validate uploaded object and mark asset ready (auth required)
+- **GET** `/api/photo-assets` - List photo assets with pagination (`limit`, `nextToken`, `status`, `usage`, `mine`) (auth required)
+- **GET** `/api/photo-assets/:assetId` - Get one asset record (auth required)
+- **DELETE** `/api/photo-assets/:assetId` - Soft delete asset metadata (`?hard=true` also deletes object from S3) (auth required)
+
+### Analytics
+
 - **POST** `/api/analytics/events` - Ingest analytics event batch (public)
 
 ## Redis Data Structure
