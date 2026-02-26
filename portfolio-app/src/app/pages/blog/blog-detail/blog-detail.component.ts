@@ -2,7 +2,14 @@ import { Component, DestroyRef, OnInit, OnDestroy, inject } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { RedisService } from '../../../services/redis.service';
-import { RedisContent, PageContentID, ContentGroup, BlogPostMetadata, BlogBodyBlock } from '../../../models/redis-content.model';
+import {
+  RedisContent,
+  PageContentID,
+  ContentGroup,
+  BlogPostMetadata,
+  BlogBodyBlock,
+  BlogSignature
+} from '../../../models/redis-content.model';
 import { SeoService } from '../../../services/seo.service';
 import { MessageService } from 'primeng/api';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -25,8 +32,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   publishDate: Date | null = null;
   readTime = 1;
   tags: string[] = [];
+  privateSeoTags: string[] = [];
   category = '';
   bodyBlocks: BlogBodyBlock[] = [];
+  signature: BlogSignature | null = null;
 
   // Recent posts
   recentPosts: ContentGroup[] = [];
@@ -80,8 +89,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.title = meta.title || 'Untitled';
         this.summary = meta.summary || '';
         this.tags = meta.tags || [];
+        this.privateSeoTags = Array.isArray(meta.privateSeoTags) ? meta.privateSeoTags : [];
         this.category = meta.category || 'General';
         this.publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
+        this.signature = this.resolveSignature(meta);
         const bypassVisibility = !!meta.previewBypassVisibility || this.redisService.isPreviewListItemForcedVisible(listItemId);
 
         // Hide drafts/scheduled posts from public view.
@@ -126,13 +137,15 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
         // SEO: update page title/meta + inject BlogPosting structured data.
         const urlPath = `/blog/${listItemId}`;
+        const seoKeywords = this.buildSeoKeywords(this.tags, this.privateSeoTags, this.category);
         this.seo.update({
           title: this.title,
           description: this.summary || `${this.title} — a blog post by Grayson Wills.`,
           url: urlPath,
           image: this.coverImage || undefined,
           imageAlt: this.coverAlt || undefined,
-          type: 'article'
+          type: 'article',
+          keywords: seoKeywords
         });
 
         const canonicalUrl = `https://www.grayson-wills.com${urlPath}`;
@@ -143,6 +156,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           description: this.summary || undefined,
           image: this.coverImage || 'https://www.grayson-wills.com/og-image.png',
           datePublished: this.publishDate ? this.publishDate.toISOString() : undefined,
+          keywords: seoKeywords.length ? seoKeywords.join(', ') : undefined,
           mainEntityOfPage: canonicalUrl,
           author: {
             '@type': 'Person',
@@ -181,7 +195,20 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   /** Render Markdown to safe HTML */
   renderMarkdown(content: string): SafeHtml {
-    const html = marked.parse(content) as string;
+    const raw = String(content || '');
+    if (!raw.trim()) {
+      return this.sanitizer.bypassSecurityTrustHtml('');
+    }
+
+    // Most authoring content is stored as HTML from Quill. Normalize NBSPs so
+    // text wraps naturally instead of breaking at punctuation/dashes.
+    if (this.looksLikeHtml(raw)) {
+      const normalizedHtml = this.normalizeNbsp(raw);
+      return this.sanitizer.bypassSecurityTrustHtml(normalizedHtml);
+    }
+
+    const markdown = this.normalizeNbsp(raw);
+    const html = marked.parse(markdown) as string;
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 
@@ -205,5 +232,59 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   goBack(): void {
     this.router.navigate(['/blog']);
+  }
+
+  private resolveSignature(metadata: any): BlogSignature {
+    const snapshot = metadata?.signatureSnapshot;
+    const quote = String(snapshot?.quote || '').trim();
+    const quoteAuthor = String(snapshot?.quoteAuthor || '').trim();
+    const signOffName = String(snapshot?.signOffName || '').trim() || 'Grayson Wills';
+    const label = String(snapshot?.label || '').trim() || 'Default Signature';
+    const id = String(snapshot?.id || metadata?.signatureId || '').trim() || 'sig-default';
+
+    if (quote && quoteAuthor) {
+      return {
+        id,
+        label,
+        quote,
+        quoteAuthor,
+        signOffName
+      };
+    }
+
+    return {
+      id: 'sig-default',
+      label: 'Default Signature',
+      quote: 'Stay curious and keep building.',
+      quoteAuthor: 'Grayson Wills',
+      signOffName: 'Grayson Wills'
+    };
+  }
+
+  private looksLikeHtml(value: string): boolean {
+    return /<\/?[a-z][\s\S]*>/i.test(value);
+  }
+
+  private buildSeoKeywords(publicTags: string[], privateSeoTags: string[], category: string): string[] {
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    const candidates = [...(publicTags || []), ...(privateSeoTags || []), category || ''];
+
+    for (const raw of candidates) {
+      const value = String(raw || '').trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(value);
+    }
+
+    return merged;
+  }
+
+  private normalizeNbsp(value: string): string {
+    return value
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\u00a0/g, ' ');
   }
 }

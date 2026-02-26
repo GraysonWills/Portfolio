@@ -9,6 +9,7 @@ export type SeoTags = {
   image?: string;
   imageAlt?: string;
   type?: 'website' | 'article';
+  keywords?: string[];
 };
 
 @Injectable({ providedIn: 'root' })
@@ -36,6 +37,7 @@ export class SeoService {
     const image = (tags.image || this.defaultImage).trim() || this.defaultImage;
     const imageAlt = (tags.imageAlt || 'Grayson Wills portfolio preview').trim() || 'Grayson Wills portfolio preview';
     const type = tags.type || 'website';
+    const keywords = this.normalizeKeywords(tags.keywords || []);
 
     this.title.setTitle(fullTitle);
     this.meta.updateTag({ name: 'description', content: description });
@@ -53,6 +55,11 @@ export class SeoService {
     this.meta.updateTag({ name: 'twitter:description', content: description });
     this.meta.updateTag({ name: 'twitter:image', content: image });
     this.meta.updateTag({ name: 'twitter:card', content: 'summary_large_image' });
+    if (keywords.length) {
+      this.meta.updateTag({ name: 'keywords', content: keywords.join(', ') });
+    } else {
+      this.meta.removeTag("name='keywords'");
+    }
 
     this.setCanonical(url);
   }
@@ -96,5 +103,21 @@ export class SeoService {
     // If a relative path is passed, anchor it to the portfolio's canonical host.
     if (trimmed.startsWith('/')) return `${this.baseUrl}${trimmed}`;
     return trimmed;
+  }
+
+  private normalizeKeywords(raw: string[]): string[] {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const item of raw || []) {
+      const value = String(item || '').trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(value);
+    }
+
+    return normalized;
   }
 }

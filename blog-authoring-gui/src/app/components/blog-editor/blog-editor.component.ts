@@ -3,7 +3,14 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
-import { BlogPostMetadata, PageContentID, PageID, RedisContent } from '../../models/redis-content.model';
+import {
+  BlogPostMetadata,
+  BlogSignature,
+  BlogSignatureSettings,
+  PageContentID,
+  PageID,
+  RedisContent
+} from '../../models/redis-content.model';
 
 @Component({
   selector: 'app-blog-editor',
@@ -21,23 +28,55 @@ export class BlogEditorComponent implements OnInit {
   showPreviewDialog: boolean = false;
   previewMode: 'card' | 'full' = 'card';
   uploadedImage: string | null = null;
-  tags: string[] = [];
-  currentTag: string = '';
+  publicTags: string[] = [];
+  privateSeoTags: string[] = [];
+  currentPublicTag: string = '';
+  currentPrivateSeoTag: string = '';
+  signatureSettings: BlogSignatureSettings;
+  draftSignatureLabel: string = '';
+  draftSignatureQuote: string = '';
+  draftSignatureAuthor: string = '';
+  draftSignatureName: string = 'Grayson Wills';
+  savingSignatureSettings = false;
   statusOptions = [
     { label: 'Draft', value: 'draft' },
     { label: 'Scheduled', value: 'scheduled' },
     { label: 'Published', value: 'published' }
   ];
+  editorFormats = [
+    'header',
+    'bold',
+    'italic',
+    'underline',
+    'strike',
+    'blockquote',
+    'code-block',
+    'list',
+    'bullet',
+    'indent',
+    'link',
+    'image',
+    'color',
+    'background',
+    'align'
+  ];
   editorModules = {
     toolbar: [
+      [{ header: [1, 2, 3, 4, false] }],
       ['bold', 'italic', 'underline', 'strike'],
-      [{ header: [2, 3, false] }],
+      [{ color: [] }, { background: [] }],
       [{ list: 'ordered' }, { list: 'bullet' }],
+      [{ indent: '-1' }, { indent: '+1' }],
+      [{ align: [] }],
       ['blockquote', 'code-block'],
       ['link', 'image'],
       ['clean']
-    ]
+    ],
+    clipboard: {
+      matchVisual: false
+    }
   };
+  private quillEditor: any = null;
   private previewListItemID: string = '';
 
   constructor(
@@ -54,8 +93,10 @@ export class BlogEditorComponent implements OnInit {
       publishDate: [new Date()],
       status: ['published', [Validators.required]],
       category: [''],
+      signatureId: [''],
       sendEmailUpdate: [true]
     });
+    this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
   }
 
   ngOnInit(): void {
@@ -63,6 +104,7 @@ export class BlogEditorComponent implements OnInit {
       this.loadInitialData();
     }
     this.previewListItemID = this.initialData?.listItemID || `blog-preview-${Date.now()}`;
+    this.loadSignatureSettings();
   }
 
   /**
@@ -76,27 +118,209 @@ export class BlogEditorComponent implements OnInit {
       publishDate: this.initialData.publishDate || new Date(),
       status: this.initialData.status || 'published',
       category: this.initialData.category || '',
+      signatureId: this.initialData.signatureId || this.initialData.signatureSnapshot?.id || '',
       sendEmailUpdate: this.initialData.sendEmailUpdate ?? true
     });
-    this.tags = this.initialData.tags || [];
+    this.publicTags = this.normalizeTagList(this.initialData.tags || []);
+    this.privateSeoTags = this.normalizeTagList(this.initialData.privateSeoTags || []);
     this.uploadedImage = this.initialData.image || null;
+    this.draftSignatureName = this.initialData.signatureSnapshot?.signOffName || 'Grayson Wills';
   }
 
-  /**
-   * Add tag
-   */
-  addTag(): void {
-    if (this.currentTag.trim() && !this.tags.includes(this.currentTag.trim())) {
-      this.tags.push(this.currentTag.trim());
-      this.currentTag = '';
+  onPublicTagInputChange(value: string): void {
+    this.currentPublicTag = String(value || '');
+    this.commitTagInput('public', false);
+  }
+
+  onPrivateSeoTagInputChange(value: string): void {
+    this.currentPrivateSeoTag = String(value || '');
+    this.commitTagInput('private', false);
+  }
+
+  addPublicTags(event?: Event): void {
+    event?.preventDefault();
+    this.commitTagInput('public', true);
+  }
+
+  addPrivateSeoTags(event?: Event): void {
+    event?.preventDefault();
+    this.commitTagInput('private', true);
+  }
+
+  removePublicTag(tag: string): void {
+    this.publicTags = this.publicTags.filter((t) => t !== tag);
+  }
+
+  removePrivateSeoTag(tag: string): void {
+    this.privateSeoTags = this.privateSeoTags.filter((t) => t !== tag);
+  }
+
+  private flushPendingTagInputs(): void {
+    this.commitTagInput('public', true);
+    this.commitTagInput('private', true);
+  }
+
+  private commitTagInput(kind: 'public' | 'private', flushRemainder: boolean): void {
+    const current = kind === 'public' ? this.currentPublicTag : this.currentPrivateSeoTag;
+    const parsed = this.parseTagInput(current, flushRemainder);
+    const merged = this.normalizeTagList([
+      ...(kind === 'public' ? this.publicTags : this.privateSeoTags),
+      ...parsed.tags
+    ]);
+
+    if (kind === 'public') {
+      this.publicTags = merged;
+      this.currentPublicTag = parsed.remainder;
+    } else {
+      this.privateSeoTags = merged;
+      this.currentPrivateSeoTag = parsed.remainder;
     }
   }
 
-  /**
-   * Remove tag
-   */
-  removeTag(tag: string): void {
-    this.tags = this.tags.filter(t => t !== tag);
+  private parseTagInput(raw: string, flushRemainder: boolean): { tags: string[]; remainder: string } {
+    const text = String(raw || '').replace(/\n/g, ',');
+    if (!text.includes(',') && !flushRemainder) {
+      return { tags: [], remainder: text };
+    }
+
+    const pieces = text.split(',');
+    if (flushRemainder) {
+      return {
+        tags: this.normalizeTagList(pieces),
+        remainder: ''
+      };
+    }
+
+    const remainder = pieces.pop() ?? '';
+    return {
+      tags: this.normalizeTagList(pieces),
+      remainder: remainder.trimStart()
+    };
+  }
+
+  private normalizeTagList(tags: string[]): string[] {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const raw of tags || []) {
+      const clean = String(raw || '').trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(clean);
+    }
+    return normalized;
+  }
+
+  getSignatureOptions(): Array<{ label: string; value: string }> {
+    const options = (this.signatureSettings.signatures || []).map((sig) => ({
+      label: `${sig.label}${this.signatureSettings.defaultSignatureId === sig.id ? ' (Default)' : ''}`,
+      value: sig.id
+    }));
+    return [{ label: 'Use default signature', value: '' }, ...options];
+  }
+
+  getDefaultSignature(): BlogSignature | null {
+    const signatures = this.signatureSettings.signatures || [];
+    if (!signatures.length) return null;
+    const preferred = this.signatureSettings.defaultSignatureId
+      ? signatures.find((sig) => sig.id === this.signatureSettings.defaultSignatureId)
+      : null;
+    return preferred || signatures[0];
+  }
+
+  getSelectedSignature(): BlogSignature | null {
+    const signatures = this.signatureSettings.signatures || [];
+    if (!signatures.length) return null;
+
+    const selectedId = String(this.blogForm.get('signatureId')?.value || '').trim();
+    if (selectedId) {
+      const selected = signatures.find((sig) => sig.id === selectedId);
+      if (selected) return selected;
+    }
+
+    return this.getDefaultSignature();
+  }
+
+  addSignaturePreset(): void {
+    const quote = this.draftSignatureQuote.trim();
+    const quoteAuthor = this.draftSignatureAuthor.trim();
+    const signOffName = this.draftSignatureName.trim() || 'Grayson Wills';
+
+    if (!quote || !quoteAuthor) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Missing Signature Fields',
+        detail: 'Quote and quote author are required.'
+      });
+      return;
+    }
+
+    const label = this.draftSignatureLabel.trim()
+      || `Quote by ${quoteAuthor}`;
+
+    const signature: BlogSignature = {
+      id: `sig-${Date.now().toString(36)}`,
+      label,
+      quote,
+      quoteAuthor,
+      signOffName
+    };
+
+    const nextSettings: BlogSignatureSettings = {
+      signatures: [...(this.signatureSettings.signatures || []), signature],
+      defaultSignatureId: this.signatureSettings.defaultSignatureId || signature.id
+    };
+
+    this.persistSignatureSettings(nextSettings, 'Signature added.');
+    this.blogForm.patchValue({
+      signatureId: signature.id
+    });
+    this.draftSignatureLabel = '';
+    this.draftSignatureQuote = '';
+    this.draftSignatureAuthor = '';
+  }
+
+  removeSignaturePreset(signatureId: string): void {
+    const signatures = (this.signatureSettings.signatures || []).filter((sig) => sig.id !== signatureId);
+    if (!signatures.length) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'At Least One Signature Required',
+        detail: 'Add another signature before deleting this one.'
+      });
+      return;
+    }
+
+    const nextDefault = this.signatureSettings.defaultSignatureId === signatureId
+      ? signatures[0].id
+      : this.signatureSettings.defaultSignatureId;
+
+    const selectedId = String(this.blogForm.get('signatureId')?.value || '').trim();
+    if (selectedId === signatureId) {
+      this.blogForm.patchValue({ signatureId: '' });
+    }
+
+    this.persistSignatureSettings({
+      signatures,
+      defaultSignatureId: nextDefault
+    }, 'Signature removed.');
+  }
+
+  setDefaultSignature(signatureId: string): void {
+    if (!signatureId) return;
+    this.persistSignatureSettings({
+      signatures: [...(this.signatureSettings.signatures || [])],
+      defaultSignatureId: signatureId
+    }, 'Default signature updated.');
+  }
+
+  isDefaultSignature(signatureId: string): boolean {
+    return this.signatureSettings.defaultSignatureId === signatureId;
+  }
+
+  getPreviewSignature(): BlogSignature | null {
+    return this.getSelectedSignature();
   }
 
   /**
@@ -152,6 +376,12 @@ export class BlogEditorComponent implements OnInit {
    */
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
+    this.flushPendingTagInputs();
+
+    const publicTags = [...this.publicTags];
+    const privateSeoTags = [...this.privateSeoTags];
+    const selectedSignature = this.getSelectedSignature() || undefined;
+    const selectedSignatureId = selectedSignature?.id || '';
 
     const listItemID = isEdit && this.initialData?.listItemID
       ? this.initialData.listItemID
@@ -163,22 +393,28 @@ export class BlogEditorComponent implements OnInit {
           formValue.title,
           formValue.content,
           formValue.summary,
-          this.tags,
+          publicTags,
+          privateSeoTags,
           this.uploadedImage || undefined,
           formValue.publishDate,
           formValue.status,
-          formValue.category
+          formValue.category,
+          selectedSignatureId,
+          selectedSignature
         )
       : this.blogApi.createBlogPost(
           formValue.title,
           formValue.content,
           formValue.summary,
-          this.tags,
+          publicTags,
+          privateSeoTags,
           this.uploadedImage || undefined,
           listItemID,
           formValue.publishDate,
           formValue.status,
-          formValue.category
+          formValue.category,
+          selectedSignatureId,
+          selectedSignature
         );
 
     request$.subscribe({
@@ -187,7 +423,10 @@ export class BlogEditorComponent implements OnInit {
 
         const onDone = () => {
           const action = isEdit ? 'UPDATED' : 'CREATED';
-          this.txLog.log(action, `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, tags: [${this.tags.join(', ')}]`);
+          this.txLog.log(
+            action,
+            `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
+          );
           this.messageService.add({
             severity: 'success',
             summary: 'Success',
@@ -268,7 +507,88 @@ export class BlogEditorComponent implements OnInit {
     this.uploadedImage = null;
   }
 
+  onEditorInit(event: any): void {
+    this.quillEditor = event?.editor || null;
+  }
+
+  insertFeaturedImageIntoContent(): void {
+    const imageUrl = (this.uploadedImage || '').trim();
+    if (!imageUrl) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'No Image Selected',
+        detail: 'Upload/select a featured image first.'
+      });
+      return;
+    }
+    if (!this.quillEditor) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Editor Not Ready',
+        detail: 'Please click into the editor and try again.'
+      });
+      return;
+    }
+
+    const selection = this.quillEditor.getSelection(true);
+    const index = selection?.index ?? this.quillEditor.getLength();
+    this.quillEditor.insertEmbed(index, 'image', imageUrl, 'user');
+    this.quillEditor.setSelection(index + 1, 0, 'silent');
+    this.blogForm.patchValue({ content: this.quillEditor.root.innerHTML });
+    this.blogForm.get('content')?.markAsDirty();
+
+    this.messageService.add({
+      severity: 'success',
+      summary: 'Image Inserted',
+      detail: 'Featured image inserted into post content.'
+    });
+  }
+
+  private loadSignatureSettings(): void {
+    this.blogApi.getSignatureSettings().subscribe({
+      next: (settings) => {
+        this.signatureSettings = settings;
+
+        const existingSelection = String(this.blogForm.get('signatureId')?.value || '').trim();
+        const initialSelection = String(this.initialData?.signatureId || this.initialData?.signatureSnapshot?.id || '').trim();
+        const defaultSelection = settings.defaultSignatureId || settings.signatures?.[0]?.id || '';
+        const nextSelection = existingSelection || initialSelection || defaultSelection;
+
+        this.blogForm.patchValue({ signatureId: nextSelection || '' }, { emitEvent: false });
+      },
+      error: () => {
+        this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
+        const fallbackSelection = this.signatureSettings.defaultSignatureId || this.signatureSettings.signatures?.[0]?.id || '';
+        this.blogForm.patchValue({ signatureId: fallbackSelection }, { emitEvent: false });
+      }
+    });
+  }
+
+  private persistSignatureSettings(settings: BlogSignatureSettings, successDetail: string): void {
+    this.savingSignatureSettings = true;
+    this.blogApi.saveSignatureSettings(settings).subscribe({
+      next: (saved) => {
+        this.signatureSettings = saved;
+        this.savingSignatureSettings = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Signature Library Updated',
+          detail: successDetail
+        });
+      },
+      error: () => {
+        this.savingSignatureSettings = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Signature Save Failed',
+          detail: 'Could not save signature settings.'
+        });
+      }
+    });
+  }
+
   openPreview(mode: 'card' | 'full' = 'card'): void {
+    this.flushPendingTagInputs();
     this.previewMode = mode;
     this.showPreviewDialog = true;
   }
@@ -282,6 +602,7 @@ export class BlogEditorComponent implements OnInit {
   }
 
   openPortfolioPreview(target: 'list' | 'post' = 'post'): void {
+    this.flushPendingTagInputs();
     const payload = this.buildPortfolioPreviewPayload();
     const previewPath = target === 'list'
       ? '/blog'
@@ -336,7 +657,11 @@ export class BlogEditorComponent implements OnInit {
   }
 
   getPreviewTags(): string[] {
-    return this.tags || [];
+    return this.publicTags || [];
+  }
+
+  getPreviewPrivateSeoTags(): string[] {
+    return this.privateSeoTags || [];
   }
 
   getPreviewReadTimeMinutes(): number {
@@ -378,16 +703,22 @@ export class BlogEditorComponent implements OnInit {
     const publishDate = formValue.publishDate ? new Date(formValue.publishDate) : new Date();
     const safePublishDate = Number.isNaN(publishDate.getTime()) ? new Date() : publishDate;
     const nowIso = new Date().toISOString();
+    const selectedSignature = this.getSelectedSignature();
 
     const metadata: BlogPostMetadata & Record<string, any> = {
       title: this.getPreviewTitle(),
       summary: this.getPreviewSummary(),
       tags: this.getPreviewTags(),
+      privateSeoTags: this.getPreviewPrivateSeoTags(),
       publishDate: safePublishDate,
       status: (formValue.status || 'draft'),
       ...(formValue.category ? { category: String(formValue.category).trim() } : {}),
       previewBypassVisibility: true
     };
+    if (selectedSignature) {
+      metadata.signatureId = selectedSignature.id;
+      metadata.signatureSnapshot = selectedSignature;
+    }
 
     const blogItemId = this.initialData?.blogItemId || `blog-item-${listItemID}`;
     const blogTextId = this.initialData?.blogTextId || `blog-text-${listItemID}`;

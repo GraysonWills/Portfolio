@@ -25,7 +25,8 @@ export enum PageContentID {
   ProjectsPhoto = 11,
   ProjectsText = 12,
   BlogBody = 13,
-  WorkSkillMetric = 14
+  WorkSkillMetric = 14,
+  BlogSignatureSettings = 15
 }
 
 export interface RedisContent {
@@ -44,9 +45,25 @@ export interface BlogPostMetadata {
   title: string;
   summary: string;
   tags: string[];
+  privateSeoTags?: string[];
   publishDate: Date;
   status: 'draft' | 'scheduled' | 'published';
   category?: string;
+  signatureId?: string;
+  signatureSnapshot?: BlogSignature;
+}
+
+export interface BlogSignature {
+  id: string;
+  label: string;
+  quote: string;
+  quoteAuthor: string;
+  signOffName: string;
+}
+
+export interface BlogSignatureSettings {
+  signatures: BlogSignature[];
+  defaultSignatureId?: string;
 }
 
 export interface ContentGroup {

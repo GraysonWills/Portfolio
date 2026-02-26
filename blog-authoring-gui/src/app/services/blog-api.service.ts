@@ -1,9 +1,16 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, throwError, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
-import { RedisContent, PageID, PageContentID, BlogPostMetadata } from '../models/redis-content.model';
+import {
+  RedisContent,
+  PageID,
+  PageContentID,
+  BlogPostMetadata,
+  BlogSignature,
+  BlogSignatureSettings
+} from '../models/redis-content.model';
 
 export type ApiHealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 
@@ -29,6 +36,26 @@ export type PreviewSessionResponse = {
   expiresInSeconds: number;
 };
 
+type PhotoAssetUploadInitResponse = {
+  assetId: string;
+  uploadUrl: string;
+  uploadMethod?: string;
+  uploadHeaders?: Record<string, string>;
+  expiresInSeconds?: number;
+  publicUrl?: string;
+  bucket?: string;
+  key?: string;
+  status?: string;
+};
+
+type PhotoAssetCompleteResponse = {
+  ok?: boolean;
+  asset?: {
+    public_url?: string;
+    publicUrl?: string;
+  };
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -37,6 +64,8 @@ export class BlogApiService {
   private readonly LEGACY_ENDPOINT_STORAGE_KEYS = ['portfolio_redis_api_endpoint'];
   private readonly PROD_DEFAULT_API = 'https://api.grayson-wills.com/api';
   private readonly PROD_DEFAULT_PORTFOLIO_PREVIEW_URL = 'https://www.grayson-wills.com';
+  private readonly SIGNATURE_SETTINGS_LIST_ITEM_ID = 'blog-signature-settings';
+  private readonly SIGNATURE_SETTINGS_CONTENT_ID = 'blog-signature-settings-record';
   private apiUrl: string = environment.redisApiUrl;
   private portfolioPreviewUrl: string = environment.portfolioPreviewUrl || this.PROD_DEFAULT_PORTFOLIO_PREVIEW_URL;
   private headers: HttpHeaders;
@@ -104,6 +133,64 @@ export class BlogApiService {
     return this.portfolioPreviewUrl;
   }
 
+  getDefaultSignatureSettings(): BlogSignatureSettings {
+    const defaultSignature: BlogSignature = {
+      id: 'sig-default',
+      label: 'Default Signature',
+      quote: 'Stay curious and keep building.',
+      quoteAuthor: 'Grayson Wills',
+      signOffName: 'Grayson Wills'
+    };
+
+    return {
+      signatures: [defaultSignature],
+      defaultSignatureId: defaultSignature.id
+    };
+  }
+
+  getSignatureSettings(): Observable<BlogSignatureSettings> {
+    return this.getContentByPage(PageID.Blog).pipe(
+      map((items) => {
+        const record = items.find((item) => item.PageContentID === PageContentID.BlogSignatureSettings);
+        const raw = (record?.Metadata as any)?.signatureSettings ?? record?.Metadata ?? null;
+        return this.normalizeSignatureSettings(raw);
+      }),
+      catchError(() => of(this.getDefaultSignatureSettings()))
+    );
+  }
+
+  saveSignatureSettings(settings: BlogSignatureSettings): Observable<BlogSignatureSettings> {
+    const normalized = this.normalizeSignatureSettings(settings);
+    const metadata = {
+      signatureSettings: normalized,
+      updatedAt: new Date().toISOString()
+    };
+
+    return this.getContentByPage(PageID.Blog).pipe(
+      map((items) => items.find((item) => item.PageContentID === PageContentID.BlogSignatureSettings) || null),
+      switchMap((existing) => {
+        const payload: Partial<RedisContent> = {
+          Text: 'Blog signature settings',
+          PageID: PageID.Blog,
+          PageContentID: PageContentID.BlogSignatureSettings,
+          ListItemID: this.SIGNATURE_SETTINGS_LIST_ITEM_ID,
+          Metadata: metadata as any
+        };
+
+        if (existing?.ID) {
+          return this.updateContent(existing.ID, payload);
+        }
+
+        return this.createContent({
+          ID: this.SIGNATURE_SETTINGS_CONTENT_ID,
+          ...payload
+        } as RedisContent);
+      }),
+      map(() => normalized),
+      catchError(this.handleError)
+    );
+  }
+
   /**
    * ──────────────────────────────────────────────────────────────
    * Generic Content CRUD (Portfolio Content Studio)
@@ -162,11 +249,14 @@ export class BlogApiService {
     content: string,
     summary: string,
     tags: string[],
+    privateSeoTags: string[] = [],
     image?: string,
     listItemID?: string,
     publishDate?: Date,
     status?: 'draft' | 'scheduled' | 'published',
-    category?: string
+    category?: string,
+    signatureId?: string,
+    signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
     const postItems: RedisContent[] = [];
     const itemId = listItemID || `blog-${Date.now()}`;
@@ -174,9 +264,12 @@ export class BlogApiService {
       title,
       summary,
       tags,
+      privateSeoTags,
       publishDate: publishDate || new Date(),
       status: status || 'published',
-      ...(category ? { category } : {})
+      ...(category ? { category } : {}),
+      ...(signatureId ? { signatureId } : {}),
+      ...(signatureSnapshot ? { signatureSnapshot } : {})
     };
 
     // Blog metadata record (required by portfolio for title/tags/date)
@@ -226,18 +319,24 @@ export class BlogApiService {
     content: string,
     summary: string,
     tags: string[],
+    privateSeoTags: string[] = [],
     image?: string,
     publishDate?: Date,
     status?: 'draft' | 'scheduled' | 'published',
-    category?: string
+    category?: string,
+    signatureId?: string,
+    signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
     const metadata: BlogPostMetadata = {
       title,
       summary,
       tags,
+      privateSeoTags,
       publishDate: publishDate || new Date(),
       status: status || 'published',
-      ...(category ? { category } : {})
+      ...(category ? { category } : {}),
+      ...(signatureId ? { signatureId } : {}),
+      ...(signatureSnapshot ? { signatureSnapshot } : {})
     };
 
     return new Observable<RedisContent[]>((observer) => {
@@ -390,19 +489,64 @@ export class BlogApiService {
    * Upload image
    */
   uploadImage(file: File): Observable<string> {
+    const contentType = String(file.type || 'image/jpeg').trim().toLowerCase();
+    const filename = String(file.name || 'image').trim();
+    const sizeBytes = Number(file.size || 0);
+
+    return this.http.post<PhotoAssetUploadInitResponse>(
+      `${this.apiUrl}/photo-assets/upload-url`,
+      {
+        filename,
+        contentType,
+        sizeBytes,
+        usage: 'blog',
+        tags: ['blog']
+      },
+      { headers: this.headers }
+    ).pipe(
+      switchMap((init) => {
+        if (!init?.assetId || !init?.uploadUrl) {
+          throw new Error('Invalid photo asset upload response.');
+        }
+
+        const uploadHeaders = new HttpHeaders(init.uploadHeaders || { 'Content-Type': contentType });
+        return this.http.put(
+          init.uploadUrl,
+          file,
+          { headers: uploadHeaders, responseType: 'text' }
+        ).pipe(
+          switchMap(() => this.http.post<PhotoAssetCompleteResponse>(
+            `${this.apiUrl}/photo-assets/${encodeURIComponent(init.assetId)}/complete`,
+            {},
+            { headers: this.headers }
+          )),
+          map((complete) => {
+            const url = complete?.asset?.public_url || complete?.asset?.publicUrl || init.publicUrl || '';
+            if (!url) throw new Error('Photo asset completion response did not return a URL.');
+            return url;
+          })
+        );
+      }),
+      catchError((err) => {
+        console.warn('Signed image upload failed; falling back to legacy upload endpoint:', err);
+        return this.uploadImageLegacy(file).pipe(
+          catchError((legacyErr) => {
+            console.warn('Legacy image upload failed; falling back to base64:', legacyErr);
+            return this.convertToBase64(file);
+          })
+        );
+      })
+    );
+  }
+
+  private uploadImageLegacy(file: File): Observable<string> {
     const formData = new FormData();
     formData.append('image', file);
 
     return this.http.post<{url: string}>(
       `${this.apiUrl}/upload/image`,
       formData
-    ).pipe(
-      map((res) => res.url),
-      catchError((err) => {
-        console.warn('Image upload failed; falling back to base64:', err);
-        return this.convertToBase64(file);
-      })
-    );
+    ).pipe(map((res) => res.url));
   }
 
   /**
@@ -489,5 +633,35 @@ export class BlogApiService {
 
   private normalizeUrl(url: string): string {
     return (url || '').trim().replace(/\/+$/, '');
+  }
+
+  private normalizeSignatureSettings(raw: any): BlogSignatureSettings {
+    const fallback = this.getDefaultSignatureSettings();
+
+    const signaturesRaw = Array.isArray(raw?.signatures) ? raw.signatures : [];
+    const signatures: BlogSignature[] = signaturesRaw
+      .map((entry: any): BlogSignature | null => {
+        const quote = String(entry?.quote || '').trim();
+        const quoteAuthor = String(entry?.quoteAuthor || '').trim();
+        if (!quote || !quoteAuthor) return null;
+
+        const id = String(entry?.id || '').trim() || `sig-${Date.now().toString(36)}`;
+        const label = String(entry?.label || '').trim() || `Quote by ${quoteAuthor}`;
+        const signOffName = String(entry?.signOffName || 'Grayson Wills').trim() || 'Grayson Wills';
+        return { id, label, quote, quoteAuthor, signOffName };
+      })
+      .filter((entry: BlogSignature | null): entry is BlogSignature => !!entry);
+
+    if (!signatures.length) {
+      return fallback;
+    }
+
+    const ids = new Set(signatures.map((sig) => sig.id));
+    const defaultSignatureId = String(raw?.defaultSignatureId || '').trim();
+
+    return {
+      signatures,
+      defaultSignatureId: ids.has(defaultSignatureId) ? defaultSignatureId : signatures[0].id
+    };
   }
 }

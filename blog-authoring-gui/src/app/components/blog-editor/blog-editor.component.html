@@ -44,10 +44,12 @@
             <p-editor 
               formControlName="content"
               [modules]="editorModules"
+              [formats]="editorFormats"
               [style]="{'height':'420px'}"
+              (onInit)="onEditorInit($event)"
               placeholder="Write your blog post content here...">
             </p-editor>
-            <small class="help-text">Use toolbar shortcuts for headings, lists, links, and quote formatting.</small>
+            <small class="help-text">Paste from other pages to retain most rich formatting (headings, lists, links, colors, alignment).</small>
             <small *ngIf="blogForm.get('content')?.invalid && blogForm.get('content')?.touched" class="error-message">
               Content is required
             </small>
@@ -62,35 +64,164 @@
               (imageUploaded)="uploadedImage = $event"
               [currentImage]="uploadedImage">
             </app-image-uploader>
+            <div class="image-actions">
+              <p-button
+                label="Insert In Post Body"
+                icon="pi pi-arrow-down"
+                (onClick)="insertFeaturedImageIntoContent()"
+                [disabled]="!uploadedImage"
+                styleClass="p-button-sm p-button-outlined full-width">
+              </p-button>
+            </div>
+            <small class="help-text">Upload once, then insert inline at the cursor for quick visual layout checks.</small>
           </div>
 
-          <!-- Tags -->
+          <!-- Public Tags -->
           <div class="form-group side-card">
-            <label>Tags</label>
+            <label>Public Tags</label>
             <div class="tags-input">
               <input 
                 type="text" 
-                [(ngModel)]="currentTag"
-                (keyup.enter)="addTag()"
+                [(ngModel)]="currentPublicTag"
+                (ngModelChange)="onPublicTagInputChange($event)"
+                (keydown.enter)="addPublicTags($event)"
                 pInputText
-                placeholder="Add tag and press Enter"
+                placeholder="Type tags separated by commas"
                 [ngModelOptions]="{standalone: true}"
                 class="tag-input">
               <p-button 
                 label="Add" 
                 icon="pi pi-plus"
-                (onClick)="addTag()"
+                (onClick)="addPublicTags()"
                 styleClass="p-button-outlined">
               </p-button>
             </div>
-            <div class="tags-list" *ngIf="tags.length > 0">
+            <small class="help-text">Visible to readers on cards and post pages.</small>
+            <div class="tags-list" *ngIf="publicTags.length > 0">
               <p-tag 
-                *ngFor="let tag of tags" 
+                *ngFor="let tag of publicTags" 
                 [value]="tag"
                 styleClass="p-mr-1">
                 <span>{{ tag }}</span>
-                <i class="pi pi-times tag-remove" (click)="removeTag(tag)"></i>
+                <i class="pi pi-times tag-remove" (click)="removePublicTag(tag)"></i>
               </p-tag>
+            </div>
+          </div>
+
+          <!-- Private SEO Tags -->
+          <div class="form-group side-card">
+            <label>Private SEO Tags</label>
+            <div class="tags-input">
+              <input
+                type="text"
+                [(ngModel)]="currentPrivateSeoTag"
+                (ngModelChange)="onPrivateSeoTagInputChange($event)"
+                (keydown.enter)="addPrivateSeoTags($event)"
+                pInputText
+                placeholder="Type SEO tags separated by commas"
+                [ngModelOptions]="{standalone: true}"
+                class="tag-input">
+              <p-button
+                label="Add"
+                icon="pi pi-plus"
+                (onClick)="addPrivateSeoTags()"
+                styleClass="p-button-outlined">
+              </p-button>
+            </div>
+            <small class="help-text">Hidden from readers; used only for search indexing metadata.</small>
+            <div class="tags-list" *ngIf="privateSeoTags.length > 0">
+              <p-tag
+                *ngFor="let tag of privateSeoTags"
+                [value]="tag"
+                severity="secondary"
+                styleClass="p-mr-1">
+                <span>{{ tag }}</span>
+                <i class="pi pi-times tag-remove" (click)="removePrivateSeoTag(tag)"></i>
+              </p-tag>
+            </div>
+          </div>
+
+          <div class="form-group side-card">
+            <label for="signatureId">Post Signature</label>
+            <p-dropdown
+              formControlName="signatureId"
+              [options]="getSignatureOptions()"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Choose signature"
+              inputId="signatureId"
+              appendTo="body"
+              styleClass="full-width">
+            </p-dropdown>
+            <small class="help-text">Select quote/sign-off for this post. Leaving it blank uses the default signature.</small>
+          </div>
+
+          <div class="form-group side-card signature-library-card">
+            <label>Signature Library</label>
+            <div class="signature-list" *ngIf="signatureSettings.signatures.length; else noSignatures">
+              <div class="signature-item" *ngFor="let sig of signatureSettings.signatures">
+                <div class="signature-item-header">
+                  <strong>{{ sig.label }}</strong>
+                  <span class="default-pill" *ngIf="isDefaultSignature(sig.id)">Default</span>
+                </div>
+                <p class="signature-quote">"{{ sig.quote }}"</p>
+                <p class="signature-meta">— {{ sig.quoteAuthor }}</p>
+                <p class="signature-signoff">{{ sig.signOffName }}</p>
+                <div class="signature-item-actions">
+                  <p-button
+                    label="Set Default"
+                    icon="pi pi-star"
+                    (onClick)="setDefaultSignature(sig.id)"
+                    [disabled]="isDefaultSignature(sig.id) || savingSignatureSettings"
+                    styleClass="p-button-text p-button-sm">
+                  </p-button>
+                  <p-button
+                    label="Delete"
+                    icon="pi pi-trash"
+                    (onClick)="removeSignaturePreset(sig.id)"
+                    [disabled]="savingSignatureSettings"
+                    styleClass="p-button-text p-button-sm p-button-danger">
+                  </p-button>
+                </div>
+              </div>
+            </div>
+            <ng-template #noSignatures>
+              <small class="help-text">No signatures configured yet.</small>
+            </ng-template>
+
+            <div class="signature-create">
+              <input
+                type="text"
+                pInputText
+                [(ngModel)]="draftSignatureLabel"
+                [ngModelOptions]="{standalone: true}"
+                placeholder="Label (optional)">
+              <textarea
+                pInputText
+                [(ngModel)]="draftSignatureQuote"
+                [ngModelOptions]="{standalone: true}"
+                rows="3"
+                placeholder="Quote">
+              </textarea>
+              <input
+                type="text"
+                pInputText
+                [(ngModel)]="draftSignatureAuthor"
+                [ngModelOptions]="{standalone: true}"
+                placeholder="Quote author">
+              <input
+                type="text"
+                pInputText
+                [(ngModel)]="draftSignatureName"
+                [ngModelOptions]="{standalone: true}"
+                placeholder="Sign-off name (e.g., Grayson Wills)">
+              <p-button
+                label="Add Signature"
+                icon="pi pi-plus"
+                (onClick)="addSignaturePreset()"
+                [loading]="savingSignatureSettings"
+                styleClass="p-button-sm">
+              </p-button>
             </div>
           </div>
 
@@ -254,6 +385,11 @@
         </div>
       </header>
       <div class="preview-post-body" [innerHTML]="getPreviewContentHtml()"></div>
+      <section *ngIf="getPreviewSignature() as signature" class="preview-signature">
+        <p class="preview-signature-quote">"{{ signature.quote }}"</p>
+        <p class="preview-signature-author">— {{ signature.quoteAuthor }}</p>
+        <p class="preview-signature-name">{{ signature.signOffName }}</p>
+      </section>
     </article>
   </p-dialog>
 </div>
