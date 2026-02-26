@@ -3,6 +3,7 @@ import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
+import { AnalyticsService } from '../../services/analytics.service';
 
 @Component({
   selector: 'app-landing',
@@ -22,7 +23,8 @@ export class LandingComponent implements OnInit {
   constructor(
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private analytics: AnalyticsService
   ) {}
 
   ngOnInit(): void {
@@ -80,12 +82,22 @@ export class LandingComponent implements OnInit {
   }
 
   downloadResume(): void {
+    this.analytics.track('resume_download_clicked', {
+      route: '/',
+      page: 'home',
+      metadata: { location: 'hero' }
+    });
     if (typeof window !== 'undefined') {
       window.open('/assets/resume.pdf', '_blank');
     }
   }
 
   openEmail(email: string): void {
+    this.analytics.track('contact_email_clicked', {
+      route: '/',
+      page: 'home',
+      metadata: { location: 'hero' }
+    });
     if (typeof window !== 'undefined' && email) {
       window.location.href = `mailto:${email}`;
     }

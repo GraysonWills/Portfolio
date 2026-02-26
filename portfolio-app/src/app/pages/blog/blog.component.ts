@@ -3,6 +3,7 @@ import { RedisService } from '../../services/redis.service';
 import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { SubscriptionService } from '../../services/subscription.service';
+import { AnalyticsService } from '../../services/analytics.service';
 
 @Component({
   selector: 'app-blog',
@@ -38,7 +39,8 @@ export class BlogComponent implements OnInit {
   constructor(
     private redisService: RedisService,
     private messageService: MessageService,
-    private subscriptions: SubscriptionService
+    private subscriptions: SubscriptionService,
+    private analytics: AnalyticsService
   ) {}
 
   ngOnInit(): void {
@@ -148,11 +150,34 @@ export class BlogComponent implements OnInit {
    */
   toggleLayout(): void {
     this.layout = this.layout === 'list' ? 'grid' : 'list';
+    this.analytics.track('blog_layout_toggled', {
+      route: '/blog',
+      page: 'blog',
+      metadata: { layout: this.layout }
+    });
+  }
+
+  trackPostOpen(post: ContentGroup): void {
+    const metadata = post.metadata as BlogPostMetadata | undefined;
+    this.analytics.track('blog_post_open_clicked', {
+      route: '/blog',
+      page: 'blog',
+      metadata: {
+        listItemID: post.listItemID,
+        title: metadata?.title || 'Untitled',
+        category: metadata?.category || 'General'
+      }
+    });
   }
 
   subscribe(): void {
     const email = (this.subscribeEmail || '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      this.analytics.track('blog_subscribe_invalid_email', {
+        route: '/blog',
+        page: 'blog',
+        metadata: { source: 'blog-list' }
+      });
       this.messageService.add({
         severity: 'warn',
         summary: 'Invalid Email',
@@ -163,11 +188,54 @@ export class BlogComponent implements OnInit {
 
     if (this.isSubscribing) return;
     this.isSubscribing = true;
+    this.analytics.track('blog_subscribe_attempt', {
+      route: '/blog',
+      page: 'blog',
+      metadata: { source: 'blog-list' }
+    });
 
     this.subscriptions.request(email, ['blog_posts'], 'blog-list').subscribe({
-      next: () => {
+      next: (result) => {
         this.isSubscribing = false;
+
+        const status = String(result?.status || '').toUpperCase();
+        if (status === 'ALREADY_SUBSCRIBED' || result?.alreadySubscribed) {
+          this.analytics.track('blog_subscribe_already_subscribed', {
+            route: '/blog',
+            page: 'blog',
+            metadata: { source: 'blog-list' }
+          });
+          this.subscriptions.setPromptState('subscribed');
+          this.messageService.add({
+            severity: 'info',
+            summary: 'Already Subscribed',
+            detail: 'This email is already subscribed to blog updates.'
+          });
+          return;
+        }
+
+        if (status === 'ALREADY_PENDING' || result?.alreadyPending) {
+          this.analytics.track('blog_subscribe_already_pending', {
+            route: '/blog',
+            page: 'blog',
+            metadata: { source: 'blog-list' }
+          });
+          this.subscriptions.setPromptState('requested');
+          this.messageService.add({
+            severity: 'info',
+            summary: 'Check Your Email',
+            detail: 'You already requested access. Please confirm from your inbox.'
+          });
+          return;
+        }
+
         this.subscribeEmail = '';
+        this.subscriptions.setPromptState('requested');
+        this.analytics.track('blog_subscribe_requested', {
+          route: '/blog',
+          page: 'blog',
+          metadata: { source: 'blog-list' }
+        });
         this.messageService.add({
           severity: 'success',
           summary: 'Almost Done',
@@ -176,6 +244,14 @@ export class BlogComponent implements OnInit {
       },
       error: (err) => {
         this.isSubscribing = false;
+        this.analytics.track('blog_subscribe_error', {
+          route: '/blog',
+          page: 'blog',
+          metadata: {
+            source: 'blog-list',
+            error: String(err?.error?.error || err?.message || 'unknown')
+          }
+        });
         const msg = err?.error?.error || err?.message || 'Failed to start subscription.';
         this.messageService.add({
           severity: 'error',

@@ -15,6 +15,7 @@ Backend API server for portfolio/blog content management. Supports DynamoDB-firs
 - **Optional**: Redis Cloud API integration for management operations
 - **Write auth:** POST/PUT/DELETE + uploads can be protected with Cognito JWTs (read endpoints stay public)
 - **Optional**: Queue-backed blog notification delivery via SQS + Lambda consumer
+- **Optional**: Queue-backed analytics ingestion (SQS) with S3 landing files for Athena/QuickSight
 
 ## Prerequisites
 
@@ -188,6 +189,22 @@ Signup confirmation emails are currently direct-send; queueing those is a planne
 | `NOTIFICATION_QUEUE_ENABLED` | Enable queue-backed sends (`true`/`false`) | ❌ Optional (default `true` when queue URL exists) |
 | `NOTIFICATION_QUEUE_URL` | SQS queue URL used for blog notification jobs | ✅ Yes (to enable queue mode) |
 
+### Optional: Analytics Queue + Data Lake (Recommended)
+
+If configured, public frontend interaction events are accepted by `POST /api/analytics/events`,
+queued to SQS, and written by Lambda to S3 as gzipped NDJSON (`events/dt=YYYY-MM-DD/hr=HH/...`).
+Athena can query this directly and QuickSight can build dashboards on top.
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `ANALYTICS_QUEUE_ENABLED` | Enable analytics queue ingestion (`true`/`false`) | ❌ Optional |
+| `ANALYTICS_QUEUE_URL` | SQS queue URL for analytics events | ✅ Yes (to enable queue mode) |
+| `ANALYTICS_S3_BUCKET` | S3 bucket for analytics landing files (Lambda consumer) | ✅ Yes (for queue consumer) |
+| `ANALYTICS_S3_PREFIX` | S3 prefix for event files | ❌ Optional (`events/`) |
+| `ANALYTICS_S3_REGION` | Region for analytics bucket | ❌ Optional |
+| `ANALYTICS_DEFAULT_SOURCE` | Default source label for events | ❌ Optional (`portfolio-app`) |
+| `ANALYTICS_IP_HASH_SALT` | Optional salt for client IP hashing | ❌ Optional |
+
 ## API Endpoints
 
 ### Health Check
@@ -220,6 +237,7 @@ Signup confirmation emails are currently direct-send; queueing those is a planne
   - Content-Type: `multipart/form-data`
   - Form field: `image` (file)
   - Returns `{ url }` (S3 URL)
+- **POST** `/api/analytics/events` - Ingest analytics event batch (public)
 
 ## Redis Data Structure
 

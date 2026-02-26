@@ -93,6 +93,7 @@
                 class="blog-card" 
                 role="listitem"
                 [routerLink]="['/blog', post.listItemID]"
+                (click)="trackPostOpen(post)"
                 [attr.aria-label]="'Read: ' + getPostData(post).title"
                 appScrollReveal>
           <ng-container *ngTemplateOutlet="blogPostCard; context: {post: getPostData(post)}"></ng-container>

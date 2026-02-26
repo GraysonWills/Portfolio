@@ -198,11 +198,55 @@ async function handleSnsEvent(rawEvent) {
 }
 
 async function handleSqsEvent(rawEvent) {
-  // Lazy load to avoid pulling notification service on HTTP-only invocations.
+  const records = Array.isArray(rawEvent?.Records) ? rawEvent.Records : [];
+  if (!records.length) {
+    return { batchItemFailures: [] };
+  }
+
+  // Lazy load to avoid pulling queue processors on HTTP-only invocations.
   // eslint-disable-next-line global-require
   const { processNotificationQueueRecords } = require('./services/notifications');
+  // eslint-disable-next-line global-require
+  const { processAnalyticsQueueRecords } = require('./services/analytics');
 
-  const out = await processNotificationQueueRecords(Array.isArray(rawEvent?.Records) ? rawEvent.Records : []);
+  const notificationRecords = [];
+  const analyticsRecords = [];
+  const invalidRecords = [];
+
+  for (const record of records) {
+    const messageId = String(record?.messageId || record?.messageID || '').trim();
+    try {
+      const body = typeof record?.body === 'string' ? JSON.parse(record.body) : record?.body;
+      const type = String(body?.type || '').trim();
+      if (type === 'blog_post_notification') {
+        notificationRecords.push(record);
+      } else if (type === 'analytics_event') {
+        analyticsRecords.push(record);
+      } else if (messageId) {
+        // Unknown message shapes are treated as failures so they can be moved to DLQ.
+        invalidRecords.push({ itemIdentifier: messageId });
+      }
+    } catch {
+      if (messageId) invalidRecords.push({ itemIdentifier: messageId });
+    }
+  }
+
+  const failures = [...invalidRecords];
+  if (notificationRecords.length) {
+    const out = await processNotificationQueueRecords(notificationRecords);
+    failures.push(...(out.batchItemFailures || []));
+  }
+  if (analyticsRecords.length) {
+    const out = await processAnalyticsQueueRecords(analyticsRecords);
+    failures.push(...(out.batchItemFailures || []));
+  }
+
+  const dedup = new Map();
+  for (const f of failures) dedup.set(f.itemIdentifier, f);
+
+  const out = {
+    batchItemFailures: Array.from(dedup.values())
+  };
   return {
     batchItemFailures: out.batchItemFailures || []
   };

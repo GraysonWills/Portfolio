@@ -18,6 +18,7 @@ const healthRoutes = require('./routes/health');
 const adminRoutes = require('./routes/admin');
 const subscriptionsRoutes = require('./routes/subscriptions');
 const notificationsRoutes = require('./routes/notifications');
+const analyticsRoutes = require('./routes/analytics');
 
 function createApp() {
   const app = express();
@@ -76,6 +77,7 @@ function createApp() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => getClientIp(req),
+    skip: (req) => req.path.startsWith('/analytics/events'),
     message: { error: 'Too many requests, please try again later.' }
   });
   app.use('/api/', apiLimiter);
@@ -88,6 +90,16 @@ function createApp() {
     legacyHeaders: false,
     keyGenerator: (req) => getClientIp(req),
     message: { error: 'Write rate limit exceeded. Please try again later.' }
+  });
+
+  // Analytics endpoint has its own higher-throughput limiter and stays public.
+  const analyticsLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => getClientIp(req),
+    message: { error: 'Analytics rate limit exceeded. Please try again later.' }
   });
 
   // ─── Body Parsing ────────────────────────────────────────────
@@ -166,6 +178,7 @@ function createApp() {
   app.use('/api/admin', writeLimiter, adminRoutes);
   app.use('/api/subscriptions', writeLimiter, subscriptionsRoutes);
   app.use('/api/notifications', writeLimiter, notificationsRoutes);
+  app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
 
   app.get('/', (req, res) => {
     res.json({
@@ -178,7 +191,8 @@ function createApp() {
         upload: '/api/upload',
         admin: '/api/admin (requires API keys)',
         subscriptions: '/api/subscriptions',
-        notifications: '/api/notifications (requires auth)'
+        notifications: '/api/notifications (requires auth)',
+        analytics: '/api/analytics/events (public)'
       }
     });
   });
