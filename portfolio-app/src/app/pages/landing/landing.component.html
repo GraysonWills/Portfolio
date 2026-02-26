@@ -1,29 +1,33 @@
 <div class="landing-page">
   <!-- Hero Section -->
   <section class="hero-section" aria-label="Hero banner">
-    <!-- Carousel handles ONLY background images -->
-    <p-carousel
-      [value]="getCarouselItems()"
-      [numVisible]="1"
-      [numScroll]="1"
-      [circular]="true"
-      [autoplayInterval]="5000"
-      [showIndicators]="true"
-      class="hero-carousel">
-      <ng-template let-slide pTemplate="item">
-        <div class="hero-image-container">
-          <img
-            [src]="slide.photo"
-            [alt]="slide.alt"
-            class="hero-image"
-            loading="eager"
-            decoding="async"
-            fetchpriority="high"
-            referrerpolicy="no-referrer"
-            (error)="onHeroImageError($event)" />
-        </div>
-      </ng-template>
-    </p-carousel>
+    <div class="hero-slider" aria-live="polite">
+      <div
+        *ngFor="let slide of heroSlides; let i = index"
+        class="hero-image-container"
+        [class.active]="i === activeHeroIndex"
+        [attr.aria-hidden]="i === activeHeroIndex ? 'false' : 'true'">
+        <img
+          [src]="slide.photo"
+          [alt]="slide.alt"
+          class="hero-image"
+          [attr.loading]="i === 0 ? 'eager' : 'lazy'"
+          decoding="async"
+          fetchpriority="high"
+          (error)="onHeroImageError($event)" />
+      </div>
+
+      <div class="hero-indicators" *ngIf="heroSlides.length > 1" aria-label="Hero slides">
+        <button
+          *ngFor="let _ of heroSlides; let i = index"
+          type="button"
+          class="hero-indicator"
+          [class.active]="i === activeHeroIndex"
+          [attr.aria-label]="'Show hero slide ' + (i + 1)"
+          (click)="goToHeroSlide(i)">
+        </button>
+      </div>
+    </div>
 
     <!-- Static overlay — stays put when slides change -->
     <div class="hero-overlay">

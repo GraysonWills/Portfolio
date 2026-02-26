@@ -11,16 +11,26 @@
   overflow: hidden;
 }
 
-.hero-carousel {
+.hero-slider {
+  position: relative;
   height: 100%;
 }
 
 .hero-image-container {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 80vh;
   min-height: 480px;
   overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.65s ease-in-out;
+  z-index: 0;
+}
+
+.hero-image-container.active {
+  opacity: 1;
+  z-index: 1;
 }
 
 .hero-image {
@@ -28,6 +38,32 @@
   height: 100%;
   object-fit: cover;
   animation: heroZoom 20s ease-in-out infinite alternate;
+}
+
+.hero-indicators {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hero-indicator {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.52);
+  cursor: pointer;
+  transition: width 0.25s ease, background-color 0.25s ease;
+}
+
+.hero-indicator.active {
+  width: 24px;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 @keyframes heroZoom {

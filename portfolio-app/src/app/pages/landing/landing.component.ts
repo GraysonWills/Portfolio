@@ -1,7 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
-import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
+import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from '../../services/analytics.service';
 
@@ -11,7 +11,7 @@ import { AnalyticsService } from '../../services/analytics.service';
   templateUrl: './landing.component.html',
   styleUrl: './landing.component.scss'
 })
-export class LandingComponent implements OnInit {
+export class LandingComponent implements OnInit, OnDestroy {
   landingPhotos: RedisContent[] = [];
   landingText: RedisContent[] = [];
   summary: string = '';
@@ -19,6 +19,10 @@ export class LandingComponent implements OnInit {
   topSkills: string[] = [];
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   education: Array<{degree: string; institution: string; location: string; graduationDate?: string}> = [];
+  heroSlides: Array<{ photo: string; alt: string }> = [];
+  activeHeroIndex: number = 0;
+  private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly heroAutoplayMs = 5000;
   private readonly defaultHeroSlides: Array<{ photo: string; alt: string; order: number }> = [
     {
       photo: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1920&q=80',
@@ -52,6 +56,12 @@ export class LandingComponent implements OnInit {
   ngOnInit(): void {
     this.loadLandingContent();
     this.loadLinkedInData();
+    this.refreshHeroSlides();
+    this.startHeroAutoplay();
+  }
+
+  ngOnDestroy(): void {
+    this.stopHeroAutoplay();
   }
 
   private loadLandingContent(): void {
@@ -63,6 +73,7 @@ export class LandingComponent implements OnInit {
         this.landingText = content.filter(
           item => item.PageContentID === PageContentID.LandingText
         );
+        this.refreshHeroSlides();
 
         const summaryContent = this.landingText.find(
           item => item.Metadata?.['type'] === 'summary'
@@ -125,7 +136,18 @@ export class LandingComponent implements OnInit {
     }
   }
 
-  getCarouselItems(): { photo: string; alt: string }[] {
+  goToHeroSlide(index: number): void {
+    if (!this.heroSlides.length) return;
+    this.activeHeroIndex = ((index % this.heroSlides.length) + this.heroSlides.length) % this.heroSlides.length;
+    this.startHeroAutoplay();
+  }
+
+  nextHeroSlide(): void {
+    if (this.heroSlides.length <= 1) return;
+    this.activeHeroIndex = (this.activeHeroIndex + 1) % this.heroSlides.length;
+  }
+
+  private refreshHeroSlides(): void {
     const items = this.landingPhotos
       .filter(item => item.Photo)
       .sort((a, b) => {
@@ -138,9 +160,26 @@ export class LandingComponent implements OnInit {
         alt: item.Metadata?.['alt'] || 'Portfolio hero image'
       }));
 
-    return items.length > 0
+    this.heroSlides = items.length > 0
       ? items
       : this.defaultHeroSlides.map(({ photo, alt }) => ({ photo, alt }));
+
+    if (this.activeHeroIndex >= this.heroSlides.length) {
+      this.activeHeroIndex = 0;
+    }
+    this.startHeroAutoplay();
+  }
+
+  private startHeroAutoplay(): void {
+    this.stopHeroAutoplay();
+    if (typeof window === 'undefined' || this.heroSlides.length <= 1) return;
+    this.heroAutoplayHandle = setInterval(() => this.nextHeroSlide(), this.heroAutoplayMs);
+  }
+
+  private stopHeroAutoplay(): void {
+    if (!this.heroAutoplayHandle) return;
+    clearInterval(this.heroAutoplayHandle);
+    this.heroAutoplayHandle = null;
   }
 
   onHeroImageError(event: Event): void {
