@@ -13,6 +13,7 @@ export class FooterComponent implements OnInit {
   footerContent: RedisContent[] = [];
   contactInfo: any = {};
   currentYear: number = new Date().getFullYear();
+  private brokenIconIds = new Set<string>();
 
   constructor(
     private redisService: RedisService,
@@ -66,6 +67,26 @@ export class FooterComponent implements OnInit {
    */
   getIconUrl(icon: RedisContent): string {
     return icon.Metadata?.['url'] || '#';
+  }
+
+  getIconClass(icon: RedisContent): string | null {
+    const label = String(icon?.Text || '').trim().toLowerCase();
+    const url = String(this.getIconUrl(icon) || '').trim().toLowerCase();
+
+    if (label.includes('linkedin') || url.includes('linkedin.com')) return 'pi pi-linkedin';
+    if (label.includes('github') || url.includes('github.com')) return 'pi pi-github';
+    if (label.includes('email') || url.startsWith('mailto:')) return 'pi pi-envelope';
+    return null;
+  }
+
+  useImageIcon(icon: RedisContent): boolean {
+    return !this.getIconClass(icon) && !!icon?.Photo && !this.brokenIconIds.has(String(icon?.ID || ''));
+  }
+
+  onFooterIconError(icon: RedisContent): void {
+    const id = String(icon?.ID || '').trim();
+    if (!id) return;
+    this.brokenIconIds.add(id);
   }
 
   private shouldHideFooterIcon(icon: RedisContent): boolean {

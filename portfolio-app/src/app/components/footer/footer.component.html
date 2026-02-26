@@ -13,7 +13,15 @@
            rel="noopener noreferrer" 
            class="social-link" 
            [attr.aria-label]="icon.Text + ' profile'">
-          <img [src]="icon.Photo" [alt]="icon.Text || 'Social icon'" class="footer-icon-inline" loading="lazy" />
+          <i *ngIf="!useImageIcon(icon)"
+             [class]="getIconClass(icon) || 'pi pi-link'"
+             aria-hidden="true"></i>
+          <img *ngIf="useImageIcon(icon)"
+               [src]="icon.Photo"
+               [alt]="icon.Text || 'Social icon'"
+               class="footer-icon-inline"
+               loading="lazy"
+               (error)="onFooterIconError(icon)" />
           <span>{{ icon.Text }}</span>
         </a>
       </nav>
