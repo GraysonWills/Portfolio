@@ -1,4 +1,4 @@
-const { ScanCommand, PutCommand, GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { ScanCommand, PutCommand, GetCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { CreateScheduleCommand, DeleteScheduleCommand } = require('@aws-sdk/client-scheduler');
 const { SendMessageBatchCommand } = require('@aws-sdk/client-sqs');
@@ -12,6 +12,7 @@ const DEFAULT_SUBSCRIBERS_TABLE = 'portfolio-email-subscribers';
 const DEFAULT_TOKENS_TABLE = 'portfolio-email-tokens';
 const DEFAULT_SCHEDULE_GROUP = 'portfolio-email';
 const SQS_BATCH_SIZE = 10;
+const BLOG_NOTIFICATION_LOCK_SECONDS = 15 * 60;
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
@@ -326,18 +327,86 @@ function getSendMarkerKey(listItemID, topic) {
   return sha256Hex(`blog_notify_sent:${String(topic || 'blog_posts').trim().toLowerCase()}:${String(listItemID || '').trim()}`);
 }
 
-async function hasBlogNotificationBeenSent({ listItemID, topic = 'blog_posts' }) {
+function getRecipientSendMarkerKey({ listItemID, topic = 'blog_posts', emailHash }) {
+  return sha256Hex(
+    `blog_notify_recipient:${String(topic || 'blog_posts').trim().toLowerCase()}:${String(listItemID || '').trim()}:${String(emailHash || '').trim()}`
+  );
+}
+
+async function tryAcquireBlogNotificationLock({ listItemID, topic = 'blog_posts', force = false }) {
+  if (force) {
+    return { acquired: true, forced: true };
+  }
+
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const normalizedTopic = String(topic || 'blog_posts').trim().toLowerCase();
+  const normalizedListItemID = String(listItemID || '').trim();
+  const tokenHash = getSendMarkerKey(normalizedListItemID, normalizedTopic);
+  const nowIso = new Date().toISOString();
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  const lockExpiresAtEpoch = nowEpoch + BLOG_NOTIFICATION_LOCK_SECONDS;
+
+  try {
+    await ddb.send(new PutCommand({
+      TableName: cfg.tokensTable,
+      Item: {
+        tokenHash,
+        action: 'blog_notify_inflight',
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic,
+        lockExpiresAtEpoch,
+        createdAt: nowIso
+      },
+      ConditionExpression: 'attribute_not_exists(tokenHash) OR (#action = :inflight AND #lockExpiresAtEpoch < :nowEpoch)',
+      ExpressionAttributeNames: {
+        '#action': 'action',
+        '#lockExpiresAtEpoch': 'lockExpiresAtEpoch'
+      },
+      ExpressionAttributeValues: {
+        ':inflight': 'blog_notify_inflight',
+        ':nowEpoch': nowEpoch
+      }
+    }));
+
+    return { acquired: true, forced: false };
+  } catch (err) {
+    if (err?.name !== 'ConditionalCheckFailedException') throw err;
+
+    const existing = await ddb.send(new GetCommand({
+      TableName: cfg.tokensTable,
+      Key: { tokenHash }
+    }));
+    const action = String(existing?.Item?.action || '');
+
+    if (action === 'blog_notify_sent') {
+      return { acquired: false, reason: 'ALREADY_SENT' };
+    }
+
+    return { acquired: false, reason: 'IN_PROGRESS' };
+  }
+}
+
+async function releaseBlogNotificationLock({ listItemID, topic = 'blog_posts' }) {
   const cfg = getConfig();
   const ddb = getDdbDoc();
   const tokenHash = getSendMarkerKey(listItemID, topic);
 
-  const res = await ddb.send(new GetCommand({
-    TableName: cfg.tokensTable,
-    Key: { tokenHash }
-  }));
-
-  const item = res?.Item;
-  return !!item && String(item.action || '') === 'blog_notify_sent';
+  try {
+    await ddb.send(new DeleteCommand({
+      TableName: cfg.tokensTable,
+      Key: { tokenHash },
+      ConditionExpression: '#action = :inflight',
+      ExpressionAttributeNames: {
+        '#action': 'action'
+      },
+      ExpressionAttributeValues: {
+        ':inflight': 'blog_notify_inflight'
+      }
+    }));
+  } catch (err) {
+    if (err?.name !== 'ConditionalCheckFailedException') throw err;
+  }
 }
 
 async function markBlogNotificationSent({
@@ -378,6 +447,60 @@ async function markBlogNotificationSent({
       message: String(err?.message || err)
     });
   }
+}
+
+async function reserveRecipientNotificationMarker({
+  listItemID,
+  topic = 'blog_posts',
+  emailHash,
+  email
+}) {
+  const normalizedEmailHash = String(emailHash || '').trim() || sha256Hex(String(email || '').trim().toLowerCase());
+  if (!normalizedEmailHash) {
+    throw new Error('Missing recipient email hash');
+  }
+
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const normalizedTopic = String(topic || 'blog_posts').trim().toLowerCase();
+  const normalizedListItemID = String(listItemID || '').trim();
+  const tokenHash = getRecipientSendMarkerKey({
+    listItemID: normalizedListItemID,
+    topic: normalizedTopic,
+    emailHash: normalizedEmailHash
+  });
+
+  try {
+    await ddb.send(new PutCommand({
+      TableName: cfg.tokensTable,
+      Item: {
+        tokenHash,
+        action: 'blog_notify_recipient_sent',
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic,
+        emailHash: normalizedEmailHash,
+        createdAt: new Date().toISOString()
+      },
+      ConditionExpression: 'attribute_not_exists(tokenHash)'
+    }));
+    return { reserved: true, tokenHash };
+  } catch (err) {
+    if (err?.name === 'ConditionalCheckFailedException') {
+      return { reserved: false, tokenHash };
+    }
+    throw err;
+  }
+}
+
+async function releaseRecipientNotificationMarker(tokenHash) {
+  if (!tokenHash) return;
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+
+  await ddb.send(new DeleteCommand({
+    TableName: cfg.tokensTable,
+    Key: { tokenHash }
+  }));
 }
 
 function isFifoQueueUrl(queueUrl) {
@@ -502,23 +625,48 @@ async function processNotificationQueueMessage(message) {
   }
 
   const email = String(message?.to || '').toLowerCase().trim();
+  const listItemID = String(message?.listItemID || '').trim();
+  const topic = String(message?.topic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
   if (!email) throw new Error('Queue message missing recipient email');
+  if (!listItemID) throw new Error('Queue message missing listItemID');
   if (!message?.postUrl) throw new Error('Queue message missing postUrl');
 
   const emailHash = String(message?.emailHash || '').trim() || sha256Hex(email);
+  const reservation = await reserveRecipientNotificationMarker({
+    listItemID,
+    topic,
+    emailHash,
+    email
+  });
+  if (!reservation.reserved) {
+    return { ok: true, skipped: true, reason: 'RECIPIENT_ALREADY_NOTIFIED' };
+  }
+
   const unsubToken = await createUnsubscribeToken(emailHash);
   const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
 
-  await sendNewPostEmail({
-    to: email,
-    title: message?.title || 'Untitled',
-    summary: message?.summary || '',
-    postUrl: message.postUrl,
-    unsubscribeUrl,
-    imageUrl: message?.imageUrl || null,
-    tags: Array.isArray(message?.tags) ? message.tags : [],
-    readTimeMinutes: message?.readTimeMinutes || null
-  });
+  try {
+    await sendNewPostEmail({
+      to: email,
+      title: message?.title || 'Untitled',
+      summary: message?.summary || '',
+      postUrl: message.postUrl,
+      unsubscribeUrl,
+      imageUrl: message?.imageUrl || null,
+      tags: Array.isArray(message?.tags) ? message.tags : [],
+      readTimeMinutes: message?.readTimeMinutes || null
+    });
+  } catch (err) {
+    try {
+      await releaseRecipientNotificationMarker(reservation.tokenHash);
+    } catch (rollbackErr) {
+      console.error('[notifications] Failed to rollback recipient marker:', {
+        to: maskEmail(email),
+        message: String(rollbackErr?.message || rollbackErr)
+      });
+    }
+    throw err;
+  }
 
   const ddb = getDdbDoc();
   try {
@@ -586,111 +734,130 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts', forc
     throw err;
   }
 
-  if (!force) {
-    const alreadySent = await hasBlogNotificationBeenSent({
+  const lock = await tryAcquireBlogNotificationLock({
+    listItemID: normalizedListItemID,
+    topic: normalizedTopic,
+    force
+  });
+  if (!lock.acquired) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: lock.reason || 'SKIPPED',
       listItemID: normalizedListItemID,
       topic: normalizedTopic
-    });
-    if (alreadySent) {
-      return {
-        ok: true,
-        skipped: true,
-        reason: 'ALREADY_SENT',
-        listItemID: normalizedListItemID,
-        topic: normalizedTopic
-      };
-    }
-  }
-
-  const items = await assertBlogPostExists(normalizedListItemID);
-
-  const { title, summary, tags } = extractBlogMetadata(items);
-  const imageUrl = extractBlogHeroImage(items);
-  const readTimeMinutes = estimateReadTimeMinutesFromItems(items);
-  const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(normalizedListItemID)}`;
-
-  const recipients = await listSubscribedRecipients({ topic: normalizedTopic });
-  if (cfg.notificationQueueEnabled) {
-    const queueResult = await queueBlogPostNotifications({
-      recipients,
-      listItemID: normalizedListItemID,
-      topic: normalizedTopic,
-      title,
-      summary,
-      postUrl,
-      imageUrl,
-      tags,
-      readTimeMinutes
-    });
-
-    if (queueResult.ok && Number(queueResult.failed || 0) === 0) {
-      await markBlogNotificationSent({
-        listItemID: normalizedListItemID,
-        topic: normalizedTopic,
-        delivery: 'queued',
-        recipientCount: queueResult.total || 0
-      });
-    }
-
-    return {
-      ok: queueResult.ok,
-      delivery: 'queued',
-      queued: queueResult.queued,
-      failed: queueResult.failed,
-      total: queueResult.total,
-      topic: normalizedTopic,
-      listItemID: normalizedListItemID
     };
   }
 
-  let sent = 0;
-  let failed = 0;
+  let shouldReleaseLock = !force;
+  try {
+    const items = await assertBlogPostExists(normalizedListItemID);
 
-  for (const r of recipients) {
-    const email = String(r.email || '').toLowerCase();
-    if (!email) continue;
+    const { title, summary, tags } = extractBlogMetadata(items);
+    const imageUrl = extractBlogHeroImage(items);
+    const readTimeMinutes = estimateReadTimeMinutesFromItems(items);
+    const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(normalizedListItemID)}`;
 
-    try {
-      const unsubToken = await createUnsubscribeToken(r.emailHash);
-      const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
-      await sendNewPostEmail({
-        to: email,
+    const recipients = await listSubscribedRecipients({ topic: normalizedTopic });
+    if (cfg.notificationQueueEnabled) {
+      const queueResult = await queueBlogPostNotifications({
+        recipients,
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic,
         title,
         summary,
         postUrl,
-        unsubscribeUrl,
         imageUrl,
         tags,
         readTimeMinutes
       });
-      sent++;
-    } catch (err) {
-      failed++;
-      console.error('[notifications] Send failed:', {
-        to: maskEmail(email),
-        message: String(err?.message || err)
+
+      if (queueResult.ok && Number(queueResult.failed || 0) === 0) {
+        await markBlogNotificationSent({
+          listItemID: normalizedListItemID,
+          topic: normalizedTopic,
+          delivery: 'queued',
+          recipientCount: queueResult.total || 0
+        });
+        shouldReleaseLock = false;
+      }
+
+      return {
+        ok: queueResult.ok,
+        delivery: 'queued',
+        queued: queueResult.queued,
+        failed: queueResult.failed,
+        total: queueResult.total,
+        topic: normalizedTopic,
+        listItemID: normalizedListItemID
+      };
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const r of recipients) {
+      const email = String(r.email || '').toLowerCase();
+      if (!email) continue;
+
+      try {
+        const unsubToken = await createUnsubscribeToken(r.emailHash);
+        const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+        await sendNewPostEmail({
+          to: email,
+          title,
+          summary,
+          postUrl,
+          unsubscribeUrl,
+          imageUrl,
+          tags,
+          readTimeMinutes
+        });
+        sent++;
+      } catch (err) {
+        failed++;
+        console.error('[notifications] Send failed:', {
+          to: maskEmail(email),
+          message: String(err?.message || err)
+        });
+      }
+    }
+
+    if (failed === 0) {
+      await markBlogNotificationSent({
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic,
+        delivery: 'direct',
+        recipientCount: recipients.length
       });
+      shouldReleaseLock = false;
+    }
+
+    return {
+      ok: true,
+      delivery: 'direct',
+      sent,
+      failed,
+      total: recipients.length,
+      topic: normalizedTopic,
+      listItemID: normalizedListItemID
+    };
+  } finally {
+    if (shouldReleaseLock) {
+      try {
+        await releaseBlogNotificationLock({
+          listItemID: normalizedListItemID,
+          topic: normalizedTopic
+        });
+      } catch (err) {
+        console.error('[notifications] Failed to release blog notification lock:', {
+          listItemID: normalizedListItemID,
+          topic: normalizedTopic,
+          message: String(err?.message || err)
+        });
+      }
     }
   }
-
-  if (failed === 0) {
-    await markBlogNotificationSent({
-      listItemID: normalizedListItemID,
-      topic: normalizedTopic,
-      delivery: 'direct',
-      recipientCount: recipients.length
-    });
-  }
-
-  return {
-    ok: true,
-    delivery: 'direct',
-    sent,
-    failed,
-    total: recipients.length,
-    topic: normalizedTopic,
-    listItemID: normalizedListItemID
-  };
 }
 
 async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic = 'blog_posts' }) {

@@ -43,6 +43,7 @@
         { "name": "PHOTO_ASSETS_ALLOWED_MIME", "value": "image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml" },
 
         { "name": "PUBLIC_SITE_URL", "value": "https://www.grayson-wills.com" },
+        { "name": "EMAIL_BRAND_LOGO_URL", "value": "https://www.grayson-wills.com/favicon.png" },
         { "name": "CONTENT_BACKEND", "value": "dynamodb" },
         { "name": "CONTENT_TABLE_NAME", "value": "portfolio-content" },
         { "name": "PREVIEW_SESSIONS_TABLE_NAME", "value": "portfolio-content-preview-sessions" },
