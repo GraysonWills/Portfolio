@@ -112,6 +112,12 @@
           </blockquote>
         </ng-container>
       </div>
+
+      <section class="article-signature" *ngIf="signature">
+        <p class="signature-quote">"{{ signature.quote }}"</p>
+        <p class="signature-author">— {{ signature.quoteAuthor }}</p>
+        <p class="signature-name">{{ signature.signOffName }}</p>
+      </section>
     </article>
 
     <!-- Recent Posts Section -->
