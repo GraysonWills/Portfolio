@@ -1,10 +1,9 @@
-const { ScanCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { ScanCommand, PutCommand, GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { CreateScheduleCommand, DeleteScheduleCommand } = require('@aws-sdk/client-scheduler');
+const { SendMessageBatchCommand } = require('@aws-sdk/client-sqs');
 
-const redisClient = require('../config/redis');
-const { getContentWhere, addToIndex } = require('../utils/content-index');
-const { getDdbDoc, getSes, getScheduler, getAwsRegion } = require('./aws/clients');
+const { getDdbDoc, getSes, getScheduler, getSqs, getAwsRegion } = require('./aws/clients');
 const { isContentDdbEnabled, ddbGetContentByListItemId, ddbPutContent } = require('./content-ddb');
 const { sha256Hex, randomToken, maskEmail } = require('../utils/crypto');
 const { buildNewPostEmail } = require('./email/templates');
@@ -12,15 +11,37 @@ const { buildNewPostEmail } = require('./email/templates');
 const DEFAULT_SUBSCRIBERS_TABLE = 'portfolio-email-subscribers';
 const DEFAULT_TOKENS_TABLE = 'portfolio-email-tokens';
 const DEFAULT_SCHEDULE_GROUP = 'portfolio-email';
+const SQS_BATCH_SIZE = 10;
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
 
+let redisClient = null;
+let contentIndexFns = null;
+
+function getRedisClient() {
+  if (redisClient) return redisClient;
+  // Lazy load so SQS-only workers can run without Redis env vars.
+  // eslint-disable-next-line global-require
+  redisClient = require('../config/redis');
+  return redisClient;
+}
+
+function getContentIndexFns() {
+  if (contentIndexFns) return contentIndexFns;
+  // eslint-disable-next-line global-require
+  contentIndexFns = require('../utils/content-index');
+  return contentIndexFns;
+}
+
 function getConfig() {
+  const queueUrl = String(process.env.NOTIFICATION_QUEUE_URL || '').trim();
+  const queueEnabled = process.env.NOTIFICATION_QUEUE_ENABLED !== 'false' && !!queueUrl;
   return {
     subscribersTable: process.env.SUBSCRIBERS_TABLE_NAME || DEFAULT_SUBSCRIBERS_TABLE,
     tokensTable: process.env.TOKENS_TABLE_NAME || DEFAULT_TOKENS_TABLE,
     publicSiteUrl: (process.env.PUBLIC_SITE_URL || 'https://www.grayson-wills.com').replace(/\/+$/, ''),
+    emailBrandLogoUrl: String(process.env.EMAIL_BRAND_LOGO_URL || '').trim() || `${(process.env.PUBLIC_SITE_URL || 'https://www.grayson-wills.com').replace(/\/+$/, '')}/favicon.png`,
     sesFromEmail: process.env.SES_FROM_EMAIL || '',
     schedulerGroupName: process.env.SCHEDULER_GROUP_NAME || DEFAULT_SCHEDULE_GROUP,
     schedulerInvokeRoleArn: process.env.SCHEDULER_INVOKE_ROLE_ARN || '',
@@ -29,6 +50,8 @@ function getConfig() {
     emailSendAllowlist: process.env.EMAIL_SEND_ALLOWLIST
       ? process.env.EMAIL_SEND_ALLOWLIST.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
       : null,
+    notificationQueueUrl: queueUrl,
+    notificationQueueEnabled: queueEnabled,
   };
 }
 
@@ -72,11 +95,13 @@ async function getBlogGroupWithRetry(listItemID, { maxWaitMs = 5000, requireBody
 }
 
 async function setRedisDocument(contentId, doc) {
+  const client = getRedisClient();
+  const { addToIndex } = getContentIndexFns();
   const key = `content:${contentId}`;
   try {
-    await redisClient.json.set(key, '$', doc);
+    await client.json.set(key, '$', doc);
   } catch (err) {
-    await redisClient.set(key, JSON.stringify(doc));
+    await client.set(key, JSON.stringify(doc));
   }
   await addToIndex(contentId);
 }
@@ -100,6 +125,7 @@ async function getBlogGroup(listItemID) {
   }
 
   try {
+    const { getContentWhere } = getContentIndexFns();
     const items = await getContentWhere((item) => item.ListItemID === listItemID);
     return items || [];
   } catch (err) {
@@ -216,7 +242,8 @@ async function sendNewPostEmail({ to, title, summary, postUrl, unsubscribeUrl, i
     unsubscribeUrl,
     imageUrl,
     tags,
-    readTimeMinutes
+    readTimeMinutes,
+    brandLogoUrl: cfg.emailBrandLogoUrl
   });
 
   const ses = getSes();
@@ -295,20 +322,327 @@ async function createUnsubscribeToken(emailHash) {
   return token;
 }
 
-async function sendBlogPostNotification({ listItemID, topic = 'blog_posts' }) {
+function getSendMarkerKey(listItemID, topic) {
+  return sha256Hex(`blog_notify_sent:${String(topic || 'blog_posts').trim().toLowerCase()}:${String(listItemID || '').trim()}`);
+}
+
+async function hasBlogNotificationBeenSent({ listItemID, topic = 'blog_posts' }) {
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const tokenHash = getSendMarkerKey(listItemID, topic);
+
+  const res = await ddb.send(new GetCommand({
+    TableName: cfg.tokensTable,
+    Key: { tokenHash }
+  }));
+
+  const item = res?.Item;
+  return !!item && String(item.action || '') === 'blog_notify_sent';
+}
+
+async function markBlogNotificationSent({
+  listItemID,
+  topic = 'blog_posts',
+  delivery = 'unknown',
+  recipientCount = 0
+}) {
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const nowIso = new Date().toISOString();
+  const tokenHash = getSendMarkerKey(listItemID, topic);
+
+  await ddb.send(new PutCommand({
+    TableName: cfg.tokensTable,
+    Item: {
+      tokenHash,
+      action: 'blog_notify_sent',
+      listItemID: String(listItemID || '').trim(),
+      topic: String(topic || 'blog_posts').trim().toLowerCase(),
+      delivery,
+      recipientCount: Number(recipientCount || 0),
+      createdAt: nowIso
+    }
+  }));
+
+  // Best-effort metadata breadcrumb for debugging in content records.
+  try {
+    await updateBlogMetadata(listItemID, {
+      emailNotificationSentAt: nowIso,
+      emailNotificationTopic: String(topic || 'blog_posts').trim().toLowerCase(),
+      emailNotificationDelivery: delivery,
+      emailNotificationRecipientCount: Number(recipientCount || 0)
+    });
+  } catch (err) {
+    console.error('[notifications] Failed to write metadata send marker:', {
+      listItemID,
+      message: String(err?.message || err)
+    });
+  }
+}
+
+function isFifoQueueUrl(queueUrl) {
+  return String(queueUrl || '').toLowerCase().endsWith('.fifo');
+}
+
+function toQueueBody(payload) {
+  return JSON.stringify({
+    version: 1,
+    createdAt: new Date().toISOString(),
+    ...payload
+  });
+}
+
+async function enqueueNotificationMessages(messages) {
+  const cfg = getConfig();
+  if (!cfg.notificationQueueEnabled) {
+    return { ok: false, queued: 0, failed: messages.length, reason: 'NOTIFICATION_QUEUE_DISABLED' };
+  }
+  const queueUrl = cfg.notificationQueueUrl;
+  const sqs = getSqs();
+  const fifo = isFifoQueueUrl(queueUrl);
+
+  let queued = 0;
+  let failed = 0;
+
+  for (let i = 0; i < messages.length; i += SQS_BATCH_SIZE) {
+    const batch = messages.slice(i, i + SQS_BATCH_SIZE);
+    const Entries = batch.map((msg, idx) => {
+      const body = toQueueBody(msg);
+      const entry = {
+        Id: `msg-${i + idx}`,
+        MessageBody: body
+      };
+
+      if (fifo) {
+        const hashInput = `${msg?.type || 'notification'}:${msg?.listItemID || ''}:${msg?.to || ''}:${msg?.topic || 'blog_posts'}`;
+        entry.MessageGroupId = `blog-${sha256Hex(String(msg?.listItemID || 'general')).slice(0, 32)}`;
+        entry.MessageDeduplicationId = sha256Hex(hashInput);
+      }
+
+      return entry;
+    });
+
+    const result = await sqs.send(new SendMessageBatchCommand({
+      QueueUrl: queueUrl,
+      Entries
+    }));
+
+    const successCount = Array.isArray(result?.Successful) ? result.Successful.length : 0;
+    const failedItems = Array.isArray(result?.Failed) ? result.Failed : [];
+
+    queued += successCount;
+    failed += failedItems.length;
+
+    if (failedItems.length) {
+      for (const item of failedItems) {
+        const index = Number(String(item.Id || '').replace('msg-', ''));
+        const payload = Number.isFinite(index) ? messages[index] : null;
+        console.error('[notifications] Queue enqueue failed:', {
+          listItemID: payload?.listItemID || null,
+          to: payload?.to ? maskEmail(payload.to) : null,
+          code: item?.Code || null,
+          message: item?.Message || null
+        });
+      }
+    }
+  }
+
+  return { ok: failed === 0, queued, failed };
+}
+
+async function queueBlogPostNotifications({
+  recipients,
+  listItemID,
+  topic,
+  title,
+  summary,
+  postUrl,
+  imageUrl,
+  tags,
+  readTimeMinutes
+}) {
+  const messages = [];
+  for (const r of recipients) {
+    const email = String(r.email || '').toLowerCase().trim();
+    if (!email) continue;
+
+    messages.push({
+      type: 'blog_post_notification',
+      listItemID,
+      topic,
+      emailHash: r.emailHash,
+      to: email,
+      title,
+      summary,
+      postUrl,
+      imageUrl: imageUrl || null,
+      tags: Array.isArray(tags) ? tags : [],
+      readTimeMinutes: readTimeMinutes || null
+    });
+  }
+
+  if (!messages.length) {
+    return { ok: true, queued: 0, failed: 0, total: recipients.length };
+  }
+
+  const out = await enqueueNotificationMessages(messages);
+  return {
+    ok: out.ok,
+    queued: out.queued,
+    failed: out.failed,
+    total: recipients.length
+  };
+}
+
+async function processNotificationQueueMessage(message) {
+  const cfg = getConfig();
+  const type = String(message?.type || '').trim();
+  if (type !== 'blog_post_notification') {
+    throw new Error(`Unsupported queue message type: ${type || 'unknown'}`);
+  }
+
+  const email = String(message?.to || '').toLowerCase().trim();
+  if (!email) throw new Error('Queue message missing recipient email');
+  if (!message?.postUrl) throw new Error('Queue message missing postUrl');
+
+  const emailHash = String(message?.emailHash || '').trim() || sha256Hex(email);
+  const unsubToken = await createUnsubscribeToken(emailHash);
+  const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+
+  await sendNewPostEmail({
+    to: email,
+    title: message?.title || 'Untitled',
+    summary: message?.summary || '',
+    postUrl: message.postUrl,
+    unsubscribeUrl,
+    imageUrl: message?.imageUrl || null,
+    tags: Array.isArray(message?.tags) ? message.tags : [],
+    readTimeMinutes: message?.readTimeMinutes || null
+  });
+
+  const ddb = getDdbDoc();
+  try {
+    await ddb.send(new UpdateCommand({
+      TableName: cfg.subscribersTable,
+      Key: { emailHash },
+      ConditionExpression: 'attribute_exists(emailHash)',
+      UpdateExpression: 'SET #lastNotifiedAt = :now, #updatedAt = :now',
+      ExpressionAttributeNames: {
+        '#lastNotifiedAt': 'lastNotifiedAt',
+        '#updatedAt': 'updatedAt'
+      },
+      ExpressionAttributeValues: {
+        ':now': new Date().toISOString()
+      }
+    }));
+  } catch (err) {
+    if (err?.name !== 'ConditionalCheckFailedException') {
+      console.error('[notifications] Failed to update lastNotifiedAt:', {
+        to: maskEmail(email),
+        message: String(err?.message || err)
+      });
+    }
+  }
+}
+
+async function processNotificationQueueRecords(records) {
+  const failures = [];
+  let processed = 0;
+
+  for (const record of records || []) {
+    const messageId = String(record?.messageId || record?.messageID || '');
+    try {
+      const body = typeof record?.body === 'string' ? JSON.parse(record.body) : record?.body;
+      await processNotificationQueueMessage(body || {});
+      processed += 1;
+    } catch (err) {
+      console.error('[notifications] Queue processing failed:', {
+        messageId: messageId || null,
+        message: String(err?.message || err)
+      });
+      if (messageId) failures.push({ itemIdentifier: messageId });
+    }
+  }
+
+  return {
+    ok: failures.length === 0,
+    processed,
+    failed: failures.length,
+    batchItemFailures: failures
+  };
+}
+
+async function sendBlogPostNotification({ listItemID, topic = 'blog_posts', force = false }) {
   const cfg = getConfig();
   if (!cfg.emailNotificationsEnabled) {
     return { ok: true, skipped: true, reason: 'EMAIL_NOTIFICATIONS_ENABLED=false' };
   }
 
-  const items = await assertBlogPostExists(listItemID);
+  const normalizedTopic = String(topic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
+  const normalizedListItemID = String(listItemID || '').trim();
+  if (!normalizedListItemID) {
+    const err = new Error('Missing listItemID');
+    err.status = 400;
+    throw err;
+  }
+
+  if (!force) {
+    const alreadySent = await hasBlogNotificationBeenSent({
+      listItemID: normalizedListItemID,
+      topic: normalizedTopic
+    });
+    if (alreadySent) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'ALREADY_SENT',
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic
+      };
+    }
+  }
+
+  const items = await assertBlogPostExists(normalizedListItemID);
 
   const { title, summary, tags } = extractBlogMetadata(items);
   const imageUrl = extractBlogHeroImage(items);
   const readTimeMinutes = estimateReadTimeMinutesFromItems(items);
-  const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(listItemID)}`;
+  const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(normalizedListItemID)}`;
 
-  const recipients = await listSubscribedRecipients({ topic });
+  const recipients = await listSubscribedRecipients({ topic: normalizedTopic });
+  if (cfg.notificationQueueEnabled) {
+    const queueResult = await queueBlogPostNotifications({
+      recipients,
+      listItemID: normalizedListItemID,
+      topic: normalizedTopic,
+      title,
+      summary,
+      postUrl,
+      imageUrl,
+      tags,
+      readTimeMinutes
+    });
+
+    if (queueResult.ok && Number(queueResult.failed || 0) === 0) {
+      await markBlogNotificationSent({
+        listItemID: normalizedListItemID,
+        topic: normalizedTopic,
+        delivery: 'queued',
+        recipientCount: queueResult.total || 0
+      });
+    }
+
+    return {
+      ok: queueResult.ok,
+      delivery: 'queued',
+      queued: queueResult.queued,
+      failed: queueResult.failed,
+      total: queueResult.total,
+      topic: normalizedTopic,
+      listItemID: normalizedListItemID
+    };
+  }
+
   let sent = 0;
   let failed = 0;
 
@@ -339,7 +673,24 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts' }) {
     }
   }
 
-  return { ok: true, sent, failed, total: recipients.length };
+  if (failed === 0) {
+    await markBlogNotificationSent({
+      listItemID: normalizedListItemID,
+      topic: normalizedTopic,
+      delivery: 'direct',
+      recipientCount: recipients.length
+    });
+  }
+
+  return {
+    ok: true,
+    delivery: 'direct',
+    sent,
+    failed,
+    total: recipients.length,
+    topic: normalizedTopic,
+    listItemID: normalizedListItemID
+  };
 }
 
 async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic = 'blog_posts' }) {
@@ -451,5 +802,6 @@ module.exports = {
   schedulePublish,
   cancelSchedule,
   publishBlogPostNow,
+  processNotificationQueueRecords,
   getConfig,
 };

@@ -451,7 +451,10 @@ export class BlogEditorComponent implements OnInit {
           return;
         }
 
-        if (formValue.status === 'published' && sendEmailUpdate) {
+        const priorStatus = String(this.initialData?.status || '').toLowerCase();
+        const isPublishTransition = !isEdit || priorStatus !== 'published';
+
+        if (formValue.status === 'published' && sendEmailUpdate && isPublishTransition) {
           this.blogApi.sendNotificationNow(listItemID, 'blog_posts').subscribe({
             next: () => onDone(),
             error: (err) => {
@@ -462,6 +465,15 @@ export class BlogEditorComponent implements OnInit {
             }
           });
           return;
+        }
+
+        if (formValue.status === 'published' && sendEmailUpdate && !isPublishTransition) {
+          this.txLog.log('NOTIFY_SKIPPED', `Skipped notify for "${formValue.title}" — already published`);
+          this.messageService.add({
+            severity: 'info',
+            summary: 'Email Skipped',
+            detail: 'This post was already published, so duplicate notification was skipped.'
+          });
         }
 
         onDone();

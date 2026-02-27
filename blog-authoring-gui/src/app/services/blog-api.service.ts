@@ -447,10 +447,10 @@ export class BlogApiService {
   /**
    * Trigger notification send now for a blog post (admin/auth required).
    */
-  sendNotificationNow(listItemID: string, topic: string = 'blog_posts'): Observable<any> {
+  sendNotificationNow(listItemID: string, topic: string = 'blog_posts', force: boolean = false): Observable<any> {
     return this.http.post<any>(
       `${this.apiUrl}/notifications/send-now`,
-      { listItemID, topic },
+      { listItemID, topic, force },
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }

@@ -14,6 +14,7 @@ function getConfig() {
     subscribersTable: process.env.SUBSCRIBERS_TABLE_NAME || DEFAULT_SUBSCRIBERS_TABLE,
     tokensTable: process.env.TOKENS_TABLE_NAME || DEFAULT_TOKENS_TABLE,
     publicSiteUrl: (process.env.PUBLIC_SITE_URL || 'https://www.grayson-wills.com').replace(/\/+$/, ''),
+    emailBrandLogoUrl: String(process.env.EMAIL_BRAND_LOGO_URL || '').trim() || `${(process.env.PUBLIC_SITE_URL || 'https://www.grayson-wills.com').replace(/\/+$/, '')}/favicon.png`,
     sesFromEmail: process.env.SES_FROM_EMAIL || '',
     allowedTopics: (process.env.SUBSCRIBE_ALLOWED_TOPICS
       ? process.env.SUBSCRIBE_ALLOWED_TOPICS.split(',').map(s => s.trim()).filter(Boolean)
@@ -108,9 +109,35 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
 
   const emailHash = sha256Hex(normalized);
   const nowIso = new Date().toISOString();
+  const ddb = getDdbDoc();
+
+  // Prevent duplicate signups + duplicate confirmation sends.
+  // Table primary key is emailHash, so this is the single source of truth per email.
+  const existingRes = await ddb.send(new GetCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash },
+    ProjectionExpression: '#status',
+    ExpressionAttributeNames: { '#status': 'status' }
+  }));
+  const existingStatus = String(existingRes?.Item?.status || '').toUpperCase();
+  if (existingStatus === 'SUBSCRIBED') {
+    return {
+      ok: true,
+      status: 'ALREADY_SUBSCRIBED',
+      alreadySubscribed: true,
+      message: 'This email is already subscribed.'
+    };
+  }
+  if (existingStatus === 'PENDING') {
+    return {
+      ok: true,
+      status: 'ALREADY_PENDING',
+      alreadyPending: true,
+      message: 'A confirmation email has already been sent. Please check your inbox.'
+    };
+  }
 
   // Upsert subscriber as PENDING. Don't overwrite unsubscribed/confirmed timestamps.
-  const ddb = getDdbDoc();
   await ddb.send(new UpdateCommand({
     TableName: cfg.subscribersTable,
     Key: { emailHash },
@@ -152,7 +179,10 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
   const token = await createToken({ emailHash, action: 'confirm', ttlSeconds: 24 * 60 * 60 });
 
   const confirmUrl = `${cfg.publicSiteUrl}/notifications/confirm?token=${encodeURIComponent(token)}`;
-  const { subject, text, html } = buildConfirmEmail({ confirmUrl });
+  const { subject, text, html } = buildConfirmEmail({
+    confirmUrl,
+    brandLogoUrl: cfg.emailBrandLogoUrl
+  });
 
   try {
     await sendSesEmail({ to: normalized, subject, text, html });
@@ -243,7 +273,11 @@ async function confirmSubscription({ token }) {
       });
       const unsubscribeUrl = `${cfg.publicSiteUrl}/notifications/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
       const blogUrl = `${cfg.publicSiteUrl}/blog`;
-      const { subject, text, html } = buildSubscribedEmail({ blogUrl, unsubscribeUrl });
+      const { subject, text, html } = buildSubscribedEmail({
+        blogUrl,
+        unsubscribeUrl,
+        brandLogoUrl: cfg.emailBrandLogoUrl
+      });
       await sendSesEmail({ to: email, subject, text, html });
     }
   } catch (err) {
@@ -312,7 +346,11 @@ async function unsubscribe({ token }) {
     if (email) {
       const blogUrl = `${cfg.publicSiteUrl}/blog`;
       const resubscribeUrl = blogUrl;
-      const { subject, text, html } = buildUnsubscribedEmail({ resubscribeUrl, blogUrl });
+      const { subject, text, html } = buildUnsubscribedEmail({
+        resubscribeUrl,
+        blogUrl,
+        brandLogoUrl: cfg.emailBrandLogoUrl
+      });
       await sendSesEmail({ to: email, subject, text, html });
     }
   } catch (err) {

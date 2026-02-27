@@ -11,6 +11,19 @@ function safeUrl(url) {
   return escapeHtml(String(url || '').trim());
 }
 
+function renderBrandLogo(brandLogoUrl, altText = 'Grayson Wills logo') {
+  const url = String(brandLogoUrl || '').trim();
+  if (!url) return '';
+
+  return `
+    <div style="margin: 0 0 12px; text-align: center;">
+      <img src="${safeUrl(url)}"
+           alt="${escapeHtml(altText)}"
+           style="width: 56px; height: 56px; border-radius: 12px; display: inline-block; object-fit: cover; border: 1px solid #dbe4f0; background: #ffffff;" />
+    </div>
+  `.trim();
+}
+
 function renderTagPills(tags = []) {
   const list = Array.isArray(tags) ? tags : [];
   const clean = list
@@ -29,7 +42,7 @@ function renderTagPills(tags = []) {
   return `<div style="margin: 10px 0 4px;">${pills}</div>`;
 }
 
-function buildConfirmEmail({ confirmUrl }) {
+function buildConfirmEmail({ confirmUrl, brandLogoUrl }) {
   const subject = 'Confirm your subscription';
   const text = [
     'Confirm your email subscription:',
@@ -40,6 +53,7 @@ function buildConfirmEmail({ confirmUrl }) {
 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+      ${renderBrandLogo(brandLogoUrl)}
       <h2 style="margin: 0 0 12px;">Confirm your subscription</h2>
       <p style="margin: 0 0 16px;">Click the button below to confirm.</p>
       <p style="margin: 0 0 20px;">
@@ -57,7 +71,7 @@ function buildConfirmEmail({ confirmUrl }) {
   return { subject, text, html };
 }
 
-function buildSubscribedEmail({ blogUrl, unsubscribeUrl }) {
+function buildSubscribedEmail({ blogUrl, unsubscribeUrl, brandLogoUrl }) {
   const subject = 'You’re subscribed';
   const text = [
     'You’re subscribed to Grayson’s blog updates.',
@@ -69,6 +83,7 @@ function buildSubscribedEmail({ blogUrl, unsubscribeUrl }) {
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.55; color: #111827;">
       <div style="max-width: 560px; margin: 0 auto; padding: 18px 12px;">
+        ${renderBrandLogo(brandLogoUrl)}
         <div style="border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden;">
           <div style="background: linear-gradient(135deg, #0b4f9f 0%, #f18f3b 100%); padding: 18px;">
             <div style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.85); font-weight: 700;">
@@ -101,7 +116,7 @@ function buildSubscribedEmail({ blogUrl, unsubscribeUrl }) {
   return { subject, text, html };
 }
 
-function buildUnsubscribedEmail({ resubscribeUrl, blogUrl }) {
+function buildUnsubscribedEmail({ resubscribeUrl, blogUrl, brandLogoUrl }) {
   const subject = 'You’re unsubscribed';
   const text = [
     'You have been unsubscribed from Grayson’s blog updates.',
@@ -113,6 +128,7 @@ function buildUnsubscribedEmail({ resubscribeUrl, blogUrl }) {
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.55; color: #111827;">
       <div style="max-width: 560px; margin: 0 auto; padding: 18px 12px;">
+        ${renderBrandLogo(brandLogoUrl)}
         <div style="border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden;">
           <div style="background: #111827; padding: 18px;">
             <div style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.85); font-weight: 700;">
@@ -149,7 +165,7 @@ function buildUnsubscribedEmail({ resubscribeUrl, blogUrl }) {
   return { subject, text, html };
 }
 
-function buildNewPostEmail({ title, summary, postUrl, unsubscribeUrl, imageUrl, tags, readTimeMinutes }) {
+function buildNewPostEmail({ title, summary, postUrl, unsubscribeUrl, imageUrl, tags, readTimeMinutes, brandLogoUrl }) {
   const safeTitle = title || 'New blog post';
   const safeSummary = summary || '';
   const safeReadTime = Number.isFinite(readTimeMinutes) && readTimeMinutes > 0
@@ -172,6 +188,7 @@ function buildNewPostEmail({ title, summary, postUrl, unsubscribeUrl, imageUrl, 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.55; color: #111827;">
       <div style="max-width: 560px; margin: 0 auto; padding: 18px 12px;">
+        ${renderBrandLogo(brandLogoUrl)}
         <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
           ${escapeHtml(safeSummary || `New post: ${safeTitle}`)}
         </div>

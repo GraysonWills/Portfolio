@@ -46,9 +46,13 @@ router.use((req, res, next) => requireAuth(req, res, next));
 
 router.post('/send-now', async (req, res) => {
   try {
-    const { listItemID, topic } = req.body || {};
+    const { listItemID, topic, force } = req.body || {};
     if (!listItemID) return res.status(400).json({ error: 'Missing listItemID' });
-    const result = await sendBlogPostNotification({ listItemID, topic: topic || 'blog_posts' });
+    const result = await sendBlogPostNotification({
+      listItemID,
+      topic: topic || 'blog_posts',
+      force: force === true
+    });
     res.json(result);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
