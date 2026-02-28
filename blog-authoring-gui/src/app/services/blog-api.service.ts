@@ -255,6 +255,7 @@ export class BlogApiService {
     publishDate?: Date,
     status?: 'draft' | 'scheduled' | 'published',
     category?: string,
+    readTimeMinutes?: number,
     signatureId?: string,
     signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
@@ -268,6 +269,7 @@ export class BlogApiService {
       publishDate: publishDate || new Date(),
       status: status || 'published',
       ...(category ? { category } : {}),
+      ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
       ...(signatureId ? { signatureId } : {}),
       ...(signatureSnapshot ? { signatureSnapshot } : {})
     };
@@ -324,6 +326,7 @@ export class BlogApiService {
     publishDate?: Date,
     status?: 'draft' | 'scheduled' | 'published',
     category?: string,
+    readTimeMinutes?: number,
     signatureId?: string,
     signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
@@ -335,6 +338,7 @@ export class BlogApiService {
       publishDate: publishDate || new Date(),
       status: status || 'published',
       ...(category ? { category } : {}),
+      ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
       ...(signatureId ? { signatureId } : {}),
       ...(signatureSnapshot ? { signatureSnapshot } : {})
     };

@@ -90,6 +90,7 @@ export class BlogEditorComponent implements OnInit {
       title: ['', [Validators.required]],
       summary: ['', [Validators.required]],
       content: ['', [Validators.required]],
+      readTimeMinutes: [null, [Validators.min(1), Validators.max(120)]],
       publishDate: [new Date()],
       status: ['published', [Validators.required]],
       category: [''],
@@ -115,6 +116,7 @@ export class BlogEditorComponent implements OnInit {
       title: this.initialData.title || '',
       summary: this.initialData.summary || '',
       content: this.initialData.content || '',
+      readTimeMinutes: this.normalizeReadTimeMinutes(this.initialData.readTimeMinutes),
       publishDate: this.initialData.publishDate || new Date(),
       status: this.initialData.status || 'published',
       category: this.initialData.category || '',
@@ -210,6 +212,15 @@ export class BlogEditorComponent implements OnInit {
       normalized.push(clean);
     }
     return normalized;
+  }
+
+  private normalizeReadTimeMinutes(raw: any): number | null {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return null;
+    const rounded = Math.round(parsed);
+    if (rounded < 1) return null;
+    return Math.min(120, rounded);
   }
 
   getSignatureOptions(): Array<{ label: string; value: string }> {
@@ -382,6 +393,7 @@ export class BlogEditorComponent implements OnInit {
     const privateSeoTags = [...this.privateSeoTags];
     const selectedSignature = this.getSelectedSignature() || undefined;
     const selectedSignatureId = selectedSignature?.id || '';
+    const readTimeMinutes = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
 
     const listItemID = isEdit && this.initialData?.listItemID
       ? this.initialData.listItemID
@@ -399,6 +411,7 @@ export class BlogEditorComponent implements OnInit {
           formValue.publishDate,
           formValue.status,
           formValue.category,
+          readTimeMinutes || undefined,
           selectedSignatureId,
           selectedSignature
         )
@@ -413,6 +426,7 @@ export class BlogEditorComponent implements OnInit {
           formValue.publishDate,
           formValue.status,
           formValue.category,
+          readTimeMinutes || undefined,
           selectedSignatureId,
           selectedSignature
         );
@@ -425,7 +439,7 @@ export class BlogEditorComponent implements OnInit {
           const action = isEdit ? 'UPDATED' : 'CREATED';
           this.txLog.log(
             action,
-            `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
+            `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, readTime: ${readTimeMinutes || 'auto'}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
           );
           this.messageService.add({
             severity: 'success',
@@ -677,6 +691,8 @@ export class BlogEditorComponent implements OnInit {
   }
 
   getPreviewReadTimeMinutes(): number {
+    const manual = this.normalizeReadTimeMinutes(this.blogForm.get('readTimeMinutes')?.value);
+    if (manual) return manual;
     const text = this.getPreviewPlainText();
     if (!text) return 1;
     const words = text.split(/\s+/).filter(Boolean).length;
@@ -727,6 +743,10 @@ export class BlogEditorComponent implements OnInit {
       ...(formValue.category ? { category: String(formValue.category).trim() } : {}),
       previewBypassVisibility: true
     };
+    const manualReadTime = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
+    if (manualReadTime) {
+      metadata.readTimeMinutes = manualReadTime;
+    }
     if (selectedSignature) {
       metadata.signatureId = selectedSignature.id;
       metadata.signatureSnapshot = selectedSignature;

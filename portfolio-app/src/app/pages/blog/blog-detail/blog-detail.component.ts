@@ -56,6 +56,15 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     marked.setOptions({ breaks: false, gfm: true });
   }
 
+  private resolveReadTimeMinutes(metadata: BlogPostMetadata | undefined, fallbackText: string): number {
+    const manual = Number((metadata as any)?.readTimeMinutes);
+    if (Number.isFinite(manual) && manual > 0) {
+      return Math.max(1, Math.round(manual));
+    }
+    const words = String(fallbackText || '').trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil(words / 200));
+  }
+
   ngOnInit(): void {
     this.route.params
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -132,8 +141,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           .filter(b => b.type === 'paragraph' || b.type === 'heading' || b.type === 'quote')
           .map(b => (b as any).content || '')
           .join(' ');
-        const words = allText.trim().split(/\s+/).length;
-        this.readTime = Math.max(1, Math.ceil(words / 200));
+        this.readTime = this.resolveReadTimeMinutes(meta as BlogPostMetadata, allText);
 
         // SEO: update page title/meta + inject BlogPosting structured data.
         const urlPath = `/blog/${listItemId}`;
@@ -226,7 +234,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
       image: imgItem?.Photo,
       publishDate: meta?.publishDate ? new Date(meta.publishDate) : null,
       tags: meta?.tags || [],
-      readTime: Math.max(1, Math.ceil((content.trim().split(/\s+/).length) / 200))
+      readTime: this.resolveReadTimeMinutes(meta, content)
     };
   }
 

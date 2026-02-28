@@ -143,10 +143,11 @@ function extractBlogMetadata(items) {
   const title = meta.title || 'Untitled';
   const summary = meta.summary || '';
   const tags = Array.isArray(meta.tags) ? meta.tags : [];
+  const readTimeMinutes = normalizeReadTimeMinutes(meta.readTimeMinutes);
   const publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
   const status = meta.status || 'published';
   const scheduleName = meta.scheduleName || null;
-  return { metaItem, meta, title, summary, tags, publishDate, status, scheduleName };
+  return { metaItem, meta, title, summary, tags, readTimeMinutes, publishDate, status, scheduleName };
 }
 
 function hasBlogContent(items) {
@@ -167,6 +168,12 @@ function stripHtml(value) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeReadTimeMinutes(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.max(1, Math.round(parsed));
 }
 
 function estimateReadTimeMinutesFromItems(items) {
@@ -753,9 +760,9 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts', forc
   try {
     const items = await assertBlogPostExists(normalizedListItemID);
 
-    const { title, summary, tags } = extractBlogMetadata(items);
+    const { title, summary, tags, readTimeMinutes: manualReadTime } = extractBlogMetadata(items);
     const imageUrl = extractBlogHeroImage(items);
-    const readTimeMinutes = estimateReadTimeMinutesFromItems(items);
+    const readTimeMinutes = manualReadTime || estimateReadTimeMinutesFromItems(items);
     const postUrl = `${cfg.publicSiteUrl}/blog/${encodeURIComponent(normalizedListItemID)}`;
 
     const recipients = await listSubscribedRecipients({ topic: normalizedTopic });

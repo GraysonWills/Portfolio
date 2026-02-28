@@ -188,6 +188,9 @@ export class DashboardComponent implements OnInit {
           image: imageItem?.Photo || null,
           tags: metadata?.tags || [],
           privateSeoTags: metadata?.privateSeoTags || [],
+          readTimeMinutes: Number.isFinite(Number(metadata?.readTimeMinutes))
+            ? Math.max(1, Math.round(Number(metadata?.readTimeMinutes)))
+            : null,
           publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
           status: metadata?.status || 'published',
           category: metadata?.category || '',

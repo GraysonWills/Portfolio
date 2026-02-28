@@ -252,6 +252,20 @@
                 styleClass="full-width">
               </p-dropdown>
             </div>
+
+            <div class="form-group">
+              <label for="readTimeMinutes">Read Time (minutes)</label>
+              <input
+                type="number"
+                id="readTimeMinutes"
+                formControlName="readTimeMinutes"
+                pInputText
+                min="1"
+                max="120"
+                step="1"
+                placeholder="Auto-calculate if blank">
+              <small class="help-text">Optional manual override for displayed read time.</small>
+            </div>
           </div>
 
           <!-- Notifications -->

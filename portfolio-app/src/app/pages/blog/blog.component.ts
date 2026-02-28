@@ -92,6 +92,14 @@ export class BlogComponent implements OnInit {
     return Math.max(1, Math.ceil(words / 200));
   }
 
+  private resolveReadTimeMinutes(metadata: BlogPostMetadata | undefined, content: string): number {
+    const manual = Number((metadata as any)?.readTimeMinutes);
+    if (Number.isFinite(manual) && manual > 0) {
+      return Math.max(1, Math.round(manual));
+    }
+    return this.estimateReadTime(content);
+  }
+
   /**
    * Filter blog posts by search query
    */
@@ -134,7 +142,7 @@ export class BlogComponent implements OnInit {
       tags: metadata?.tags || [],
       status: metadata?.status || 'published',
       category: metadata?.category || 'General',
-      readTime: this.estimateReadTime(content)
+      readTime: this.resolveReadTimeMinutes(metadata, content)
     };
   }
 

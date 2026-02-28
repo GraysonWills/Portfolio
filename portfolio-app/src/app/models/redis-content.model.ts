@@ -92,6 +92,7 @@ export interface BlogPostMetadata {
   summary: string;
   tags: string[];
   privateSeoTags?: string[];
+  readTimeMinutes?: number;
   publishDate: Date;
   status: 'draft' | 'scheduled' | 'published';
   category?: string;
