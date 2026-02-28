@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   AuthenticationDetails,
+  CognitoRefreshToken,
   CognitoUser,
   CognitoUserPool,
   CognitoUserSession
@@ -16,12 +17,25 @@ type StoredSession = {
   expiresAtMs: number;
 };
 
+export type LoginThrottleState = {
+  locked: boolean;
+  attemptsRemaining: number;
+  retryAfterMs: number;
+  maxAttempts: number;
+  windowMs: number;
+};
+
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
   private readonly SESSION_KEY = 'blog_authoring_cognito_session_v1';
+  private readonly LOGIN_ATTEMPTS_KEY = 'blog_authoring_login_attempts_v1';
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOGIN_WINDOW_MS = 5 * 60 * 1000;
+  private readonly TOKEN_REFRESH_SKEW_MS = 60 * 1000;
   private session: StoredSession | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   private readonly userPool = new CognitoUserPool({
     UserPoolId: environment.cognito.userPoolId,
@@ -38,16 +52,29 @@ export class AuthService {
     if (!trimmedUser || !trimmedPass) return new Observable<boolean>((obs) => { obs.next(false); obs.complete(); });
 
     return new Observable<boolean>((observer) => {
+      const throttle = this.getLoginThrottleState();
+      if (throttle.locked) {
+        observer.error(new Error(`Too many login attempts. Try again in ${this.formatDuration(throttle.retryAfterMs)}.`));
+        return;
+      }
+
       const cognitoUser = new CognitoUser({ Username: trimmedUser, Pool: this.userPool });
       const authDetails = new AuthenticationDetails({ Username: trimmedUser, Password: trimmedPass });
 
       cognitoUser.authenticateUser(authDetails, {
         onSuccess: (result: CognitoUserSession) => {
+          this.clearFailedLoginAttempts();
           this.persistSession(trimmedUser, result);
           observer.next(true);
           observer.complete();
         },
         onFailure: (err: any) => {
+          this.recordFailedLoginAttempt();
+          const nextState = this.getLoginThrottleState();
+          if (nextState.locked) {
+            observer.error(new Error(`Too many login attempts. Try again in ${this.formatDuration(nextState.retryAfterMs)}.`));
+            return;
+          }
           observer.error(new Error(err?.message || 'Invalid username or password'));
         }
       });
@@ -70,7 +97,7 @@ export class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return !!this.getIdToken();
+    return !!(this.session?.username && (this.getIdToken() || this.session?.refreshToken));
   }
 
   getCurrentUser(): string | null {
@@ -79,11 +106,43 @@ export class AuthService {
 
   getIdToken(): string | null {
     if (!this.session) return null;
-    if (Date.now() >= this.session.expiresAtMs) {
-      this.logout();
+    if (this.isTokenStale(this.session.expiresAtMs)) {
       return null;
     }
     return this.session.idToken;
+  }
+
+  async getValidIdToken(): Promise<string | null> {
+    const existing = this.getIdToken();
+    if (existing) return existing;
+
+    if (!this.session?.refreshToken || !this.session?.username) return null;
+    return this.refreshSession();
+  }
+
+  getLoginThrottleState(now: number = Date.now()): LoginThrottleState {
+    const attempts = this.loadRecentFailedAttempts(now);
+    const attemptsRemaining = Math.max(0, this.MAX_LOGIN_ATTEMPTS - attempts.length);
+
+    if (attempts.length < this.MAX_LOGIN_ATTEMPTS) {
+      return {
+        locked: false,
+        attemptsRemaining,
+        retryAfterMs: 0,
+        maxAttempts: this.MAX_LOGIN_ATTEMPTS,
+        windowMs: this.LOGIN_WINDOW_MS
+      };
+    }
+
+    const oldestAttempt = attempts[0];
+    const retryAfterMs = Math.max(0, oldestAttempt + this.LOGIN_WINDOW_MS - now);
+    return {
+      locked: retryAfterMs > 0,
+      attemptsRemaining,
+      retryAfterMs,
+      maxAttempts: this.MAX_LOGIN_ATTEMPTS,
+      windowMs: this.LOGIN_WINDOW_MS
+    };
   }
 
   /**
@@ -141,11 +200,15 @@ export class AuthService {
       if (!raw) return;
       const parsed = JSON.parse(raw) as StoredSession;
       if (!parsed?.idToken || !parsed?.expiresAtMs) return;
-      if (Date.now() >= parsed.expiresAtMs) {
+      if (Date.now() >= parsed.expiresAtMs && !parsed?.refreshToken) {
         localStorage.removeItem(this.SESSION_KEY);
         return;
       }
       this.session = parsed;
+      if (this.isTokenStale(parsed.expiresAtMs) && parsed.refreshToken && parsed.username) {
+        // Best-effort background refresh so the user can stay signed in across sessions.
+        void this.refreshSession();
+      }
     } catch {
       // ignore
     }
@@ -174,6 +237,89 @@ export class AuthService {
     }
   }
 
+  private async refreshSession(): Promise<string | null> {
+    if (this.refreshPromise) return this.refreshPromise;
+    if (!this.session?.username || !this.session?.refreshToken) return null;
+
+    this.refreshPromise = new Promise<string | null>((resolve) => {
+      const username = this.session?.username || '';
+      const refreshToken = this.session?.refreshToken || '';
+      const cognitoUser = new CognitoUser({ Username: username, Pool: this.userPool });
+      const token = new CognitoRefreshToken({ RefreshToken: refreshToken });
+
+      cognitoUser.refreshSession(token, (err, session) => {
+        if (err || !session) {
+          this.logout();
+          resolve(null);
+          return;
+        }
+        this.persistSession(username, session);
+        resolve(this.session?.idToken || null);
+      });
+    }).finally(() => {
+      this.refreshPromise = null;
+    });
+
+    return this.refreshPromise;
+  }
+
+  private isTokenStale(expiresAtMs: number): boolean {
+    return Date.now() + this.TOKEN_REFRESH_SKEW_MS >= expiresAtMs;
+  }
+
+  private loadRecentFailedAttempts(now: number): number[] {
+    let attempts: number[] = [];
+    try {
+      const raw = localStorage.getItem(this.LOGIN_ATTEMPTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        attempts = parsed
+          .map((t) => Number(t))
+          .filter((t) => Number.isFinite(t));
+      }
+    } catch {
+      attempts = [];
+    }
+
+    const valid = attempts
+      .filter((t) => now - t < this.LOGIN_WINDOW_MS)
+      .sort((a, b) => a - b);
+
+    this.persistFailedAttempts(valid);
+    return valid;
+  }
+
+  private persistFailedAttempts(attempts: number[]): void {
+    try {
+      if (!attempts.length) {
+        localStorage.removeItem(this.LOGIN_ATTEMPTS_KEY);
+        return;
+      }
+      localStorage.setItem(this.LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts));
+    } catch {
+      // ignore
+    }
+  }
+
+  private recordFailedLoginAttempt(): void {
+    const now = Date.now();
+    const attempts = this.loadRecentFailedAttempts(now);
+    attempts.push(now);
+    this.persistFailedAttempts(attempts);
+  }
+
+  private clearFailedLoginAttempts(): void {
+    this.persistFailedAttempts([]);
+  }
+
+  private formatDuration(ms: number): string {
+    const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  }
+
   private getJwtExpMs(jwt: string): number | null {
     try {
       const [, payload] = jwt.split('.');
@@ -197,4 +343,3 @@ export class AuthService {
     );
   }
 }
-

@@ -34,11 +34,19 @@
         {{ errorMessage }}
       </div>
 
+      <div *ngIf="isLockedOut" class="lockout-alert">
+        {{ lockoutMessage }}
+      </div>
+
+      <small *ngIf="!isLockedOut" class="attempts-hint">
+        {{ lockoutState.attemptsRemaining }} / {{ lockoutState.maxAttempts }} attempts remaining in 5 minutes.
+      </small>
+
       <p-button 
         type="submit"
         label="Login"
         icon="pi pi-sign-in"
-        [disabled]="loginForm.invalid || isAuthenticating"
+        [disabled]="loginForm.invalid || isAuthenticating || isLockedOut"
         [loading]="isAuthenticating"
         styleClass="p-button-lg p-button-primary login-button">
       </p-button>
