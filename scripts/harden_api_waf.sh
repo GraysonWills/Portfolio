@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Harden existing REGIONAL WAF Web ACL for portfolio API by ensuring
-# managed rule groups are present.
+# baseline managed rule groups are present.
 #
 # Defaults target the current production API WAF in us-east-2.
 #
@@ -67,14 +67,35 @@ KNOWN_BAD_RULE='{
   }
 }'
 
+SQLI_RULE='{
+  "Name": "AWS-AWSManagedRulesSQLiRuleSet",
+  "Priority": 4,
+  "Statement": {
+    "ManagedRuleGroupStatement": {
+      "VendorName": "AWS",
+      "Name": "AWSManagedRulesSQLiRuleSet"
+    }
+  },
+  "OverrideAction": { "None": {} },
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "AWSManagedRulesSQLiRuleSet"
+  }
+}'
+
 UPDATED_RULES="$(
   jq -c \
     --argjson common "${COMMON_RULE}" \
-    --argjson known "${KNOWN_BAD_RULE}" '
+    --argjson known "${KNOWN_BAD_RULE}" \
+    --argjson sqli "${SQLI_RULE}" '
       . as $rules
       | (if any($rules[]; .Name == $common.Name) then $rules else ($rules + [$common]) end) as $r1
-      | (if any($r1[]; .Name == $known.Name) then $r1 else ($r1 + [$known]) end)
+      | (if any($r1[]; .Name == $known.Name) then $r1 else ($r1 + [$known]) end) as $r2
+      | (if any($r2[]; .Name == $sqli.Name) then $r2 else ($r2 + [$sqli]) end)
       | sort_by(.Priority)
+      | to_entries
+      | map(.value + { Priority: .key })
     ' <<< "${RULES_JSON}"
 )"
 
