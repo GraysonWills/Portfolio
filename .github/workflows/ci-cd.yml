@@ -146,6 +146,13 @@ jobs:
             --cache-control "no-cache" \
             --content-type "text/html"
 
+      - name: Ensure CloudFront apex redirect + SPA viewer-request handler
+        run: |
+          bash scripts/configure_cloudfront_portfolio_viewer_request.sh \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
+            --function-name "gw-portfolio-viewer-request" \
+            --function-file "scripts/cloudfront-portfolio-viewer-request.js"
+
       - name: Invalidate CloudFront shell paths
         run: |
           aws cloudfront create-invalidation \
