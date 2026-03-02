@@ -23,7 +23,7 @@
 
         {
           "name": "ALLOWED_ORIGINS",
-          "value": "http://localhost:4300,http://localhost:4301,https://www.grayson-wills.com,https://d39s45clv1oor3.cloudfront.net"
+          "value": "http://localhost:4300,http://localhost:4301,https://www.grayson-wills.com,https://grayson-wills.com,https://d39s45clv1oor3.cloudfront.net"
         },
 
         { "name": "COGNITO_REGION", "value": "us-east-2" },

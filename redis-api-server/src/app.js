@@ -10,7 +10,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 const contentRoutes = require('./routes/content');
 const uploadRoutes = require('./routes/upload');
@@ -25,13 +25,45 @@ const mediaRoutes = require('./routes/media');
 function createApp() {
   const app = express();
 
+  function normalizeOrigin(origin) {
+    const raw = String(origin || '').trim();
+    if (!raw) return '';
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host.toLowerCase()}`;
+    } catch {
+      return raw.toLowerCase();
+    }
+  }
+
+  function expandAllowedOrigins(origins) {
+    const expanded = new Set();
+    for (const origin of origins) {
+      const normalized = normalizeOrigin(origin);
+      if (!normalized) continue;
+      expanded.add(normalized);
+
+      // Keep apex + www in sync for public site origins.
+      try {
+        const u = new URL(normalized);
+        if (u.hostname.startsWith('www.')) {
+          expanded.add(`${u.protocol}//${u.hostname.slice(4)}${u.port ? `:${u.port}` : ''}`);
+        } else if (u.hostname.split('.').length === 2 && !u.hostname.includes('localhost')) {
+          expanded.add(`${u.protocol}//www.${u.hostname}${u.port ? `:${u.port}` : ''}`);
+        }
+      } catch {
+        // Ignore malformed values; they're already normalized and added above.
+      }
+    }
+    return expanded;
+  }
+
   function getClientIp(req) {
-    // Behind ALB, AWS appends the real client IP to X-Forwarded-For.
-    // We take the last IP to avoid client-supplied spoofed prefixes.
+    // X-Forwarded-For is a client -> proxy chain. Use the first entry as viewer IP.
     const xff = req.headers['x-forwarded-for'];
     if (typeof xff === 'string' && xff.trim()) {
       const parts = xff.split(',').map(p => p.trim()).filter(Boolean);
-      if (parts.length) return parts[parts.length - 1];
+      if (parts.length) return parts[0];
     }
     return req.socket?.remoteAddress || req.ip || 'unknown';
   }
@@ -48,16 +80,26 @@ function createApp() {
   }));
 
   // ─── CORS ────────────────────────────────────────────────────
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
+  const configuredOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-    : ['http://localhost:4200', 'http://localhost:3000'];
+    : [
+      'http://localhost:4200',
+      'http://localhost:4300',
+      'http://localhost:4301',
+      'http://localhost:3000',
+      'https://www.grayson-wills.com',
+      'https://d39s45clv1oor3.cloudfront.net'
+    ];
+  const allowedOrigins = expandAllowedOrigins(configuredOrigins);
 
   app.use(cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (curl, Postman, health checks)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error(`CORS: origin ${origin} not allowed`));
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (allowedOrigins.has(normalizedOrigin)) return callback(null, true);
+      // Return normal response without CORS headers rather than throwing 500.
+      return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
@@ -80,7 +122,7 @@ function createApp() {
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => getClientIp(req),
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
     skip: (req) => req.path.startsWith('/analytics/events'),
     message: { error: 'Too many requests, please try again later.' }
   });
@@ -92,7 +134,7 @@ function createApp() {
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => getClientIp(req),
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
     message: { error: 'Write rate limit exceeded. Please try again later.' }
   });
 
@@ -102,7 +144,7 @@ function createApp() {
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => getClientIp(req),
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
     message: { error: 'Analytics rate limit exceeded. Please try again later.' }
   });
 

@@ -118,6 +118,7 @@ fi
 
 echo "== CORS =="
 retry 30 10 expect_cors_allow_origin "${API_URL}/content" "https://www.grayson-wills.com"
+retry 30 10 expect_cors_allow_origin "${API_URL}/content" "https://grayson-wills.com"
 retry 30 10 expect_cors_allow_origin "${API_URL}/content" "https://d39s45clv1oor3.cloudfront.net"
 
 echo "== S3 direct access should be blocked (private buckets) =="
