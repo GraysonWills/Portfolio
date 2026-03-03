@@ -137,14 +137,22 @@ jobs:
           BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
           aws s3 sync "$BUILD_DIR/" "s3://${S3_BUCKET}/" \
             --exclude "index.html" \
+            --exclude "favicon.ico" \
+            --exclude "favicon.png" \
             --cache-control "public,max-age=31536000,immutable"
 
-      - name: Deploy index.html (no-cache)
+      - name: Deploy HTML + favicon assets (no-cache)
         run: |
           BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${S3_BUCKET}/index.html" \
             --cache-control "no-cache" \
             --content-type "text/html"
+          aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${S3_BUCKET}/favicon.ico" \
+            --cache-control "no-cache" \
+            --content-type "image/x-icon"
+          aws s3 cp "$BUILD_DIR/favicon.png" "s3://${S3_BUCKET}/favicon.png" \
+            --cache-control "no-cache" \
+            --content-type "image/png"
 
       - name: Ensure CloudFront apex redirect + SPA viewer-request handler
         run: |
@@ -157,7 +165,7 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths "/index.html" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*"
+            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*"
 
   deploy_blog_authoring:
     needs: [blog_authoring]
@@ -187,20 +195,28 @@ jobs:
           BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
           aws s3 sync "$BUILD_DIR/" "s3://${BLOG_AUTHORING_S3_BUCKET}/" \
             --exclude "index.html" \
+            --exclude "favicon.ico" \
+            --exclude "favicon.png" \
             --cache-control "public,max-age=31536000,immutable"
 
-      - name: Deploy index.html (no-cache)
+      - name: Deploy HTML + favicon assets (no-cache)
         run: |
           BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${BLOG_AUTHORING_S3_BUCKET}/index.html" \
             --cache-control "no-cache" \
             --content-type "text/html"
+          aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.ico" \
+            --cache-control "no-cache" \
+            --content-type "image/x-icon"
+          aws s3 cp "$BUILD_DIR/favicon.png" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.png" \
+            --cache-control "no-cache" \
+            --content-type "image/png"
 
       - name: Invalidate CloudFront shell paths
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${BLOG_AUTHORING_CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths "/index.html" "/" "/dashboard" "/content-studio" "/login"
+            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/dashboard" "/content-studio" "/login"
 
   smoke_test_prod:
     needs: [deploy, deploy_blog_authoring]

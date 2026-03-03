@@ -252,6 +252,8 @@
   margin: 0;
   color: var(--ink-700);
   line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .meta-preview {
@@ -259,6 +261,8 @@
   display: grid;
   gap: 0.4rem;
   color: var(--ink-700);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 
   code {
     font-size: 0.74rem;
@@ -266,6 +270,9 @@
     padding: 0.5rem 0.55rem;
     border-radius: 12px;
     overflow: auto;
+    max-width: 100%;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 }
 
@@ -367,4 +374,3 @@
     grid-template-columns: 1fr;
   }
 }
-

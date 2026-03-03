@@ -298,6 +298,8 @@
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .post-summary {
@@ -305,6 +307,8 @@
   line-height: 1.65;
   font-size: 0.93rem;
   flex: 1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .post-meta {
@@ -443,6 +447,9 @@
   padding: 0.25rem 1rem 1.15rem;
   line-height: 1.75;
   color: var(--ink-900);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .preview-post-body :is(h1, h2, h3, h4) {
@@ -456,6 +463,9 @@
 
 .preview-post-body pre {
   overflow-x: auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
   background: #0b1320;
   color: #e9f2ff;
   border-radius: 8px;
@@ -467,6 +477,29 @@
   border-left: 3px solid var(--primary);
   padding-left: 0.7rem;
   color: var(--ink-700);
+}
+
+.preview-post-body * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.preview-post-body img,
+.preview-post-body video,
+.preview-post-body iframe,
+.preview-post-body canvas,
+.preview-post-body svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.preview-post-body table {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
 }
 
 ::ng-deep .dashboard-header .p-button .p-button-label {
