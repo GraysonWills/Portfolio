@@ -5,6 +5,8 @@
 export const environment = {
   production: false,
   redisApiUrl: 'http://localhost:3000/api',
+  useContentV2Stream: true,
+  useBlogV2Cards: true,
   mailchimpApiKey: '',
   mailchimpListId: '',
   mailchimpScriptId: 'mcjs',

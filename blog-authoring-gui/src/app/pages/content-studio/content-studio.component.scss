@@ -178,6 +178,8 @@
 
 .content-card {
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 320px;
 }
 
 .card-header {
@@ -297,6 +299,12 @@
   border: 1px dashed rgba(11, 79, 159, 0.22);
   color: var(--ink-500);
   background: rgba(255, 255, 255, 0.6);
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
 }
 
 .editor-grid {

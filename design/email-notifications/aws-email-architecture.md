@@ -1,121 +1,124 @@
-# AWS Email Notification Architecture (Portfolio + Blog Authoring)
+# AWS Email Notification Architecture (Current Implementation)
+
+Last updated: 2026-03-04
 
 ## Goals
 
-1. Notify subscribers when a blog post is published.
-2. Support true scheduled publish + scheduled email notifications.
-3. Keep unsubscribe and preferences first-class.
-4. Avoid secrets in frontend code and use least-privilege IAM.
+1. Double opt-in subscriber onboarding.
+2. Reliable publish notifications (immediate + scheduled).
+3. Single-send/idempotent behavior for post notifications.
+4. Clear unsubscribe and preference management routes.
 
-## Proposed AWS Services
-
-1. **Amazon SES (v2)** for transactional/broadcast email delivery.
-2. **Amazon EventBridge Scheduler** for one-time publish/send jobs.
-3. **AWS Lambda** workers for publish processing and email dispatch.
-4. **Amazon DynamoDB** for subscriber and token state.
-5. **CloudWatch** for delivery/failure alarms and operational visibility.
-
-## High-Level Flow
+## Deployed Service Shape
 
 ```mermaid
 flowchart LR
-  A["Portfolio Site (subscribe form)"] --> B["Redis API (/api/subscriptions/*)"]
-  B --> C["DynamoDB: subscribers + tokens"]
-  B --> D["SES: confirmation email"]
-  E["Blog Authoring (publish/schedule)"] --> F["Redis API (/api/content + /api/notifications/*)"]
-  F --> G["EventBridge Scheduler (one-time job)"]
-  G --> H["Lambda publish worker"]
-  H --> I["Redis content update (status/publishDate)"]
-  H --> J["SES campaign send"]
-  J --> K["SES event stream (bounce/complaint/unsubscribe)"]
-  K --> L["Lambda subscriber-status updater"]
-  L --> C
+  Portfolio["portfolio-app subscribe UI"] --> API["redis-api-server /api/subscriptions/*"]
+  API --> Subs["DynamoDB: portfolio-email-subscribers"]
+  API --> Tokens["DynamoDB: portfolio-email-tokens"]
+  API --> SES["SESv2"]
+
+  Authoring["blog-authoring-gui publish/schedule"] --> Notify["/api/notifications/*"]
+  Notify --> Content["DynamoDB: portfolio-content"]
+  Notify --> Sched["EventBridge Scheduler"]
+  Notify --> Queue["SQS: notification queue"]
+  Queue --> Worker["Lambda SQS consumer"]
+  Worker --> SES
 ```
 
-## Data Model (Recommended)
+## API Contract (Implemented)
 
-### Table: `portfolio-email-subscribers`
+### Public subscription endpoints
 
-- `emailHash` (PK): SHA-256 of lowercase email.
-- `email` (string): normalized email for SES delivery.
-- `status`: `PENDING|SUBSCRIBED|UNSUBSCRIBED|BOUNCED|COMPLAINED`.
-- `topics`: string set (example: `blog_posts`, `major_updates`).
-- `source`: where signup happened (`blog-list`, `blog-detail`, `footer`).
-- `createdAt`, `confirmedAt`, `unsubscribedAt`, `lastNotifiedAt`.
-- `consentVersion`, `consentIp`, `consentUserAgent` (for auditability).
+- `POST /api/subscriptions/request`
+- `GET /api/subscriptions/confirm?token=...`
+- `GET /api/subscriptions/unsubscribe?token=...`
+- `POST /api/subscriptions/preferences`
 
-### Table: `portfolio-email-tokens`
+Behavior:
+- request:
+  - validates + normalizes email
+  - blocks duplicates (`ALREADY_SUBSCRIBED` / `ALREADY_PENDING`)
+  - stores `PENDING`
+  - sends confirmation email.
+- confirm:
+  - validates token
+  - marks `SUBSCRIBED`
+  - sends subscribed confirmation email.
+- unsubscribe:
+  - validates token
+  - marks `UNSUBSCRIBED`
+  - sends unsubscribe confirmation email.
 
-- `tokenHash` (PK): hash of opaque token in email link.
-- `emailHash`: links token to subscriber.
-- `action`: `confirm` or `unsubscribe`.
-- `expiresAtEpoch`: TTL attribute for automatic cleanup.
+### Authenticated notification endpoints
 
-## API Changes (Redis API Server)
+- `POST /api/notifications/send-now`
+- `POST /api/notifications/schedule`
+- `DELETE /api/notifications/schedule/:scheduleName`
+- `POST /api/notifications/worker/publish` (internal scheduler callback, secret-protected)
 
-Add endpoints in `redis-api-server`:
+Behavior:
+- published + notify enabled -> queue-backed send path.
+- scheduled -> EventBridge one-time schedule; worker publishes then optionally notifies.
 
-1. `POST /api/subscriptions/request`
-   - Validates email + preference topics.
-   - Stores pending subscriber.
-   - Sends double opt-in email via SES.
-2. `GET /api/subscriptions/confirm?token=...`
-   - Verifies token and marks subscriber `SUBSCRIBED`.
-3. `POST /api/subscriptions/unsubscribe`
-   - Accepts token and marks subscriber `UNSUBSCRIBED`.
-4. `POST /api/subscriptions/preferences`
-   - Updates topics/frequency for authenticated token holder.
-5. `POST /api/notifications/send-now` (auth protected)
-   - Sends campaign for a specific `listItemID`.
-6. `POST /api/notifications/schedule` (auth protected)
-   - Creates one-time Scheduler job for publish/send.
-7. `DELETE /api/notifications/schedule/:jobId` (auth protected)
-   - Cancels scheduled send.
+## Data Model
 
-## Publish + Schedule Behavior (App Logic)
+### `portfolio-email-subscribers`
 
-### Publish Now
+- PK: `emailHash`
+- fields:
+  - `email`
+  - `status` (`PENDING|SUBSCRIBED|UNSUBSCRIBED|BOUNCED|COMPLAINED`)
+  - `topics[]`
+  - `source`
+  - consent audit fields (`consentIp`, `consentUserAgent`, `consentVersion`)
+  - lifecycle timestamps (`createdAt`, `confirmedAt`, `unsubscribedAt`, `updatedAt`)
 
-1. Author sets `status = published`.
-2. Backend writes Redis metadata and triggers async notification send.
-3. Worker builds email payload from blog metadata/body and sends to subscribed users.
+### `portfolio-email-tokens`
 
-### Scheduled Publish
+- PK: `tokenHash`
+- fields:
+  - `emailHash`
+  - `action` (`confirm|unsubscribe|manage`)
+  - `expiresAtEpoch` (TTL)
+  - `createdAt`
 
-1. Author sets `status = scheduled` and future `publishDate`.
-2. Backend stores post as scheduled in Redis and creates EventBridge schedule.
-3. At scheduled time, publish worker:
-   - updates Redis post to `published`,
-   - sends notification email (if enabled),
-   - records send result.
+## Queue and Idempotency
 
-## Portfolio App Changes
+Implemented:
+- Post notifications enqueue to SQS.
+- Lambda consumer sends via SES asynchronously.
+- Notification service applies marker/lock logic to reduce duplicate sends during retries or rapid updates.
 
-1. Add subscription form to blog page and blog detail page.
-2. Add confirmation screen route (`/notifications/confirmed`).
-3. Add unsubscribe/preferences route (`/notifications/manage`).
-4. Remove direct Mailchimp API key usage from frontend (`portfolio-app/src/app/services/mailchimp.service.ts`) and replace with your own backend API calls.
+Planned follow-up:
+- move signup confirmation emails to queue path for unified retry/visibility model.
 
-## Blog Authoring GUI Changes
+## Frontend Integration (Current)
 
-1. In editor sidebar, add a **Notifications** card:
-   - `Send email update` toggle,
-   - audience topic selector,
-   - optional custom subject/preheader.
-2. Keep existing `status` + `publishDate`, but pass them through to backend instead of forcing publish-now.
-3. In dashboard, add a **Scheduled Sends** panel with next run time and cancel action.
+### Portfolio
 
-## Cost-Aware Defaults
+- Blog page subscribe card posts to `/api/subscriptions/request`.
+- Notification routes:
+  - `/notifications/confirm`
+  - `/notifications/unsubscribe`
+  - `/notifications/manage`.
 
-1. Use one-time schedules only, with cleanup after execution.
-2. Send in batches sized to SES limits.
-3. Store minimal fields in DynamoDB and TTL-expire short-lived tokens.
-4. Start with single-region (`us-east-2`) resources to reduce complexity.
+### Blog Authoring
 
-## Rollout Phases
+- Dashboard/editor can trigger send-now or schedule actions.
+- Subscriber admin tab reads and edits subscribers through `/api/notifications/subscribers`.
 
-1. **Phase 1:** backend foundation (DynamoDB + SES + subscription endpoints).
-2. **Phase 2:** true schedule support (EventBridge Scheduler + publish worker).
-3. **Phase 3:** frontend subscription/preferences UI (portfolio).
-4. **Phase 4:** blog authoring notification controls + scheduled send panel.
-5. **Phase 5:** production hardening (alarms, dashboards, runbooks, load tests).
+## Security Notes
+
+- no provider API secrets in frontend runtime for this flow.
+- write/admin endpoints require Cognito JWT auth.
+- internal worker route protected by `x-scheduler-secret`.
+- token values are hashed at rest in DynamoDB.
+
+## Cost Controls
+
+- queue decouples spikes from API latency.
+- scheduler uses one-time jobs only.
+- token table uses TTL cleanup.
+- API rate limits and body caps in `src/app.js` reduce abuse/billing spikes.
+

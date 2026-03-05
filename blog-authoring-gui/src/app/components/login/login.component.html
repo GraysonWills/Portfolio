@@ -51,8 +51,20 @@
         styleClass="p-button-lg p-button-primary login-button">
       </p-button>
 
+      <p-button
+        *ngIf="canUseGoogleSso"
+        type="button"
+        label="Continue with Google"
+        icon="pi pi-google"
+        (onClick)="loginWithGoogle()"
+        styleClass="p-button-lg p-button-outlined login-button google-login-button">
+      </p-button>
+
       <button type="button" class="forgot-link" routerLink="/forgot-password">
         Forgot password?
+      </button>
+      <button type="button" class="forgot-link" routerLink="/register">
+        Create account
       </button>
     </form>
   </div>

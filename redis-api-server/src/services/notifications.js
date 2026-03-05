@@ -977,5 +977,6 @@ module.exports = {
   cancelSchedule,
   publishBlogPostNow,
   processNotificationQueueRecords,
+  listSubscribedRecipients,
   getConfig,
 };

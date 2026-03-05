@@ -5,6 +5,7 @@ import {
   AuthenticationDetails,
   CognitoRefreshToken,
   CognitoUser,
+  CognitoUserAttribute,
   CognitoUserPool,
   CognitoUserSession
 } from 'amazon-cognito-identity-js';
@@ -13,7 +14,7 @@ type StoredSession = {
   username: string;
   idToken: string;
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   expiresAtMs: number;
 };
 
@@ -36,6 +37,7 @@ export class AuthService {
   private readonly TOKEN_REFRESH_SKEW_MS = 60 * 1000;
   private session: StoredSession | null = null;
   private refreshPromise: Promise<string | null> | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   private readonly userPool = new CognitoUserPool({
     UserPoolId: environment.cognito.userPoolId,
@@ -44,6 +46,8 @@ export class AuthService {
 
   constructor() {
     this.loadSession();
+    this.startRefreshTimer();
+    void this.hydrateFromCognitoCurrentUser();
   }
 
   login(username: string, password: string): Observable<boolean> {
@@ -81,6 +85,47 @@ export class AuthService {
     });
   }
 
+  isGoogleSsoConfigured(): boolean {
+    return !!String(environment.cognito?.hostedUiDomain || '').trim();
+  }
+
+  startGoogleSsoLogin(): void {
+    const domain = String(environment.cognito?.hostedUiDomain || '').trim();
+    const redirect = String(environment.cognito?.redirectSignIn || '').trim() || `${window.location.origin}/login`;
+    const clientId = String(environment.cognito?.clientId || '').trim();
+    if (!domain || !redirect || !clientId) {
+      throw new Error('Google SSO is not configured. Missing Cognito Hosted UI settings.');
+    }
+
+    const query = new URLSearchParams({
+      identity_provider: 'Google',
+      redirect_uri: redirect,
+      response_type: 'token',
+      client_id: clientId,
+      scope: 'openid email profile'
+    });
+
+    window.location.assign(`https://${domain}/oauth2/authorize?${query.toString()}`);
+  }
+
+  completeHostedUiLoginFromHash(hash: string): boolean {
+    const raw = String(hash || '').trim();
+    if (!raw.startsWith('#')) return false;
+
+    const params = new URLSearchParams(raw.slice(1));
+    const idToken = String(params.get('id_token') || '').trim();
+    const accessToken = String(params.get('access_token') || '').trim();
+    if (!idToken || !accessToken) return false;
+
+    const username = this.getJwtStringClaim(idToken, 'cognito:username')
+      || this.getJwtStringClaim(idToken, 'email')
+      || this.getJwtStringClaim(idToken, 'sub')
+      || 'google-user';
+
+    this.persistHostedSession({ username, idToken, accessToken });
+    return true;
+  }
+
   logout(): void {
     try {
       this.userPool.getCurrentUser()?.signOut();
@@ -94,6 +139,35 @@ export class AuthService {
     } catch {
       // ignore
     }
+  }
+
+  private startRefreshTimer(): void {
+    if (this.refreshTimer) return;
+    this.refreshTimer = setInterval(() => {
+      const expiresAt = this.session?.expiresAtMs;
+      if (!expiresAt) return;
+      if (this.isTokenStale(expiresAt) && this.session?.refreshToken && this.session?.username) {
+        void this.refreshSession();
+      }
+    }, 30 * 1000);
+  }
+
+  private async hydrateFromCognitoCurrentUser(): Promise<void> {
+    if (this.session?.idToken && !this.isTokenStale(this.session.expiresAtMs)) return;
+
+    const currentUser = this.userPool.getCurrentUser();
+    if (!currentUser) return;
+
+    await new Promise<void>((resolve) => {
+      currentUser.getSession((err: any, userSession: CognitoUserSession | null) => {
+        if (err || !userSession || !userSession.isValid()) {
+          resolve();
+          return;
+        }
+        this.persistSession(currentUser.getUsername(), userSession);
+        resolve();
+      });
+    });
   }
 
   isAuthenticated(): boolean {
@@ -194,6 +268,47 @@ export class AuthService {
     });
   }
 
+  register(username: string, email: string, password: string): Observable<void> {
+    const u = String(username || '').trim();
+    const e = String(email || '').trim();
+    const p = String(password || '').trim();
+    if (!u || !e || !p) {
+      return new Observable<void>((obs) => { obs.error(new Error('Username, email, and password are required')); });
+    }
+
+    return new Observable<void>((observer) => {
+      const attrs = [new CognitoUserAttribute({ Name: 'email', Value: e })];
+      this.userPool.signUp(u, p, attrs, [], (err) => {
+        if (err) {
+          observer.error(new Error(err?.message || 'Registration failed'));
+          return;
+        }
+        observer.next();
+        observer.complete();
+      });
+    });
+  }
+
+  confirmRegistration(username: string, code: string): Observable<void> {
+    const u = String(username || '').trim();
+    const c = String(code || '').trim();
+    if (!u || !c) {
+      return new Observable<void>((obs) => { obs.error(new Error('Username and verification code are required')); });
+    }
+
+    return new Observable<void>((observer) => {
+      const cognitoUser = new CognitoUser({ Username: u, Pool: this.userPool });
+      cognitoUser.confirmRegistration(c, true, (err) => {
+        if (err) {
+          observer.error(new Error(err?.message || 'Email verification failed'));
+          return;
+        }
+        observer.next();
+        observer.complete();
+      });
+    });
+  }
+
   private loadSession(): void {
     try {
       const raw = localStorage.getItem(this.SESSION_KEY);
@@ -219,14 +334,18 @@ export class AuthService {
     const accessToken = result.getAccessToken().getJwtToken();
     const refreshToken = result.getRefreshToken().getToken();
 
-    const expMs = this.getJwtExpMs(idToken);
+    this.persistHostedSession({ username, idToken, accessToken, refreshToken });
+  }
+
+  private persistHostedSession(input: { username: string; idToken: string; accessToken: string; refreshToken?: string }): void {
+    const expMs = this.getJwtExpMs(input.idToken);
     const expiresAtMs = expMs ?? (Date.now() + 55 * 60 * 1000); // fallback ~55m
 
     this.session = {
-      username,
-      idToken,
-      accessToken,
-      refreshToken,
+      username: String(input.username || '').trim() || 'user',
+      idToken: input.idToken,
+      accessToken: input.accessToken,
+      refreshToken: input.refreshToken,
       expiresAtMs
     };
 
@@ -327,6 +446,20 @@ export class AuthService {
       const json = JSON.parse(this.base64UrlDecode(payload));
       const expSeconds = typeof json?.exp === 'number' ? json.exp : null;
       return expSeconds ? expSeconds * 1000 : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private getJwtStringClaim(jwt: string, claim: string): string | null {
+    try {
+      const [, payload] = jwt.split('.');
+      if (!payload) return null;
+      const json = JSON.parse(this.base64UrlDecode(payload));
+      const value = json?.[claim];
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      return trimmed || null;
     } catch {
       return null;
     }

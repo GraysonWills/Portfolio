@@ -36,6 +36,32 @@ const {
   getPreviewSession
 } = require('../services/preview-session-ddb');
 const { rewriteContentItemMediaUrls } = require('../utils/media-url');
+const {
+  BLOG_PAGE_ID,
+  BLOG_IMAGE_CONTENT_ID,
+  clampLimit,
+  parsePageSort,
+  parseProjection,
+  parseBoolean,
+  parseCsvNumbers,
+  parseCsvStrings,
+  parseStatusFilter,
+  normalizeContentItem,
+  sortPageItems,
+  projectContentItem,
+  buildBlogCardsFromPageItems,
+  filterBlogCards,
+  sortBlogCards,
+  stripBlogCardInternals,
+  groupItemsByListItemId,
+  filterByContentIds,
+  pageSlice
+} = require('../services/content-v2');
+const {
+  computeFilterHash,
+  encodeOffsetToken,
+  decodeOffsetToken
+} = require('../utils/pagination-token');
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
@@ -56,8 +82,53 @@ function normalizeContentRecord(item, req) {
   return rewriteContentItemMediaUrls(item, req);
 }
 
+function logV2Metric(route, startedAt, extra = {}) {
+  const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+  const metric = {
+    route,
+    latencyMs: Number(latencyMs.toFixed(2)),
+    ...extra
+  };
+  console.info('[content-v2-metric]', JSON.stringify(metric));
+}
+
+async function readContentByPage(pageId) {
+  if (useDdbAsPrimary) {
+    return ddbGetContentByPageId(pageId);
+  }
+
+  try {
+    return await getContentWhere((item) => Number(item.PageID) === Number(pageId));
+  } catch (err) {
+    if (!isContentDdbEnabled()) throw err;
+    return ddbGetContentByPageId(pageId);
+  }
+}
+
+async function readContentByListItemIds(listItemIds) {
+  const requested = Array.isArray(listItemIds) ? listItemIds : [];
+  if (!requested.length) return [];
+
+  if (useDdbAsPrimary) {
+    const groups = await Promise.all(requested.map((id) => ddbGetContentByListItemId(id)));
+    return groups.flat();
+  }
+
+  const requestedSet = new Set(requested);
+  try {
+    return await getContentWhere((item) => requestedSet.has(String(item.ListItemID || '')));
+  } catch (err) {
+    if (!isContentDdbEnabled()) throw err;
+    const groups = await Promise.all(requested.map((id) => ddbGetContentByListItemId(id)));
+    return groups.flat();
+  }
+}
+
 // Public reads; authenticated writes.
 router.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/v2/list-items/batch') {
+    return next();
+  }
   if (req.method === 'GET') return next();
   return requireAuth(req, res, next);
 });
@@ -199,6 +270,265 @@ router.get('/preview/:token', async (req, res) => {
 
     res.set('Cache-Control', 'no-store');
     return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v2/page/:pageId
+ * Paged content read with optional projection and filtering.
+ */
+router.get('/v2/page/:pageId', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const pageId = Number.parseInt(req.params.pageId, 10);
+    if (!Number.isFinite(pageId)) {
+      return res.status(400).json({ error: 'Invalid pageId' });
+    }
+
+    const limit = clampLimit(req.query.limit, { defaultValue: 30, min: 1, max: 100 });
+    const sort = parsePageSort(req.query.sort);
+    const fields = parseProjection(req.query.fields);
+    const contentIds = parseCsvNumbers(req.query.contentIds, { maxItems: 100 });
+
+    const filterContext = {
+      route: 'v2/page',
+      pageId,
+      contentIds: [...contentIds].sort((a, b) => a - b),
+      sort,
+      fields
+    };
+    const filterHash = computeFilterHash(filterContext);
+
+    let offset = 0;
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch (tokenErr) {
+        console.warn('[content-v2] nextToken decode failed for /v2/page:', tokenErr.message);
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+
+      if (decodedToken.filterHash !== filterHash || decodedToken.sort !== sort) {
+        console.warn('[content-v2] nextToken rejected on /v2/page due to filter mismatch');
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      offset = decodedToken.offset;
+    }
+
+    const sourceItems = await readContentByPage(pageId);
+    const normalized = sourceItems
+      .map(normalizeContentItem)
+      .filter(Boolean);
+    const byContentId = filterByContentIds(normalized, contentIds);
+    const sorted = sortPageItems(byContentId, sort);
+    const pageSliceResult = pageSlice(sorted, offset, limit);
+
+    const projected = pageSliceResult.items.map((item) => projectContentItem(item, fields));
+    const items = normalizeContentArray(projected, req);
+    const nextToken = pageSliceResult.hasMore
+      ? encodeOffsetToken({
+          offset: pageSliceResult.nextOffset,
+          sort,
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v2/page/:pageId', startedAt, {
+      pageId,
+      returned: items.length,
+      hasMore: pageSliceResult.hasMore
+    });
+
+    return res.json({
+      items,
+      nextToken,
+      page: {
+        pageId,
+        limit,
+        returned: items.length,
+        hasMore: pageSliceResult.hasMore,
+        sort
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v2/blog/cards
+ * Blog metadata feed (no image payload in this endpoint).
+ */
+router.get('/v2/blog/cards', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const limit = clampLimit(req.query.limit, { defaultValue: 12, min: 1, max: 50 });
+    const status = parseStatusFilter(req.query.status, 'published');
+    const includeFuture = parseBoolean(req.query.includeFuture, false);
+    const q = String(req.query.q || '').trim();
+    const category = String(req.query.category || '').trim();
+
+    const filterContext = {
+      route: 'v2/blog/cards',
+      status,
+      includeFuture,
+      q: q.toLowerCase(),
+      category: category.toLowerCase()
+    };
+    const filterHash = computeFilterHash(filterContext);
+
+    let offset = 0;
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch (tokenErr) {
+        console.warn('[content-v2] nextToken decode failed for /v2/blog/cards:', tokenErr.message);
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+
+      if (decodedToken.filterHash !== filterHash) {
+        console.warn('[content-v2] nextToken rejected on /v2/blog/cards due to filter mismatch');
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      offset = decodedToken.offset;
+    }
+
+    const pageItems = await readContentByPage(BLOG_PAGE_ID);
+    const cards = buildBlogCardsFromPageItems(pageItems);
+    const filtered = filterBlogCards(cards, { status, includeFuture, q, category });
+    const sorted = sortBlogCards(filtered);
+    const pageSliceResult = pageSlice(sorted, offset, limit);
+
+    const items = pageSliceResult.items.map(stripBlogCardInternals);
+    const nextToken = pageSliceResult.hasMore
+      ? encodeOffsetToken({
+          offset: pageSliceResult.nextOffset,
+          sort: 'publish_desc',
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v2/blog/cards', startedAt, {
+      returned: items.length,
+      hasMore: pageSliceResult.hasMore,
+      status
+    });
+
+    return res.json({
+      items,
+      nextToken,
+      page: {
+        limit,
+        returned: items.length,
+        hasMore: pageSliceResult.hasMore
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v2/blog/cards/media
+ * Resolve card image URLs for visible blog cards.
+ */
+router.get('/v2/blog/cards/media', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const listItemIDs = parseCsvStrings(req.query.listItemIDs, { maxItems: 50 });
+    if (!listItemIDs.length) {
+      return res.status(400).json({ error: 'listItemIDs is required (max 50)' });
+    }
+
+    const allItems = await readContentByListItemIds(listItemIDs);
+    const normalized = allItems
+      .map(normalizeContentItem)
+      .filter(Boolean)
+      .filter((item) => Number(item.PageID) === BLOG_PAGE_ID && Number(item.PageContentID) === BLOG_IMAGE_CONTENT_ID);
+
+    const byListItem = groupItemsByListItemId(normalized, listItemIDs);
+    const mediaItems = [];
+
+    for (const listItemID of listItemIDs) {
+      const rows = (byListItem[listItemID] || []).sort((a, b) => {
+        const aTs = new Date(a?.UpdatedAt || a?.CreatedAt || 0).getTime() || 0;
+        const bTs = new Date(b?.UpdatedAt || b?.CreatedAt || 0).getTime() || 0;
+        return bTs - aTs;
+      });
+      const top = rows.find((row) => typeof row?.Photo === 'string' && row.Photo.trim());
+      if (!top) continue;
+      const rewritten = normalizeContentRecord(top, req);
+      mediaItems.push({
+        listItemID,
+        imageUrl: rewritten.Photo
+      });
+    }
+
+    logV2Metric('/v2/blog/cards/media', startedAt, {
+      requested: listItemIDs.length,
+      returned: mediaItems.length
+    });
+
+    return res.json({ items: mediaItems });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/content/v2/list-items/batch
+ * Batch read content grouped by list-item ID.
+ */
+router.post('/v2/list-items/batch', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const requestedIdsRaw = Array.isArray(body.listItemIDs) ? body.listItemIDs : [];
+    const requestedIds = [];
+    const seen = new Set();
+    for (const value of requestedIdsRaw) {
+      if (requestedIds.length >= 50) break;
+      const normalized = String(value || '').trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      requestedIds.push(normalized);
+    }
+
+    if (!requestedIds.length) {
+      return res.status(400).json({ error: 'listItemIDs is required (1-50 IDs)' });
+    }
+
+    const contentIds = Array.isArray(body.contentIds)
+      ? body.contentIds
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n))
+          .slice(0, 100)
+      : [];
+
+    const allItems = await readContentByListItemIds(requestedIds);
+    const normalized = allItems
+      .map(normalizeContentItem)
+      .filter(Boolean);
+    const narrowed = filterByContentIds(normalized, contentIds);
+    const grouped = groupItemsByListItemId(narrowed, requestedIds);
+
+    const normalizedResponse = {};
+    for (const listItemID of requestedIds) {
+      normalizedResponse[listItemID] = normalizeContentArray(grouped[listItemID] || [], req);
+    }
+
+    logV2Metric('/v2/list-items/batch', startedAt, {
+      requested: requestedIds.length,
+      returnedGroups: Object.keys(normalizedResponse).length
+    });
+
+    return res.json({
+      itemsByListItemID: normalizedResponse
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }

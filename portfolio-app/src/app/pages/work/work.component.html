@@ -80,6 +80,30 @@
       </p-timeline>
     </section>
 
+    <!-- Community Leadership & Service -->
+    <section class="community-section"
+             *ngIf="!isLoading && communityRoles.length > 0"
+             aria-label="Community leadership and service"
+             appScrollReveal>
+      <h2 class="section-title">Community Leadership & Service</h2>
+      <div class="community-grid">
+        <article class="community-card" *ngFor="let role of communityRoles">
+          <header class="community-header">
+            <div>
+              <h3>{{ role.role }}</h3>
+              <p class="community-org">{{ role.organization }}</p>
+            </div>
+            <div class="community-meta">
+              <span class="community-period">{{ role.period }}</span>
+              <p-tag *ngIf="role.cause" [value]="role.cause" severity="info"></p-tag>
+              <span class="current-pill" *ngIf="role.isCurrent">Current</span>
+            </div>
+          </header>
+          <p class="community-summary">{{ role.summary }}</p>
+        </article>
+      </div>
+    </section>
+
     <!-- Skills Section -->
     <section class="skills-section" 
              *ngIf="!isLoading && topSkills.length > 0" 

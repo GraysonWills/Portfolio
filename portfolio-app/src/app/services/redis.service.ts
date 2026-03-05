@@ -12,7 +12,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, combineLatest, of, throwError, timer } from 'rxjs';
-import { catchError, map, retry, shareReplay, switchMap } from 'rxjs/operators';
+import { catchError, map, retry, shareReplay, switchMap, tap, timeout } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { RedisContent, PageID, PageContentID, ContentGroup } from '../models/redis-content.model';
 
@@ -23,15 +23,94 @@ type PreviewSessionPayload = {
   forceVisibleListItemIds?: string[];
 };
 
+export type ContentV2PageRequest = {
+  limit?: number;
+  nextToken?: string | null;
+  contentIds?: number[];
+  fields?: 'minimal' | 'standard' | 'full';
+  sort?: 'updated_desc' | 'updated_asc' | 'id_asc';
+  cacheScope?: string;
+};
+
+export type ContentV2PageResponse = {
+  items: RedisContent[];
+  nextToken: string | null;
+  page: {
+    pageId: number;
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+    sort: 'updated_desc' | 'updated_asc' | 'id_asc';
+  };
+};
+
+export type BlogCardV2 = {
+  listItemID: string;
+  title: string;
+  summary: string;
+  publishDate: string | null;
+  status: 'draft' | 'scheduled' | 'published' | string;
+  tags: string[];
+  privateSeoTags: string[];
+  readTimeMinutes: number;
+  category: string;
+};
+
+export type BlogCardsV2Request = {
+  limit?: number;
+  nextToken?: string | null;
+  status?: 'published' | 'draft' | 'scheduled' | 'all';
+  includeFuture?: boolean;
+  q?: string;
+  category?: string;
+  cacheScope?: string;
+};
+
+export type BlogCardsV2Response = {
+  items: BlogCardV2[];
+  nextToken: string | null;
+  page: {
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+  };
+};
+
+export type BlogCardMediaItem = {
+  listItemID: string;
+  imageUrl: string;
+};
+
+export type RouteCacheOptions = {
+  cacheScope?: string;
+};
+
 @Injectable({
   providedIn: 'root'
 })
 export class RedisService {
+  private readonly readTimeoutMs = 8000;
+  private readonly useContentV2Stream = !!environment.useContentV2Stream;
+  private readonly useBlogV2Cards = !!environment.useBlogV2Cards;
+  private readonly snapshotStorageKey = 'portfolio_content_snapshot_v1';
+  private readonly pageSnapshotStorageKeyPrefix = 'portfolio_content_page_snapshot_v1_';
+  private readonly snapshotMaxAgeMs = 30 * 60_000;
+  private readonly pageCacheTtlMs = 5 * 60_000;
+  private readonly allContentCacheTtlMs = 2 * 60_000;
+  private readonly v2ReadCacheTtlMs = 60_000;
+  private readonly mediaItemCacheTtlMs = 10 * 60_000;
   private apiUrl: string;
   private headers: HttpHeaders;
 
   // Cached observables for data that rarely changes
   private allContent$: Observable<RedisContent[]> | null = null;
+  private allContentCachedAt = 0;
+  private pageContentCache = new Map<number, { cachedAt: number; stream$: Observable<RedisContent[]> }>();
+  private contentPageV2Cache = new Map<string, { cachedAt: number; stream$: Observable<ContentV2PageResponse> }>();
+  private blogCardsV2Cache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardsV2Response> }>();
+  private blogMediaBatchCache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardMediaItem[]> }>();
+  private listItemsBatchV2Cache = new Map<string, { cachedAt: number; stream$: Observable<Record<string, RedisContent[]>> }>();
+  private mediaItemsCache = new Map<string, { cachedAt: number; imageUrl: string }>();
   private previewToken: string | null = null;
   private previewSession$: Observable<PreviewSessionPayload | null> | null = null;
   private previewSessionSnapshot: PreviewSessionPayload | null = null;
@@ -68,6 +147,14 @@ export class RedisService {
     return !!this.previewToken;
   }
 
+  isContentV2StreamingEnabled(): boolean {
+    return this.useContentV2Stream && !this.previewToken;
+  }
+
+  isBlogV2CardsEnabled(): boolean {
+    return this.useBlogV2Cards && !this.previewToken;
+  }
+
   isPreviewListItemForcedVisible(listItemId: string): boolean {
     const value = String(listItemId || '').trim();
     if (!value) return false;
@@ -80,27 +167,51 @@ export class RedisService {
    */
   invalidateCache(): void {
     this.allContent$ = null;
+    this.allContentCachedAt = 0;
+    this.pageContentCache.clear();
+    this.contentPageV2Cache.clear();
+    this.blogCardsV2Cache.clear();
+    this.blogMediaBatchCache.clear();
+    this.listItemsBatchV2Cache.clear();
+    this.mediaItemsCache.clear();
   }
 
   /**
    * Get all content from Redis (with shareReplay cache)
    */
   getAllContent(): Observable<RedisContent[]> {
-    if (!this.allContent$) {
-      this.allContent$ = this.http
-        .get<RedisContent[]>(`${this.apiUrl}/content`, { headers: this.headers })
+    const now = Date.now();
+    const stale = !this.allContent$ || (now - this.allContentCachedAt) > this.allContentCacheTtlMs;
+
+    if (stale) {
+      this.allContentCachedAt = now;
+      this.allContent$ = this.readRequest(
+        this.http.get<RedisContent[]>(`${this.apiUrl}/content`, { headers: this.headers })
+      )
         .pipe(
-          retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
-          shareReplay({ bufferSize: 1, refCount: true, windowTime: 60_000 }),
-          catchError(this.handleError)
+          tap((content) => this.persistContentSnapshot(content)),
+          catchError((error) => {
+            const fallback = this.readContentSnapshot();
+            if (fallback) {
+              console.warn('[RedisService] Falling back to cached content snapshot due to read error.');
+              return of(fallback);
+            }
+            return this.handleError(error);
+          }),
+          shareReplay({ bufferSize: 1, refCount: false })
         );
     }
 
-    if (!this.previewToken) {
-      return this.allContent$;
+    const allContentStream = this.allContent$;
+    if (!allContentStream) {
+      return throwError(() => new Error('Content cache stream is not initialized.'));
     }
 
-    return combineLatest([this.allContent$, this.getPreviewSession()]).pipe(
+    if (!this.previewToken) {
+      return allContentStream;
+    }
+
+    return combineLatest([allContentStream, this.getPreviewSession()]).pipe(
       map(([content, session]) => this.applyPreviewOverlay(content, session))
     );
   }
@@ -114,38 +225,74 @@ export class RedisService {
         map((items) => items.find((item) => item.ID === id) || null),
         switchMap((found) => {
           if (found) return of(found);
-          return this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers }).pipe(
-            retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) })
+          return this.readRequest(
+            this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
           );
         }),
         catchError(this.handleError)
       );
     }
 
-    return this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
-      .pipe(
-        retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
-        catchError(this.handleError)
-      );
+    return this.readRequest(
+      this.http.get<RedisContent>(`${this.apiUrl}/content/${id}`, { headers: this.headers })
+    ).pipe(catchError(this.handleError));
   }
 
   /**
    * Get content filtered by PageID
    */
   getContentByPageID(pageID: PageID): Observable<RedisContent[]> {
-    return this.getAllContent().pipe(
-      map((content: RedisContent[]) => content.filter((item) => item.PageID === pageID)),
-      catchError(this.handleError)
+    // Preview mode overlays unpublished draft edits across pages and therefore
+    // must resolve from the full content set.
+    if (this.previewToken) {
+      return this.getAllContent().pipe(
+        map((content: RedisContent[]) => content.filter((item) => item.PageID === pageID)),
+        catchError(this.handleError)
+      );
+    }
+
+    const cached = this.pageContentCache.get(pageID);
+    const now = Date.now();
+    if (cached && (now - cached.cachedAt) <= this.pageCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const stream$ = this.readRequest(
+      this.http.get<RedisContent[]>(
+        `${this.apiUrl}/content/page/${pageID}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      tap((content) => this.persistPageSnapshot(pageID, content)),
+      catchError((error) => {
+        const pageFallback = this.readPageSnapshot(pageID);
+        if (pageFallback) {
+          console.warn(`[RedisService] Falling back to cached page snapshot for page ${pageID}.`);
+          return of(pageFallback);
+        }
+
+        const fullFallback = this.readContentSnapshot();
+        if (fullFallback) {
+          console.warn('[RedisService] Falling back to full cached content snapshot for page read.');
+          return of(fullFallback.filter((item) => item.PageID === pageID));
+        }
+
+        return this.handleError(error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
     );
+
+    this.pageContentCache.set(pageID, { cachedAt: now, stream$ });
+    return stream$;
   }
 
   /**
    * Get content filtered by PageID and PageContentID
    */
   getContentByPageAndContentID(pageID: PageID, pageContentID: PageContentID): Observable<RedisContent[]> {
-    return this.getAllContent().pipe(
+    return this.getContentByPageID(pageID).pipe(
       map((content: RedisContent[]) =>
-        content.filter((item) => item.PageID === pageID && item.PageContentID === pageContentID)
+        content.filter((item) => item.PageContentID === pageContentID)
       ),
       catchError(this.handleError)
     );
@@ -282,6 +429,391 @@ export class RedisService {
     );
   }
 
+  getContentPageV2(pageID: PageID, request: ContentV2PageRequest = {}): Observable<ContentV2PageResponse> {
+    if (!this.isContentV2StreamingEnabled()) {
+      return this.getContentPageV2Legacy(pageID, request);
+    }
+
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, `page-${pageID}`);
+    const cacheKey = this.buildCacheKey('v2-page', cacheScope, {
+      pageID,
+      limit: request.limit,
+      nextToken: request.nextToken || null,
+      contentIds: request.contentIds || [],
+      fields: request.fields || 'standard',
+      sort: request.sort || 'updated_desc'
+    });
+    const cached = this.contentPageV2Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+    if (Array.isArray(request.contentIds) && request.contentIds.length > 0) {
+      params.set('contentIds', request.contentIds.map((n) => Number(n)).filter((n) => Number.isFinite(n)).join(','));
+    }
+    if (request.fields) params.set('fields', request.fields);
+    if (request.sort) params.set('sort', request.sort);
+    const query = params.toString();
+    const url = `${this.apiUrl}/content/v2/page/${pageID}${query ? `?${query}` : ''}`;
+
+    const stream$ = this.readRequest(
+      this.http.get<ContentV2PageResponse>(url, { headers: this.headers })
+    ).pipe(
+      catchError((error) => {
+        console.warn('[RedisService] Falling back to legacy page read for v2/page:', error?.message || error);
+        return this.getContentPageV2Legacy(pageID, request);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.contentPageV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getBlogCardsV2(request: BlogCardsV2Request = {}): Observable<BlogCardsV2Response> {
+    if (!this.isBlogV2CardsEnabled()) {
+      return this.getBlogCardsV2Legacy(request);
+    }
+
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, 'blog-cards');
+    const cacheKey = this.buildCacheKey('v2-blog-cards', cacheScope, {
+      limit: request.limit,
+      nextToken: request.nextToken || null,
+      status: request.status || 'published',
+      includeFuture: request.includeFuture ?? false,
+      q: request.q || '',
+      category: request.category || ''
+    });
+    const cached = this.blogCardsV2Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+    if (request.status) params.set('status', request.status);
+    if (typeof request.includeFuture === 'boolean') {
+      params.set('includeFuture', request.includeFuture ? 'true' : 'false');
+    }
+    if (request.q) params.set('q', request.q);
+    if (request.category) params.set('category', request.category);
+
+    const stream$ = this.readRequest(
+      this.http.get<BlogCardsV2Response>(
+        `${this.apiUrl}/content/v2/blog/cards?${params.toString()}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      catchError((error) => {
+        console.warn('[RedisService] Falling back to legacy blog cards for v2/blog/cards:', error?.message || error);
+        return this.getBlogCardsV2Legacy(request);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.blogCardsV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getBlogCardsMedia(listItemIDs: string[], options: RouteCacheOptions = {}): Observable<BlogCardMediaItem[]> {
+    const ids = Array.from(
+      new Set(
+        (Array.isArray(listItemIDs) ? listItemIDs : [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 50);
+
+    if (!ids.length) {
+      return of([]);
+    }
+
+    if (!this.isBlogV2CardsEnabled()) {
+      return this.getBlogCardsMediaLegacy(ids);
+    }
+
+    const cachedItems: BlogCardMediaItem[] = [];
+    const missingIds: string[] = [];
+    for (const id of ids) {
+      const cached = this.mediaItemsCache.get(id);
+      if (cached && (Date.now() - cached.cachedAt) <= this.mediaItemCacheTtlMs) {
+        cachedItems.push({ listItemID: id, imageUrl: cached.imageUrl });
+      } else {
+        missingIds.push(id);
+      }
+    }
+    if (!missingIds.length) {
+      return of(cachedItems);
+    }
+
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(options.cacheScope, 'blog-media');
+    const cacheKey = this.buildCacheKey('v2-blog-media', cacheScope, { ids: missingIds });
+    const cachedBatch = this.blogMediaBatchCache.get(cacheKey);
+    if (cachedBatch && (now - cachedBatch.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cachedBatch.stream$.pipe(
+        map((rows) => this.mergeMediaRows(ids, cachedItems, rows))
+      );
+    }
+
+    const params = new URLSearchParams();
+    params.set('listItemIDs', missingIds.join(','));
+
+    const stream$ = this.readRequest(
+      this.http.get<{ items: BlogCardMediaItem[] }>(
+        `${this.apiUrl}/content/v2/blog/cards/media?${params.toString()}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      map((res) => Array.isArray(res?.items) ? res.items : []),
+      tap((items) => {
+        for (const item of items || []) {
+          const id = String(item?.listItemID || '').trim();
+          const imageUrl = String(item?.imageUrl || '').trim();
+          if (!id || !imageUrl) continue;
+          this.mediaItemsCache.set(id, { cachedAt: Date.now(), imageUrl });
+        }
+      }),
+      catchError((error) => {
+        console.warn('[RedisService] Falling back to legacy blog media for v2/blog/cards/media:', error?.message || error);
+        return this.getBlogCardsMediaLegacy(missingIds);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.blogMediaBatchCache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$.pipe(
+      map((rows) => this.mergeMediaRows(ids, cachedItems, rows))
+    );
+  }
+
+  getListItemsBatchV2(
+    listItemIDs: string[],
+    contentIds?: number[],
+    options: RouteCacheOptions = {}
+  ): Observable<Record<string, RedisContent[]>> {
+    const ids = Array.from(
+      new Set(
+        (Array.isArray(listItemIDs) ? listItemIDs : [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 50);
+
+    if (!ids.length) {
+      return of({});
+    }
+
+    if (!this.isContentV2StreamingEnabled()) {
+      return this.getListItemsBatchV2Legacy(ids, contentIds);
+    }
+
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(options.cacheScope, 'list-items');
+    const cacheKey = this.buildCacheKey('v2-list-items', cacheScope, {
+      ids,
+      contentIds: Array.isArray(contentIds) ? contentIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : []
+    });
+    const cached = this.listItemsBatchV2Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const body: { listItemIDs: string[]; contentIds?: number[] } = {
+      listItemIDs: ids
+    };
+    if (Array.isArray(contentIds) && contentIds.length > 0) {
+      body.contentIds = contentIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id))
+        .slice(0, 100);
+    }
+
+    const stream$ = this.readRequest(
+      this.http.post<{ itemsByListItemID: Record<string, RedisContent[]> }>(
+        `${this.apiUrl}/content/v2/list-items/batch`,
+        body,
+        { headers: this.headers }
+      )
+    ).pipe(
+      map((res) => res?.itemsByListItemID || {}),
+      catchError((error) => {
+        console.warn('[RedisService] Falling back to legacy list-item batch read for v2/list-items/batch:', error?.message || error);
+        return this.getListItemsBatchV2Legacy(ids, contentIds);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.listItemsBatchV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  private getContentPageV2Legacy(pageID: PageID, request: ContentV2PageRequest = {}): Observable<ContentV2PageResponse> {
+    return this.getContentByPageID(pageID).pipe(
+      map((items) => {
+        let safeItems = Array.isArray(items) ? [...items] : [];
+        if (Array.isArray(request.contentIds) && request.contentIds.length > 0) {
+          const allowed = new Set(request.contentIds.map((n) => Number(n)));
+          safeItems = safeItems.filter((item) => allowed.has(Number(item.PageContentID)));
+        }
+
+        const sort = request.sort || 'updated_desc';
+        if (sort === 'id_asc') {
+          safeItems.sort((a, b) => String(a?.ID || '').localeCompare(String(b?.ID || '')));
+        } else {
+          safeItems.sort((a, b) => {
+            const aTs = new Date(a?.UpdatedAt || a?.CreatedAt || 0).getTime() || 0;
+            const bTs = new Date(b?.UpdatedAt || b?.CreatedAt || 0).getTime() || 0;
+            if (aTs !== bTs) {
+              return sort === 'updated_asc' ? aTs - bTs : bTs - aTs;
+            }
+            return String(a?.ID || '').localeCompare(String(b?.ID || ''));
+          });
+        }
+
+        const fields = request.fields || 'standard';
+        if (fields === 'minimal') {
+          safeItems = safeItems.map((item) => ({
+            ID: item.ID,
+            PageID: item.PageID,
+            PageContentID: item.PageContentID,
+            ListItemID: item.ListItemID,
+            CreatedAt: item.CreatedAt,
+            UpdatedAt: item.UpdatedAt,
+            Metadata: item.Metadata
+          } as RedisContent));
+        } else if (fields === 'standard') {
+          safeItems = safeItems.map((item) => ({
+            ID: item.ID,
+            PageID: item.PageID,
+            PageContentID: item.PageContentID,
+            ListItemID: item.ListItemID,
+            CreatedAt: item.CreatedAt,
+            UpdatedAt: item.UpdatedAt,
+            Metadata: item.Metadata,
+            Text: item.Text
+          } as RedisContent));
+        }
+
+        const safeLimit = Math.max(1, Math.min(100, Number(request.limit) || safeItems.length || 1));
+        const sliced = safeItems.slice(0, safeLimit);
+        return {
+          items: sliced,
+          nextToken: null,
+          page: {
+            pageId: Number(pageID),
+            limit: safeLimit,
+            returned: sliced.length,
+            hasMore: false,
+            sort: sort as 'updated_desc' | 'updated_asc' | 'id_asc'
+          }
+        } as ContentV2PageResponse;
+      }),
+      catchError(this.handleError)
+    );
+  }
+
+  private getBlogCardsV2Legacy(request: BlogCardsV2Request = {}): Observable<BlogCardsV2Response> {
+    return this.getBlogPosts().pipe(
+      map((groups) => {
+        let mapped: BlogCardV2[] = groups.map((g) => {
+          const meta = (g.metadata || {}) as any;
+          const text = g.items.find((i) => i.PageContentID === PageContentID.BlogText)?.Text || '';
+          return {
+            listItemID: g.listItemID,
+            title: String(meta.title || 'Untitled'),
+            summary: String(meta.summary || text.substring(0, 150) || ''),
+            publishDate: meta.publishDate ? new Date(meta.publishDate).toISOString() : null,
+            status: String(meta.status || 'published'),
+            tags: Array.isArray(meta.tags) ? meta.tags : [],
+            privateSeoTags: Array.isArray(meta.privateSeoTags) ? meta.privateSeoTags : [],
+            readTimeMinutes: Number.isFinite(Number(meta.readTimeMinutes)) && Number(meta.readTimeMinutes) > 0
+              ? Math.max(1, Math.round(Number(meta.readTimeMinutes)))
+              : Math.max(1, Math.ceil(text.split(/\s+/).filter(Boolean).length / 200)),
+            category: String(meta.category || 'General')
+          };
+        });
+
+        const requestedStatus = request.status || 'published';
+        const includeFuture = request.includeFuture ?? false;
+        const query = String(request.q || '').trim().toLowerCase();
+        const category = String(request.category || '').trim().toLowerCase();
+        const now = Date.now();
+
+        mapped = mapped.filter((post) => {
+          if (requestedStatus !== 'all' && post.status !== requestedStatus) return false;
+          const ts = post.publishDate ? new Date(post.publishDate).getTime() : 0;
+          if (!includeFuture && ts > now) return false;
+          if (category && String(post.category || '').toLowerCase() !== category) return false;
+          if (query) {
+            const blob = `${post.title} ${post.summary} ${(post.tags || []).join(' ')} ${(post.privateSeoTags || []).join(' ')} ${post.category}`.toLowerCase();
+            if (!blob.includes(query)) return false;
+          }
+          return true;
+        });
+
+        mapped.sort((a, b) => {
+          const aTs = a.publishDate ? new Date(a.publishDate).getTime() : 0;
+          const bTs = b.publishDate ? new Date(b.publishDate).getTime() : 0;
+          return bTs - aTs;
+        });
+
+        const safeLimit = Math.max(1, Math.min(50, Number(request.limit) || mapped.length || 1));
+        mapped = mapped.slice(0, safeLimit);
+
+        return {
+          items: mapped,
+          nextToken: null,
+          page: {
+            limit: safeLimit,
+            returned: mapped.length,
+            hasMore: false
+          }
+        } as BlogCardsV2Response;
+      }),
+      catchError(this.handleError)
+    );
+  }
+
+  private getBlogCardsMediaLegacy(listItemIDs: string[]): Observable<BlogCardMediaItem[]> {
+    return this.getBlogPosts().pipe(
+      map((groups) => {
+        const byListItem = new Map(groups.map((group) => [group.listItemID, group]));
+        const out: BlogCardMediaItem[] = [];
+        for (const id of listItemIDs) {
+          const group = byListItem.get(id);
+          if (!group) continue;
+          const image = group.items.find((item) => Number(item.PageContentID) === Number(PageContentID.BlogImage) && !!item.Photo);
+          if (!image?.Photo) continue;
+          out.push({ listItemID: id, imageUrl: image.Photo });
+        }
+        return out;
+      }),
+      catchError(() => of([]))
+    );
+  }
+
+  private getListItemsBatchV2Legacy(listItemIDs: string[], contentIds?: number[]): Observable<Record<string, RedisContent[]>> {
+    return this.getAllContent().pipe(
+      map((items) => {
+        const grouped: Record<string, RedisContent[]> = {};
+        const allowedContentIds = new Set((contentIds || []).map((id) => Number(id)));
+        listItemIDs.forEach((id) => { grouped[id] = []; });
+
+        for (const item of items || []) {
+          const key = String(item?.ListItemID || '').trim();
+          if (!key || !grouped[key]) continue;
+          if (allowedContentIds.size > 0 && !allowedContentIds.has(Number(item.PageContentID))) continue;
+          grouped[key].push(item);
+        }
+        return grouped;
+      }),
+      catchError(this.handleError)
+    );
+  }
+
   /**
    * Get a single blog post by ListItemID (all related content items)
    */
@@ -293,13 +825,12 @@ export class RedisService {
       );
     }
 
-    return this.http.get<RedisContent[]>(
-      `${this.apiUrl}/content/list-item/${listItemId}`,
-      { headers: this.headers }
-    ).pipe(
-      retry({ count: 2, delay: (err, retryCount) => timer(retryCount * 500) }),
-      catchError(this.handleError)
-    );
+    return this.readRequest(
+      this.http.get<RedisContent[]>(
+        `${this.apiUrl}/content/list-item/${listItemId}`,
+        { headers: this.headers }
+      )
+    ).pipe(catchError(this.handleError));
   }
 
   /**
@@ -324,10 +855,10 @@ export class RedisService {
   }
 
   /**
-   * Get header content (uses cached allContent for efficiency)
+   * Get header content
    */
   getHeaderContent(): Observable<RedisContent[]> {
-    return this.getAllContent().pipe(
+    return this.getContentByPageID(PageID.Landing).pipe(
       map((content: RedisContent[]) => 
         content.filter(item => 
           item.PageContentID === PageContentID.HeaderText || 
@@ -338,10 +869,10 @@ export class RedisService {
   }
 
   /**
-   * Get footer content (uses cached allContent for efficiency)
+   * Get footer content
    */
   getFooterContent(): Observable<RedisContent[]> {
-    return this.getAllContent().pipe(
+    return this.getContentByPageID(PageID.Landing).pipe(
       map((content: RedisContent[]) => 
         content.filter(item => item.PageContentID === PageContentID.FooterIcon)
       )
@@ -371,9 +902,11 @@ export class RedisService {
   private getPreviewSession(): Observable<PreviewSessionPayload | null> {
     if (!this.previewToken) return of(null);
     if (!this.previewSession$) {
-      this.previewSession$ = this.http.get<PreviewSessionPayload>(
-        `${this.apiUrl}/content/preview/${encodeURIComponent(this.previewToken)}`,
-        { headers: this.headers }
+      this.previewSession$ = this.readRequest(
+        this.http.get<PreviewSessionPayload>(
+          `${this.apiUrl}/content/preview/${encodeURIComponent(this.previewToken)}`,
+          { headers: this.headers }
+        )
       ).pipe(
         map((session) => {
           this.previewSessionSnapshot = session || null;
@@ -383,7 +916,7 @@ export class RedisService {
           this.previewSessionSnapshot = null;
           return of(null);
         }),
-        shareReplay({ bufferSize: 1, refCount: true, windowTime: 60_000 })
+        shareReplay({ bufferSize: 1, refCount: false })
       );
     }
     return this.previewSession$;
@@ -425,5 +958,117 @@ export class RedisService {
     }
 
     return Array.from(byId.values());
+  }
+
+  private normalizeCacheScope(scope: string | undefined, fallback: string): string {
+    const value = String(scope || '').trim();
+    return value || fallback;
+  }
+
+  private buildCacheKey(prefix: string, scope: string, payload: unknown): string {
+    return `${prefix}|${scope}|${this.stableStringify(payload)}`;
+  }
+
+  private stableStringify(value: unknown): string {
+    if (value === null || value === undefined) return 'null';
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    if (typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, val]) => `"${key}":${this.stableStringify(val)}`);
+      return `{${entries.join(',')}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  private mergeMediaRows(
+    requestIds: string[],
+    cachedItems: BlogCardMediaItem[],
+    fetchedRows: BlogCardMediaItem[]
+  ): BlogCardMediaItem[] {
+    const merged = [...cachedItems];
+    const fromNetwork = new Map((fetchedRows || []).map((item) => [item.listItemID, item.imageUrl]));
+    for (const id of requestIds) {
+      const imageUrl = fromNetwork.get(id);
+      if (!imageUrl) continue;
+      merged.push({ listItemID: id, imageUrl });
+    }
+    const dedup = new Map<string, BlogCardMediaItem>();
+    for (const row of merged) {
+      if (!row?.listItemID || !row?.imageUrl) continue;
+      dedup.set(row.listItemID, row);
+    }
+    return Array.from(dedup.values());
+  }
+
+  private readRequest<T>(request$: Observable<T>): Observable<T> {
+    return request$.pipe(
+      timeout({ first: this.readTimeoutMs }),
+      retry({ count: 2, delay: (_err, retryCount) => timer(retryCount * 500) })
+    );
+  }
+
+  private persistContentSnapshot(content: RedisContent[]): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const payload = {
+        ts: Date.now(),
+        data: content
+      };
+      localStorage.setItem(this.snapshotStorageKey, JSON.stringify(payload));
+    } catch {
+      // ignore storage failures (private mode / quota)
+    }
+  }
+
+  private readContentSnapshot(): RedisContent[] | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(this.snapshotStorageKey);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
+      const ageMs = Date.now() - Number(parsed?.ts || 0);
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.snapshotMaxAgeMs) {
+        return null;
+      }
+
+      return Array.isArray(parsed?.data) ? parsed.data as RedisContent[] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private persistPageSnapshot(pageID: PageID, content: RedisContent[]): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const payload = {
+        ts: Date.now(),
+        data: content
+      };
+      localStorage.setItem(`${this.pageSnapshotStorageKeyPrefix}${pageID}`, JSON.stringify(payload));
+    } catch {
+      // ignore storage failures (private mode / quota)
+    }
+  }
+
+  private readPageSnapshot(pageID: PageID): RedisContent[] | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(`${this.pageSnapshotStorageKeyPrefix}${pageID}`);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
+      const ageMs = Date.now() - Number(parsed?.ts || 0);
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.snapshotMaxAgeMs) {
+        return null;
+      }
+
+      return Array.isArray(parsed?.data) ? parsed.data as RedisContent[] : null;
+    } catch {
+      return null;
+    }
   }
 }

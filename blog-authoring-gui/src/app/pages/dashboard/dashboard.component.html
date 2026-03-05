@@ -28,6 +28,18 @@
         (onClick)="goToContentStudio()"
         styleClass="p-button-outlined">
       </p-button>
+      <p-button
+        label="Subscribers"
+        icon="pi pi-users"
+        (onClick)="goToSubscribers()"
+        styleClass="p-button-outlined">
+      </p-button>
+      <p-button
+        label="Collections"
+        icon="pi pi-folder"
+        (onClick)="goToCollections()"
+        styleClass="p-button-outlined">
+      </p-button>
       <p-button 
         icon="pi pi-cog"
         (onClick)="toggleSettings()"
@@ -117,7 +129,7 @@
 
   <!-- Blog Posts List -->
   <div class="posts-container" *ngIf="!showEditor">
-    <div class="pipeline-strip" *ngIf="blogPosts.length > 0">
+    <div class="pipeline-strip" *ngIf="postViews.length > 0">
       <div class="pipeline-item draft">
         <span class="pipeline-label">Draft</span>
         <span class="pipeline-count">{{ getPostCountByStatus('draft') }}</span>
@@ -132,38 +144,38 @@
       </div>
       <div class="pipeline-item total">
         <span class="pipeline-label">Total</span>
-        <span class="pipeline-count">{{ blogPosts.length }}</span>
+        <span class="pipeline-count">{{ postViews.length }}</span>
       </div>
     </div>
 
-    <div *ngIf="blogPosts.length === 0" class="no-posts">
+    <div *ngIf="postViews.length === 0" class="no-posts">
       <p>No blog posts found. Create your first post!</p>
     </div>
 
-    <div class="posts-grid" *ngIf="blogPosts.length > 0">
-      <p-card *ngFor="let post of blogPosts" class="post-card">
-        <div class="post-media" *ngIf="getPostImage(post) as imageUrl">
-          <img [src]="imageUrl" [alt]="getPostTitle(post) + ' cover image'" loading="lazy">
+    <div class="posts-grid" *ngIf="postViews.length > 0">
+      <p-card *ngFor="let post of visiblePostViews; trackBy: trackByPost" class="post-card">
+        <div class="post-media" *ngIf="post.image as imageUrl">
+          <img [src]="imageUrl" [alt]="post.title + ' cover image'" loading="lazy">
         </div>
         <div class="post-content">
           <div class="post-header">
-            <h3>{{ getPostTitle(post) }}</h3>
+            <h3>{{ post.title }}</h3>
             <p-tag 
-              [value]="getPostStatus(post)" 
-              [severity]="getStatusSeverity(getPostStatus(post))">
+              [value]="post.status"
+              [severity]="getStatusSeverity(post.status)">
             </p-tag>
           </div>
           
-          <p class="post-summary">{{ getPostSummary(post) }}</p>
+          <p class="post-summary">{{ post.summary }}</p>
           
           <div class="post-meta">
             <span class="post-date">
               <i class="pi pi-calendar"></i>
-              {{ getPostDate(post) | date:'mediumDate' }}
+              {{ post.publishDate | date:'mediumDate' }}
             </span>
-            <div class="post-tags" *ngIf="getPostTags(post).length > 0">
+            <div class="post-tags" *ngIf="post.tags.length > 0">
               <p-tag 
-                *ngFor="let tag of getPostTags(post)" 
+                *ngFor="let tag of post.tags; trackBy: trackByTag"
                 [value]="tag"
                 styleClass="p-mr-1">
               </p-tag>
@@ -210,6 +222,15 @@
           </div>
         </div>
       </p-card>
+    </div>
+
+    <div *ngIf="hasMorePosts" style="display:flex;justify-content:center;margin-top:1rem;">
+      <p-button
+        label="Load More Posts"
+        icon="pi pi-angle-down"
+        styleClass="p-button-outlined"
+        (onClick)="loadMorePosts()">
+      </p-button>
     </div>
   </div>
 

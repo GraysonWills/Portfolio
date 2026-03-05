@@ -8,7 +8,8 @@ export enum PageID {
   Landing = 0,
   Work = 1,
   Projects = 2,
-  Blog = 3
+  Blog = 3,
+  Collections = 4
 }
 
 export enum PageContentID {
@@ -27,7 +28,9 @@ export enum PageContentID {
   ProjectsText = 12,
   BlogBody = 13,
   WorkSkillMetric = 14,
-  BlogSignatureSettings = 15
+  BlogSignatureSettings = 15,
+  CollectionsCategoryRegistry = 16,
+  CollectionsEntry = 17
 }
 
 export interface RedisContent {

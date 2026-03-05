@@ -53,15 +53,32 @@ export class LinkedInDataService {
       website: 'www.grayson-wills.com'
     },
     topSkills: [
+      'Technical Writing',
+      'Teaching',
+      'Organization',
+      'AI Agents',
       'Statistics',
       'Solution Architecture',
       'Data Architecture',
+      'Web Development',
       'Angular',
+      'React',
       'Python',
-      'Computer Vision',
+      'ETL Pipelines',
+      'SQL',
       'Power BI',
+      'Computer Vision',
+      'Neural Networks',
+      'Transformers',
+      'Embedded Systems',
+      'Robotics',
+      'Concurrent Programming',
+      'Web Scraping',
+      'API Integration',
       'TypeScript',
-      'Node.js'
+      'Node.js',
+      'Program Leadership',
+      'Executive Communication'
     ],
     certifications: [
       {
@@ -149,6 +166,88 @@ export class LinkedInDataService {
         institution: 'The University of Texas at Austin',
         location: 'Austin, TX',
         graduationDate: '2023'
+      }
+    ],
+    communityService: [
+      {
+        role: 'Advisor',
+        organization: 'Midwest Roundnet',
+        startDate: 'Dec 2024',
+        endDate: 'Present',
+        cause: 'Sports Governance',
+        summary: 'Providing guidance on rule regulation, tour-series structure, scheduling, and tournament field setup support across the Midwest Roundnet circuit.'
+      },
+      {
+        role: 'Team Lead',
+        organization: 'USA Roundnet',
+        startDate: 'Aug 2021',
+        endDate: 'Dec 2024',
+        cause: 'Social Services',
+        summary: 'Led insurance operations for sanctioned U.S. tournaments and built workflow automations to improve COI and player insurance process flow year-round.'
+      },
+      {
+        role: 'Volunteer',
+        organization: 'Texas Association for the Sport of Roundnet',
+        startDate: 'Aug 2019',
+        endDate: 'May 2023',
+        cause: 'Community Sports',
+        summary: 'Supported tournament-day operations including player communications, supply prep (water/snacks), and on-site field setup logistics.'
+      },
+      {
+        role: 'Volunteer',
+        organization: 'Austin Pets Alive!',
+        startDate: 'Dec 2022',
+        endDate: 'May 2023',
+        cause: 'Animal Welfare',
+        summary: 'Contributed weekly to facility operations by completing recurring care tasks and maintaining clean, ready-to-use animal support spaces.'
+      },
+      {
+        role: 'Taekwondo Instructor',
+        organization: 'UT Elementary',
+        startDate: 'Aug 2019',
+        endDate: 'Mar 2020',
+        cause: 'Children',
+        summary: 'Taught K-3 students weekly beginner taekwondo fundamentals, stretching routines, and game-based movement sessions.'
+      },
+      {
+        role: 'Counselor',
+        organization: 'Camp For All',
+        startDate: 'Jul 2017',
+        endDate: 'Jul 2018',
+        cause: 'Children',
+        summary: 'Supported special-needs children at overnight camp through teamwork activities, confidence-building challenges, and social development programming.'
+      },
+      {
+        role: 'Co President',
+        organization: 'Mentors for Others',
+        startDate: 'Aug 2016',
+        endDate: 'May 2019',
+        cause: 'Social Services',
+        summary: 'Organized and participated in monthly social outings designed to help special-needs teens engage confidently in community environments.'
+      },
+      {
+        role: 'Floor Staff',
+        organization: 'Tri City Churches Resale Shop',
+        startDate: 'Jul 2016',
+        endDate: 'Aug 2019',
+        cause: 'Poverty Alleviation',
+        summary: 'Contributed weekly to resale operations, including checkout support, pricing/tagging donations, and merchandising the sales floor.'
+      },
+      {
+        role: 'Announcer',
+        organization: 'Greatwood Senior Living',
+        startDate: 'Aug 2015',
+        endDate: 'May 2016',
+        cause: 'Social Services',
+        summary: 'Facilitated weekly bingo events for residents, coordinating game flow and prize announcements for community engagement.'
+      },
+      {
+        role: 'Mower',
+        organization: 'Mow-On Movement',
+        startDate: 'Jan 2012',
+        endDate: 'Jul 2015',
+        cause: 'Social Services',
+        summary: 'Provided weekly volunteer lawncare services in underprivileged Houston communities, including mowing, edging, and fertilizing recurring homes.'
       }
     ]
   };

@@ -8,11 +8,15 @@ export const environment = {
   // For local development: http://localhost:3000/api
   // For production: https://your-api-domain.com/api
   redisApiUrl: 'http://localhost:3000/api',
+  useContentV2Stream: true,
+  useBlogV2Cards: true,
   portfolioPreviewUrl: 'http://localhost:4200',
   appName: 'Blog Authoring GUI',
   cognito: {
     region: 'us-east-2',
     userPoolId: 'us-east-2_dzSpoyFyI',
-    clientId: '6v59a97qmb3hfl1n7ptp8npdoi'
+    clientId: '6v59a97qmb3hfl1n7ptp8npdoi',
+    hostedUiDomain: '',
+    redirectSignIn: 'http://localhost:4201/login'
   }
 };

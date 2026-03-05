@@ -1,0 +1,16 @@
+flowchart LR
+  User["Website Visitor"] --> CF1["CloudFront: Portfolio"]
+  Author["Content Author"] --> CF2["CloudFront: Blog Authoring"]
+  CF1 --> FE["Angular Portfolio App"]
+  CF2 --> BA["Angular Blog Authoring GUI"]
+  FE --> API["API Gateway: /api"]
+  BA --> API
+  API --> APP["Redis API Service (Lambda/ECS)"]
+  APP --> Redis["Redis/ElastiCache (content + preview sessions)"]
+  APP --> DDB["DynamoDB (subscribers/tokens)"]
+  APP --> S3Media["S3 Media Bucket (uploads)"]
+  APP --> SES["SES (email delivery)"]
+  APP --> Sched["EventBridge Scheduler (publish jobs)"]
+  Sched --> Worker["Publish Worker Endpoint"]
+  Worker --> APP
+  APP --> Logs["CloudWatch Logs + Alarms"]

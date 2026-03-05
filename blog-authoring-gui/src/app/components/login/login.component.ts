@@ -34,6 +34,11 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.refreshLockoutState();
     this.lockoutPoller = setInterval(() => this.refreshLockoutState(), 1000);
 
+    const completedHostedUi = this.authService.completeHostedUiLoginFromHash(window.location.hash || '');
+    if (completedHostedUi) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+
     // Redirect if already authenticated
     if (this.authService.isAuthenticated()) {
       this.router.navigate(['/dashboard']);
@@ -98,6 +103,19 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.refreshLockoutState();
     this.errorMessage = message;
     this.isAuthenticating = false;
+  }
+
+  loginWithGoogle(): void {
+    try {
+      this.errorMessage = '';
+      this.authService.startGoogleSsoLogin();
+    } catch (err: any) {
+      this.setError(err?.message || 'Google SSO is not configured.');
+    }
+  }
+
+  get canUseGoogleSso(): boolean {
+    return this.authService.isGoogleSsoConfigured();
   }
 
   private refreshLockoutState(): void {

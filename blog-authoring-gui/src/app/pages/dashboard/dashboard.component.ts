@@ -1,11 +1,23 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
+import { ApiHealth, BlogApiService, BlogCardV2 } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID, PageID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
+import { HotkeysService } from '../../services/hotkeys.service';
+
+interface DashboardPostView {
+  source: ContentGroup | null;
+  listItemID: string;
+  title: string;
+  summary: string;
+  image: string | null;
+  status: string;
+  tags: string[];
+  publishDate: Date;
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -13,8 +25,10 @@ import { environment } from '../../../environments/environment';
   styleUrl: './dashboard.component.scss',
   standalone: false
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   blogPosts: ContentGroup[] = [];
+  postViews: DashboardPostView[] = [];
+  visiblePostViews: DashboardPostView[] = [];
   isEditing: boolean = false;
   selectedPost: any = null;
   showEditor: boolean = false;
@@ -31,6 +45,18 @@ export class DashboardComponent implements OnInit {
   apiHealth: ApiHealth | null = null;
   appOrigin: string = '';
   readonly isProd = environment.production;
+  private cleanupHotkeys: (() => void) | null = null;
+  private visiblePostCount = 0;
+  private readonly postPageSize = 12;
+  private readonly scrollLoadBufferPx = 500;
+  private nextToken: string | null = null;
+  private isFetchingNextPage = false;
+  private hydratedImages = new Set<string>();
+  private statusCounts: Record<string, number> = {
+    draft: 0,
+    scheduled: 0,
+    published: 0
+  };
 
   constructor(
     private authService: AuthService,
@@ -38,7 +64,8 @@ export class DashboardComponent implements OnInit {
     public txLog: TransactionLogService,
     private messageService: MessageService,
     private confirmationService: ConfirmationService,
-    private router: Router
+    private router: Router,
+    private hotkeys: HotkeysService
   ) {}
 
   ngOnInit(): void {
@@ -50,6 +77,24 @@ export class DashboardComponent implements OnInit {
     this.appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     this.testConnection();
     this.loadBlogPosts();
+    this.registerHotkeys();
+  }
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (this.showEditor || !this.hasMorePosts) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
+      this.loadMorePosts();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = null;
   }
 
   /**
@@ -106,6 +151,14 @@ export class DashboardComponent implements OnInit {
    * Load all blog posts
    */
   loadBlogPosts(): void {
+    this.nextToken = null;
+    this.isFetchingNextPage = false;
+    this.hydratedImages.clear();
+    if (this.blogApi.isBlogV2CardsEnabled()) {
+      this.loadBlogPostsV2();
+      return;
+    }
+
     this.blogApi.getAllBlogPosts().subscribe({
       next: (posts: RedisContent[]) => {
         const groupedMap = new Map<string, ContentGroup>();
@@ -139,9 +192,60 @@ export class DashboardComponent implements OnInit {
         this.blogPosts = usable.sort(
           (a, b) => this.getPostDate(b).getTime() - this.getPostDate(a).getTime()
         );
+        this.postViews = this.blogPosts.map((post) => this.toPostView(post));
+        this.recalculateStatusCounts();
+        this.resetVisiblePosts();
       },
       error: (error) => {
         console.error('Error loading blog posts:', error);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to load blog posts'
+        });
+      }
+    });
+  }
+
+  private loadBlogPostsV2(nextToken?: string | null): void {
+    this.isFetchingNextPage = true;
+    this.blogApi.getBlogCardsV2({
+      status: 'all',
+      includeFuture: true,
+      limit: 20,
+      nextToken: nextToken || null,
+      cacheScope: 'route:/dashboard:cards'
+    }).subscribe({
+      next: (response) => {
+        this.isFetchingNextPage = false;
+        this.nextToken = response?.nextToken || null;
+        const incoming = (response?.items || []).map((card) => this.toPostViewFromCard(card));
+
+        if (!nextToken) {
+          this.postViews = incoming;
+        } else if (incoming.length) {
+          const seen = new Set(this.postViews.map((item) => item.listItemID));
+          for (const view of incoming) {
+            if (seen.has(view.listItemID)) continue;
+            seen.add(view.listItemID);
+            this.postViews.push(view);
+          }
+        }
+
+        this.postViews.sort((a, b) => b.publishDate.getTime() - a.publishDate.getTime());
+        this.recalculateStatusCounts();
+        if (!nextToken) {
+          this.resetVisiblePosts();
+        } else {
+          const retainCount = Math.max(this.visiblePostCount, this.visiblePostViews.length, this.postPageSize);
+          this.visiblePostCount = retainCount;
+          this.visiblePostViews = this.postViews.slice(0, this.visiblePostCount);
+        }
+        this.hydrateVisiblePostImages();
+      },
+      error: (error) => {
+        this.isFetchingNextPage = false;
+        console.error('Error loading v2 blog cards:', error);
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
@@ -164,17 +268,26 @@ export class DashboardComponent implements OnInit {
     this.router.navigate(['/content']);
   }
 
+  goToSubscribers(): void {
+    this.router.navigate(['/subscribers']);
+  }
+
+  goToCollections(): void {
+    this.router.navigate(['/collections']);
+  }
+
   /**
    * Edit existing blog post — with confirmation
    */
-  editPost(post: ContentGroup): void {
+  editPost(view: DashboardPostView): void {
     this.confirmationService.confirm({
-      message: `Open "${this.getPostTitle(post)}" for editing?`,
+      message: `Open "${view.title}" for editing?`,
       header: 'Edit Post',
       icon: 'pi pi-pencil',
       acceptLabel: 'Edit',
       rejectLabel: 'Cancel',
       accept: () => {
+        this.resolvePostGroup(view, (post) => {
         const textItem = post.items.find(item => item.Text);
         const textRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text) || textItem;
         const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage && !!item.Photo) || post.items.find(item => item.Photo);
@@ -206,6 +319,7 @@ export class DashboardComponent implements OnInit {
 
         this.isEditing = true;
         this.showEditor = true;
+        });
       }
     });
   }
@@ -213,18 +327,18 @@ export class DashboardComponent implements OnInit {
   /**
    * Delete blog post — with confirmation
    */
-  deletePost(post: ContentGroup): void {
+  deletePost(view: DashboardPostView): void {
     this.confirmationService.confirm({
-      message: `Are you sure you want to permanently delete "${this.getPostTitle(post)}"? This action cannot be undone.`,
+      message: `Are you sure you want to permanently delete "${view.title}"? This action cannot be undone.`,
       header: 'Confirm Delete',
       icon: 'pi pi-exclamation-triangle',
       acceptLabel: 'Delete',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger',
       accept: () => {
-        this.blogApi.deleteBlogPost(post.listItemID).subscribe({
+        this.blogApi.deleteBlogPost(view.listItemID).subscribe({
           next: () => {
-            this.txLog.log('DELETE', `Deleted blog post: ${this.getPostTitle(post)} (${post.listItemID})`);
+            this.txLog.log('DELETE', `Deleted blog post: ${view.title} (${view.listItemID})`);
             this.messageService.add({
               severity: 'success',
               summary: 'Success',
@@ -233,7 +347,7 @@ export class DashboardComponent implements OnInit {
             this.loadBlogPosts();
           },
           error: (error) => {
-            this.txLog.log('DELETE_FAILED', `Failed to delete: ${this.getPostTitle(post)} — ${error.message}`);
+            this.txLog.log('DELETE_FAILED', `Failed to delete: ${view.title} — ${error.message}`);
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
@@ -262,10 +376,12 @@ export class DashboardComponent implements OnInit {
     this.isEditing = false;
   }
 
-  openPreview(post: ContentGroup, mode: 'card' | 'full' = 'card'): void {
-    this.previewPost = post;
-    this.previewMode = mode;
-    this.showPreviewDialog = true;
+  openPreview(view: DashboardPostView, mode: 'card' | 'full' = 'card'): void {
+    this.resolvePostGroup(view, (post) => {
+      this.previewPost = post;
+      this.previewMode = mode;
+      this.showPreviewDialog = true;
+    });
   }
 
   setPreviewMode(mode: 'card' | 'full'): void {
@@ -277,7 +393,8 @@ export class DashboardComponent implements OnInit {
     this.previewPost = null;
   }
 
-  openPortfolioPreview(post: ContentGroup, target: 'list' | 'post' = 'post'): void {
+  openPortfolioPreview(view: DashboardPostView, target: 'list' | 'post' = 'post'): void {
+    this.resolvePostGroup(view, (post) => {
     const listItemID = (post.listItemID || '').trim();
     if (!listItemID) {
       this.messageService.add({
@@ -362,6 +479,7 @@ export class DashboardComponent implements OnInit {
         });
       }
     });
+    });
   }
 
   /**
@@ -407,6 +525,177 @@ export class DashboardComponent implements OnInit {
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  private registerHotkeys(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = this.hotkeys.register('dashboard', [
+      {
+        combo: 'mod+alt+n',
+        description: 'Create new blog post',
+        action: () => this.createNewPost(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+r',
+        description: 'Refresh blog posts',
+        action: () => this.loadBlogPosts(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+t',
+        description: 'Toggle transaction log panel',
+        action: () => this.toggleTransactionLog(),
+        allowInInputs: true
+      }
+    ]);
+  }
+
+  private toPostView(post: ContentGroup): DashboardPostView {
+    return {
+      source: post,
+      listItemID: post.listItemID,
+      title: this.getPostTitle(post),
+      summary: this.getPostSummary(post),
+      image: this.getPostImage(post),
+      status: this.getPostStatus(post),
+      tags: this.getPostTags(post),
+      publishDate: this.getPostDate(post)
+    };
+  }
+
+  private toPostViewFromCard(card: BlogCardV2): DashboardPostView {
+    return {
+      source: null,
+      listItemID: card.listItemID,
+      title: card.title || 'Untitled Post',
+      summary: card.summary || '',
+      image: null,
+      status: card.status || 'draft',
+      tags: card.tags || [],
+      publishDate: card.publishDate ? new Date(card.publishDate) : new Date()
+    };
+  }
+
+  private recalculateStatusCounts(): void {
+    const counts: Record<string, number> = { draft: 0, scheduled: 0, published: 0 };
+    for (const post of this.postViews) {
+      const key = String(post.status || '').toLowerCase();
+      if (counts[key] === undefined) {
+        counts[key] = 0;
+      }
+      counts[key] += 1;
+    }
+    this.statusCounts = counts;
+  }
+
+  get hasMorePosts(): boolean {
+    if (this.blogApi.isBlogV2CardsEnabled()) {
+      return this.visiblePostViews.length < this.postViews.length || !!this.nextToken;
+    }
+    return this.visiblePostViews.length < this.postViews.length;
+  }
+
+  loadMorePosts(): void {
+    if (!this.hasMorePosts) return;
+    if (this.visiblePostViews.length < this.postViews.length) {
+      this.visiblePostCount += this.postPageSize;
+      this.visiblePostViews = this.postViews.slice(0, this.visiblePostCount);
+    }
+    this.hydrateVisiblePostImages();
+    if (this.blogApi.isBlogV2CardsEnabled()) {
+      const nearingEnd = this.visiblePostViews.length >= (this.postViews.length - 2);
+      if (nearingEnd) {
+        this.fetchNextPageIfNeeded();
+      }
+    }
+  }
+
+  private resetVisiblePosts(): void {
+    this.visiblePostCount = this.postPageSize;
+    this.visiblePostViews = this.postViews.slice(0, this.visiblePostCount);
+  }
+
+  private fetchNextPageIfNeeded(): void {
+    if (!this.nextToken || this.isFetchingNextPage) return;
+    this.loadBlogPostsV2(this.nextToken);
+  }
+
+  private hydrateVisiblePostImages(): void {
+    if (!this.blogApi.isBlogV2CardsEnabled()) return;
+    const ids = this.visiblePostViews
+      .map((post) => post.listItemID)
+      .filter((id) => !!id && !this.hydratedImages.has(id));
+    if (!ids.length) return;
+
+    this.blogApi.getBlogCardsMedia(ids, {
+      cacheScope: 'route:/dashboard:media'
+    }).subscribe({
+      next: (mediaRows) => {
+        const map = new Map(mediaRows.map((row) => [row.listItemID, row.imageUrl]));
+        this.postViews = this.postViews.map((post) => {
+          const image = map.get(post.listItemID);
+          if (!image) return post;
+          this.hydratedImages.add(post.listItemID);
+          return { ...post, image };
+        });
+        this.visiblePostViews = this.visiblePostViews.map((post) => {
+          const image = map.get(post.listItemID);
+          if (!image) return post;
+          return { ...post, image };
+        });
+      },
+      error: () => {}
+    });
+  }
+
+  private resolvePostGroup(view: DashboardPostView, done: (group: ContentGroup) => void): void {
+    if (view.source && view.source.items.length) {
+      done(view.source);
+      return;
+    }
+
+    this.blogApi.getBlogPost(view.listItemID).subscribe({
+      next: (items) => {
+        if (!Array.isArray(items) || items.length === 0) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Post Not Found',
+            detail: 'Unable to load full post details.'
+          });
+          return;
+        }
+        const group = this.groupBlogItems(view.listItemID, items);
+        view.source = group;
+        done(group);
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Load Failed',
+          detail: 'Could not load post details.'
+        });
+      }
+    });
+  }
+
+  private groupBlogItems(listItemID: string, items: RedisContent[]): ContentGroup {
+    const groupItems = Array.isArray(items) ? items : [];
+    const metadataItem = groupItems.find((item) => item.PageContentID === PageContentID.BlogItem && !!item.Metadata)
+      || groupItems.find((item) => !!item.Metadata);
+    return {
+      listItemID,
+      items: groupItems,
+      metadata: (metadataItem?.Metadata as any) || undefined
+    };
+  }
+
+  trackByPost(index: number, post: DashboardPostView): string {
+    return post.listItemID || `${index}`;
+  }
+
+  trackByTag(index: number, tag: string): string {
+    return `${tag}-${index}`;
   }
 
   // -- Display helpers --
@@ -481,7 +770,7 @@ export class DashboardComponent implements OnInit {
   }
 
   getPostCountByStatus(status: string): number {
-    return this.blogPosts.filter((post) => this.getPostStatus(post) === status).length;
+    return this.statusCounts[String(status || '').toLowerCase()] || 0;
   }
 
   getPreviewContentHtml(post: ContentGroup | null): string {

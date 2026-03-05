@@ -15,6 +15,16 @@ import { MessageService } from 'primeng/api';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 
+interface RecentPostCard {
+  listItemID: string;
+  title: string;
+  summary: string;
+  image?: string;
+  publishDate: Date | null;
+  tags: string[];
+  readTime: number;
+}
+
 @Component({
   selector: 'app-blog-detail',
   standalone: false,
@@ -39,6 +49,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   // Recent posts
   recentPosts: ContentGroup[] = [];
+  recentPostCards: RecentPostCard[] = [];
   currentListItemId = '';
 
   // State
@@ -80,12 +91,65 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   }
 
   private loadPost(listItemId: string): void {
+    this.notFound = false;
+    this.bodyBlocks = [];
+    if (this.redisService.isContentV2StreamingEnabled()) {
+      this.loadPostMetadataFirst(listItemId);
+      return;
+    }
+    this.loadPostLegacy(listItemId);
+  }
+
+  private loadPostMetadataFirst(listItemId: string): void {
     this.isLoading = true;
+    this.redisService.getListItemsBatchV2(
+      [listItemId],
+      [PageContentID.BlogItem],
+      { cacheScope: `route:/blog/${listItemId}:metadata` }
+    ).subscribe({
+      next: (grouped) => {
+        const items = Array.isArray(grouped?.[listItemId]) ? grouped[listItemId] : [];
+        const metaItem = items.find((i) => i.PageContentID === PageContentID.BlogItem) || items.find((i) => !!i.Metadata);
+        if (!metaItem) {
+          this.loadPostLegacy(listItemId);
+          return;
+        }
+
+        const meta = (metaItem.Metadata as any) || {};
+        if (!this.isPostVisible(meta, listItemId)) {
+          this.notFound = true;
+          this.isLoading = false;
+          return;
+        }
+
+        this.applyMetadata(meta);
+        this.coverImage = '';
+        this.coverAlt = this.title;
+        this.bodyBlocks = this.summary ? [{ type: 'paragraph', content: this.summary }] : [];
+        this.readTime = this.resolveReadTimeMinutes(meta as BlogPostMetadata, this.summary || this.title);
+        this.updateSeo(listItemId);
+        this.isLoading = false;
+
+        // Hydrate full body/media in the background.
+        this.loadPostLegacy(listItemId, true);
+      },
+      error: () => {
+        this.loadPostLegacy(listItemId);
+      }
+    });
+  }
+
+  private loadPostLegacy(listItemId: string, hydrateOnly: boolean = false): void {
+    if (!hydrateOnly) {
+      this.isLoading = true;
+    }
     this.redisService.getBlogPostByListItemId(listItemId).subscribe({
       next: (items: RedisContent[]) => {
         if (!items || items.length === 0) {
-          this.notFound = true;
-          this.isLoading = false;
+          if (!hydrateOnly) {
+            this.notFound = true;
+            this.isLoading = false;
+          }
           return;
         }
 
@@ -95,21 +159,14 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         const bodyItem = items.find(i => i.PageContentID === PageContentID.BlogBody);
 
         const meta = metaItem?.Metadata as any || {};
-        this.title = meta.title || 'Untitled';
-        this.summary = meta.summary || '';
-        this.tags = meta.tags || [];
-        this.privateSeoTags = Array.isArray(meta.privateSeoTags) ? meta.privateSeoTags : [];
-        this.category = meta.category || 'General';
-        this.publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
-        this.signature = this.resolveSignature(meta);
-        const bypassVisibility = !!meta.previewBypassVisibility || this.redisService.isPreviewListItemForcedVisible(listItemId);
+        this.applyMetadata(meta);
 
         // Hide drafts/scheduled posts from public view.
-        const status = meta.status || 'published';
-        const publishTs = meta.publishDate ? new Date(meta.publishDate).getTime() : null;
-        if (!bypassVisibility && (status !== 'published' || (publishTs && publishTs > Date.now()))) {
-          this.notFound = true;
-          this.isLoading = false;
+        if (!this.isPostVisible(meta, listItemId)) {
+          if (!hydrateOnly) {
+            this.notFound = true;
+            this.isLoading = false;
+          }
           return;
         }
 
@@ -131,8 +188,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
         // If there is no body/text at all, treat as not found.
         if (!this.bodyBlocks || this.bodyBlocks.length === 0) {
-          this.notFound = true;
-          this.isLoading = false;
+          if (!hydrateOnly) {
+            this.notFound = true;
+            this.isLoading = false;
+          }
           return;
         }
 
@@ -143,48 +202,124 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           .join(' ');
         this.readTime = this.resolveReadTimeMinutes(meta as BlogPostMetadata, allText);
 
-        // SEO: update page title/meta + inject BlogPosting structured data.
-        const urlPath = `/blog/${listItemId}`;
-        const seoKeywords = this.buildSeoKeywords(this.tags, this.privateSeoTags, this.category);
-        this.seo.update({
-          title: this.title,
-          description: this.summary || `${this.title} — a blog post by Grayson Wills.`,
-          url: urlPath,
-          image: this.coverImage || undefined,
-          imageAlt: this.coverAlt || undefined,
-          type: 'article',
-          keywords: seoKeywords
-        });
+        this.updateSeo(listItemId);
 
-        const canonicalUrl = `https://www.grayson-wills.com${urlPath}`;
-        const jsonLd: Record<string, unknown> = {
-          '@context': 'https://schema.org',
-          '@type': 'BlogPosting',
-          headline: this.title,
-          description: this.summary || undefined,
-          image: this.coverImage || 'https://www.grayson-wills.com/og-image.png',
-          datePublished: this.publishDate ? this.publishDate.toISOString() : undefined,
-          keywords: seoKeywords.length ? seoKeywords.join(', ') : undefined,
-          mainEntityOfPage: canonicalUrl,
-          author: {
-            '@type': 'Person',
-            name: 'Grayson Wills',
-            url: 'https://www.grayson-wills.com/'
-          }
-        };
-        this.seo.setStructuredData('article', jsonLd);
-
-        this.isLoading = false;
+        if (!hydrateOnly) {
+          this.isLoading = false;
+        }
       },
       error: () => {
-        this.notFound = true;
-        this.isLoading = false;
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load blog post' });
+        if (!hydrateOnly) {
+          this.notFound = true;
+          this.isLoading = false;
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load blog post' });
+        }
       }
     });
   }
 
+  private applyMetadata(meta: any): void {
+    this.title = meta.title || 'Untitled';
+    this.summary = meta.summary || '';
+    this.tags = meta.tags || [];
+    this.privateSeoTags = Array.isArray(meta.privateSeoTags) ? meta.privateSeoTags : [];
+    this.category = meta.category || 'General';
+    this.publishDate = meta.publishDate ? new Date(meta.publishDate) : null;
+    this.signature = this.resolveSignature(meta);
+  }
+
+  private isPostVisible(meta: any, listItemId: string): boolean {
+    const bypassVisibility = !!meta.previewBypassVisibility || this.redisService.isPreviewListItemForcedVisible(listItemId);
+    const status = meta.status || 'published';
+    const publishTs = meta.publishDate ? new Date(meta.publishDate).getTime() : null;
+    return !!(bypassVisibility || (status === 'published' && !(publishTs && publishTs > Date.now())));
+  }
+
+  private updateSeo(listItemId: string): void {
+    const urlPath = `/blog/${listItemId}`;
+    const seoKeywords = this.buildSeoKeywords(this.tags, this.privateSeoTags, this.category);
+    this.seo.update({
+      title: this.title,
+      description: this.summary || `${this.title} — a blog post by Grayson Wills.`,
+      url: urlPath,
+      image: this.coverImage || undefined,
+      imageAlt: this.coverAlt || undefined,
+      type: 'article',
+      keywords: seoKeywords
+    });
+
+    const canonicalUrl = `https://www.grayson-wills.com${urlPath}`;
+    const jsonLd: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'BlogPosting',
+      headline: this.title,
+      description: this.summary || undefined,
+      image: this.coverImage || 'https://www.grayson-wills.com/og-image.png',
+      datePublished: this.publishDate ? this.publishDate.toISOString() : undefined,
+      keywords: seoKeywords.length ? seoKeywords.join(', ') : undefined,
+      mainEntityOfPage: canonicalUrl,
+      author: {
+        '@type': 'Person',
+        name: 'Grayson Wills',
+        url: 'https://www.grayson-wills.com/'
+      }
+    };
+    this.seo.setStructuredData('article', jsonLd);
+  }
+
   private loadRecentPosts(): void {
+    if (this.redisService.isBlogV2CardsEnabled()) {
+      this.redisService.getBlogCardsV2({
+        limit: 6,
+        status: 'published',
+        includeFuture: false,
+        cacheScope: `route:/blog/${this.currentListItemId}:recent`
+      }).subscribe({
+        next: (response) => {
+          const cards = (response?.items || [])
+            .filter((item) => item.listItemID !== this.currentListItemId)
+            .slice(0, 3);
+
+          this.recentPostCards = cards.map((item) => ({
+            listItemID: item.listItemID,
+            title: item.title || 'Untitled',
+            summary: item.summary || '',
+            image: undefined,
+            publishDate: item.publishDate ? new Date(item.publishDate) : null,
+            tags: item.tags || [],
+            readTime: Math.max(1, Number(item.readTimeMinutes) || 1)
+          }));
+          this.recentPosts = this.recentPostCards.map((card) => ({
+            listItemID: card.listItemID,
+            items: [],
+            metadata: {
+              title: card.title,
+              summary: card.summary,
+              tags: card.tags,
+              publishDate: card.publishDate || undefined,
+              status: 'published'
+            } as any
+          }));
+
+          const ids = this.recentPostCards.map((card) => card.listItemID);
+          this.redisService.getBlogCardsMedia(ids, {
+            cacheScope: `route:/blog/${this.currentListItemId}:recent-media`
+          }).subscribe({
+            next: (media) => {
+              const map = new Map(media.map((m) => [m.listItemID, m.imageUrl]));
+              this.recentPostCards = this.recentPostCards.map((card) => ({
+                ...card,
+                image: map.get(card.listItemID) || card.image
+              }));
+            },
+            error: () => {}
+          });
+        },
+        error: () => {}
+      });
+      return;
+    }
+
     this.redisService.getBlogPosts().subscribe({
       next: (posts: ContentGroup[]) => {
         // Sort by date, exclude current post, take 3
@@ -196,6 +331,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
             return db - da;
           })
           .slice(0, 3);
+        this.recentPostCards = this.recentPosts.map((post) => this.toRecentPostCard(post));
       },
       error: () => {}
     });
@@ -220,8 +356,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 
-  /** Get post card data for recent posts (same logic as BlogComponent) */
-  getPostData(post: ContentGroup): any {
+  private toRecentPostCard(post: ContentGroup): RecentPostCard {
     const textItem = post.items.find(i => i.PageContentID === PageContentID.BlogText);
     const imgItem  = post.items.find(i => i.PageContentID === PageContentID.BlogImage);
     const meta = post.metadata as BlogPostMetadata | undefined;
@@ -236,6 +371,14 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
       tags: meta?.tags || [],
       readTime: this.resolveReadTimeMinutes(meta, content)
     };
+  }
+
+  trackByRecentPost(index: number, post: RecentPostCard): string {
+    return post.listItemID || `${index}`;
+  }
+
+  trackByTag(index: number, tag: string): string {
+    return `${tag}-${index}`;
   }
 
   goBack(): void {

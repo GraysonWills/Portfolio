@@ -13,7 +13,7 @@
           class="hero-image"
           [attr.loading]="i === 0 ? 'eager' : 'lazy'"
           decoding="async"
-          fetchpriority="high"
+          [attr.fetchpriority]="i === activeHeroIndex ? 'high' : 'low'"
           (error)="onHeroImageError($event)" />
       </div>
 

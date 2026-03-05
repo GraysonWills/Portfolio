@@ -71,12 +71,11 @@ describe('AppComponent', () => {
     expect(app.title).toEqual('Grayson Wills - Portfolio');
   });
 
-  it('should render a skip link', () => {
+  it('should render main content container', () => {
     const fixture = TestBed.createComponent(AppComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    const skipLink = compiled.querySelector<HTMLAnchorElement>('a.skip-link');
-    expect(skipLink).toBeTruthy();
-    expect(skipLink?.getAttribute('href')).toBe('#main-content');
+    const main = compiled.querySelector<HTMLElement>('main#main-content');
+    expect(main).toBeTruthy();
   });
 });

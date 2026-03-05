@@ -1,9 +1,25 @@
-import { Component, OnInit } from '@angular/core';
-import { RedisService } from '../../services/redis.service';
+import { Component, HostListener, OnInit } from '@angular/core';
+import { BlogCardV2, RedisService } from '../../services/redis.service';
 import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { SubscriptionService } from '../../services/subscription.service';
 import { AnalyticsService } from '../../services/analytics.service';
+
+interface BlogPostCard {
+  source: ContentGroup;
+  listItemID: string;
+  title: string;
+  summary: string;
+  content: string;
+  image?: string;
+  publishDate: Date | null;
+  publishTimestamp: number;
+  tags: string[];
+  status: string;
+  category: string;
+  readTime: number;
+  searchBlob: string;
+}
 
 @Component({
   selector: 'app-blog',
@@ -13,12 +29,20 @@ import { AnalyticsService } from '../../services/analytics.service';
 })
 export class BlogComponent implements OnInit {
   blogPosts: ContentGroup[] = [];
-  filteredPosts: ContentGroup[] = [];
+  blogCards: BlogPostCard[] = [];
+  filteredPosts: BlogPostCard[] = [];
+  visiblePosts: BlogPostCard[] = [];
   layout: 'list' | 'grid' = 'list';
   searchQuery: string = '';
   isLoading: boolean = true;
   subscribeEmail: string = '';
   isSubscribing: boolean = false;
+  private visibleCount = 0;
+  private readonly pageSize = 8;
+  private readonly scrollLoadBufferPx = 500;
+  private nextToken: string | null = null;
+  private isFetchingNextPage = false;
+  private hydratedImages = new Set<string>();
 
   /**
    * ╔══════════════════════════════════════════════════════════════╗
@@ -47,15 +71,71 @@ export class BlogComponent implements OnInit {
     this.loadBlogPosts();
   }
 
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (this.isLoading || !this.hasMorePosts) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
+      this.loadMorePosts();
+    }
+  }
+
   /**
    * Load blog posts from Redis
    */
   private loadBlogPosts(): void {
+    this.isLoading = true;
+    this.nextToken = null;
+    this.isFetchingNextPage = false;
+    this.hydratedImages.clear();
+    if (!this.redisService.isBlogV2CardsEnabled()) {
+      this.loadLegacyBlogPosts();
+      return;
+    }
+
+    this.redisService.getBlogCardsV2({
+      limit: 12,
+      status: 'published',
+      includeFuture: false,
+      cacheScope: 'route:/blog:cards'
+    }).subscribe({
+      next: (response) => {
+        const cards = Array.isArray(response?.items) ? response.items : [];
+        this.blogCards = cards.map((item) => this.toPostCardFromV2(item));
+        this.nextToken = response?.nextToken || null;
+        this.filteredPosts = [...this.blogCards];
+        this.resetVisiblePosts();
+        this.analytics.track('cards_rendered_initial', {
+          route: '/blog',
+          page: 'blog',
+          metadata: {
+            returned: this.blogCards.length,
+            visible: this.visiblePosts.length,
+            hasMore: !!this.nextToken
+          }
+        });
+        this.hydrateVisibleImages();
+        this.isLoading = false;
+      },
+      error: (error) => {
+        console.error('Error loading v2 blog cards:', error);
+        this.loadLegacyBlogPosts();
+      }
+    });
+  }
+
+  private loadLegacyBlogPosts(): void {
     this.redisService.getBlogPosts().subscribe({
       next: (posts: ContentGroup[]) => {
         this.blogPosts = posts;
-        this.filteredPosts = posts;
-        this.sortPostsByDate();
+        this.blogCards = posts
+          .map((post) => this.toPostCard(post))
+          .sort((a, b) => b.publishTimestamp - a.publishTimestamp);
+        this.filteredPosts = [...this.blogCards];
+        this.resetVisiblePosts();
         this.isLoading = false;
       },
       error: (error) => {
@@ -67,19 +147,6 @@ export class BlogComponent implements OnInit {
           detail: 'Failed to load blog posts'
         });
       }
-    });
-  }
-
-  /**
-   * Sort posts by publish date (newest first)
-   */
-  private sortPostsByDate(): void {
-    this.filteredPosts.sort((a, b) => {
-      const aMetadata = a.metadata as BlogPostMetadata | undefined;
-      const bMetadata = b.metadata as BlogPostMetadata | undefined;
-      const aDate = aMetadata?.publishDate ? new Date(aMetadata.publishDate).getTime() : 0;
-      const bDate = bMetadata?.publishDate ? new Date(bMetadata.publishDate).getTime() : 0;
-      return bDate - aDate;
     });
   }
 
@@ -105,52 +172,226 @@ export class BlogComponent implements OnInit {
    */
   filterPosts(): void {
     if (!this.searchQuery) {
-      this.filteredPosts = this.blogPosts;
+      this.filteredPosts = [...this.blogCards];
+      this.resetVisiblePosts();
+      this.hydrateVisibleImages();
       return;
     }
 
     const query = this.searchQuery.toLowerCase();
-    this.filteredPosts = this.blogPosts.filter(post => {
-      const metadata = post.metadata as BlogPostMetadata | undefined;
-      const title = metadata?.title?.toLowerCase() || '';
-      const summary = metadata?.summary?.toLowerCase() || '';
-      const text = post.items.find(item => item.Text)?.Text?.toLowerCase() || '';
-      const tags = metadata?.tags?.join(' ').toLowerCase() || '';
-      
-      return title.includes(query) || 
-             summary.includes(query) || 
-             text.includes(query) || 
-             tags.includes(query);
-    });
+    this.filteredPosts = this.blogCards.filter((post) => post.searchBlob.includes(query));
+    this.resetVisiblePosts();
+    this.hydrateVisibleImages();
   }
 
-  /**
-   * Get blog post data with reading time
-   */
-  getPostData(post: ContentGroup): any {
+  private toPostCard(post: ContentGroup): BlogPostCard {
     const textItem = post.items.find(item => item.Text);
     const imageItem = post.items.find(item => item.Photo);
     const metadata = post.metadata as BlogPostMetadata | undefined;
     const content = textItem?.Text || '';
+    const title = metadata?.title || 'Untitled';
+    const summary = metadata?.summary || content.substring(0, 150) || '';
+    const tags = metadata?.tags || [];
+    const publishDate = metadata?.publishDate ? new Date(metadata.publishDate) : null;
+    const readTime = this.resolveReadTimeMinutes(metadata, content);
+    const status = metadata?.status || 'published';
+    const category = metadata?.category || 'General';
+    const searchBlob = `${title} ${summary} ${content} ${tags.join(' ')}`.toLowerCase();
 
     return {
+      source: post,
+      listItemID: post.listItemID,
       title: metadata?.title || 'Untitled',
-      summary: metadata?.summary || content.substring(0, 150) || '',
+      summary,
       content: content,
       image: imageItem?.Photo,
-      publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : null,
-      tags: metadata?.tags || [],
-      status: metadata?.status || 'published',
-      category: metadata?.category || 'General',
-      readTime: this.resolveReadTimeMinutes(metadata, content)
+      publishDate,
+      publishTimestamp: publishDate ? publishDate.getTime() : 0,
+      tags,
+      status,
+      category,
+      readTime,
+      searchBlob
+    };
+  }
+
+  private toPostCardFromV2(post: BlogCardV2): BlogPostCard {
+    const publishDate = post.publishDate ? new Date(post.publishDate) : null;
+    const searchBlob = `${post.title} ${post.summary} ${(post.tags || []).join(' ')} ${(post.privateSeoTags || []).join(' ')} ${post.category || ''}`.toLowerCase();
+
+    return {
+      source: {
+        listItemID: post.listItemID,
+        items: [],
+        metadata: {
+          title: post.title,
+          summary: post.summary,
+          tags: post.tags,
+          privateSeoTags: post.privateSeoTags,
+          publishDate: publishDate || undefined,
+          status: post.status as any,
+          category: post.category,
+          readTimeMinutes: post.readTimeMinutes
+        } as any
+      },
+      listItemID: post.listItemID,
+      title: post.title || 'Untitled',
+      summary: post.summary || '',
+      content: '',
+      image: undefined,
+      publishDate,
+      publishTimestamp: publishDate ? publishDate.getTime() : 0,
+      tags: post.tags || [],
+      status: post.status || 'published',
+      category: post.category || 'General',
+      readTime: Math.max(1, Number(post.readTimeMinutes) || 1),
+      searchBlob
     };
   }
 
   /**
    * TrackBy function for ngFor performance
    */
-  trackByPost(index: number, post: ContentGroup): string {
+  trackByPost(index: number, post: BlogPostCard): string {
     return post.listItemID || index.toString();
+  }
+
+  trackByTag(index: number, tag: string): string {
+    return `${tag}-${index}`;
+  }
+
+  get hasMorePosts(): boolean {
+    if (this.redisService.isBlogV2CardsEnabled() && !this.searchQuery.trim()) {
+      return this.visiblePosts.length < this.filteredPosts.length || !!this.nextToken;
+    }
+    return this.visiblePosts.length < this.filteredPosts.length;
+  }
+
+  loadMorePosts(): void {
+    if (!this.hasMorePosts) return;
+    if (this.visiblePosts.length < this.filteredPosts.length) {
+      this.visibleCount += this.pageSize;
+      this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
+    }
+    this.hydrateVisibleImages();
+
+    if (this.redisService.isBlogV2CardsEnabled()) {
+      const nearingEnd = this.visiblePosts.length >= (this.blogCards.length - 2);
+      if (nearingEnd) {
+        this.fetchNextBlogPage();
+      }
+    }
+  }
+
+  private resetVisiblePosts(): void {
+    this.visibleCount = this.pageSize;
+    this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
+  }
+
+  private fetchNextBlogPage(): void {
+    if (!this.nextToken || this.isFetchingNextPage) return;
+    if (this.searchQuery.trim()) return;
+
+    this.isFetchingNextPage = true;
+    this.redisService.getBlogCardsV2({
+      limit: 12,
+      status: 'published',
+      includeFuture: false,
+      nextToken: this.nextToken,
+      cacheScope: 'route:/blog:cards'
+    }).subscribe({
+      next: (response) => {
+        this.isFetchingNextPage = false;
+        this.nextToken = response?.nextToken || null;
+        const incoming = (response?.items || []).map((item) => this.toPostCardFromV2(item));
+        if (!incoming.length) return;
+
+        const seen = new Set(this.blogCards.map((card) => card.listItemID));
+        for (const card of incoming) {
+          if (seen.has(card.listItemID)) continue;
+          seen.add(card.listItemID);
+          this.blogCards.push(card);
+        }
+
+        this.blogCards.sort((a, b) => b.publishTimestamp - a.publishTimestamp);
+        if (this.searchQuery.trim()) {
+          this.filterPosts();
+        } else {
+          const retainCount = Math.max(this.visibleCount, this.visiblePosts.length, this.pageSize);
+          this.filteredPosts = [...this.blogCards];
+          this.visibleCount = retainCount;
+          this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
+          this.hydrateVisibleImages();
+        }
+
+        this.analytics.track('cards_next_page_loaded', {
+          route: '/blog',
+          page: 'blog',
+          metadata: {
+            appended: incoming.length,
+            total: this.blogCards.length,
+            visible: this.visiblePosts.length,
+            hasMore: !!this.nextToken
+          }
+        });
+      },
+      error: () => {
+        this.isFetchingNextPage = false;
+      }
+    });
+  }
+
+  private hydrateVisibleImages(): void {
+    if (!this.redisService.isBlogV2CardsEnabled()) return;
+    const idsToHydrate = this.visiblePosts
+      .map((post) => post.listItemID)
+      .filter((id) => !!id && !this.hydratedImages.has(id));
+    if (!idsToHydrate.length) return;
+
+    this.redisService.getBlogCardsMedia(idsToHydrate, {
+      cacheScope: 'route:/blog:media'
+    }).subscribe({
+      next: (mediaItems) => {
+        if (!Array.isArray(mediaItems) || !mediaItems.length) return;
+        const mediaMap = new Map(mediaItems.map((item) => [item.listItemID, item.imageUrl]));
+        let hydratedNow = 0;
+
+        this.blogCards.forEach((card) => {
+          const imageUrl = mediaMap.get(card.listItemID);
+          if (!imageUrl) return;
+          if (!this.hydratedImages.has(card.listItemID)) {
+            hydratedNow += 1;
+          }
+          card.image = imageUrl;
+          this.hydratedImages.add(card.listItemID);
+        });
+
+        // Keep visible/filtered arrays in sync with updated card image fields.
+        this.filteredPosts = this.filteredPosts.map((post) => {
+          const updated = this.blogCards.find((card) => card.listItemID === post.listItemID);
+          return updated || post;
+        });
+        this.visiblePosts = this.visiblePosts.map((post) => {
+          const updated = this.blogCards.find((card) => card.listItemID === post.listItemID);
+          return updated || post;
+        });
+
+        if (hydratedNow > 0) {
+          this.analytics.track('cards_images_hydrated', {
+            route: '/blog',
+            page: 'blog',
+            metadata: {
+              hydratedNow,
+              totalHydrated: this.hydratedImages.size,
+              visible: this.visiblePosts.length
+            }
+          });
+        }
+      },
+      error: () => {
+        // Keep text-first cards visible even when media hydration fails.
+      }
+    });
   }
 
   /**

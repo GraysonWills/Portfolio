@@ -193,6 +193,7 @@
 
 /* ── Mobile Overlay ── */
 .mobile-overlay {
+  display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
@@ -209,22 +210,23 @@
 
 /* ── Mobile Drawer ── */
 .mobile-drawer {
+  display: none;
   position: fixed;
   top: 0;
   right: 0;
-  width: 280px;
+  width: 0;
   height: 100vh;
   background: linear-gradient(180deg, #f8fafc 0%, #edf3f9 100%);
   z-index: 999;
-  transform: translateX(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
-  display: flex;
   flex-direction: column;
-  padding: 5rem 1.5rem 2rem;
+  padding: 5rem 0 2rem;
 
   &.open {
-    transform: translateX(0);
+    width: min(82vw, 280px);
+    padding: 5rem 1.5rem 2rem;
   }
 }
 
@@ -301,6 +303,14 @@
   }
 
   .mobile-only {
+    display: flex;
+  }
+
+  .mobile-overlay {
+    display: block;
+  }
+
+  .mobile-drawer {
     display: flex;
   }
 }

@@ -1,0 +1,161 @@
+<div class="subscribers-container">
+  <div class="subscribers-header">
+    <div class="header-title">
+      <h1>Subscriber Management</h1>
+      <p>View, add, and remove blog email subscribers.</p>
+    </div>
+    <div class="header-actions">
+      <p-button
+        label="Dashboard"
+        icon="pi pi-home"
+        styleClass="p-button-outlined"
+        (onClick)="goToDashboard()">
+      </p-button>
+      <p-button
+        label="Site Content"
+        icon="pi pi-sliders-h"
+        styleClass="p-button-outlined"
+        (onClick)="goToContentStudio()">
+      </p-button>
+      <p-button
+        label="Collections"
+        icon="pi pi-folder"
+        styleClass="p-button-outlined"
+        (onClick)="goToCollections()">
+      </p-button>
+      <p-button
+        label="Logout"
+        icon="pi pi-sign-out"
+        styleClass="p-button-outlined"
+        (onClick)="logout()">
+      </p-button>
+    </div>
+  </div>
+
+  <p-card class="add-subscriber-card">
+    <div class="card-header">
+      <h3>Add Subscriber</h3>
+    </div>
+    <div class="add-grid">
+      <div class="form-group">
+        <label for="new-subscriber-email">Email</label>
+        <input
+          id="new-subscriber-email"
+          pInputText
+          type="email"
+          [(ngModel)]="newSubscriberEmail"
+          placeholder="you@example.com" />
+      </div>
+      <div class="form-group">
+        <label>Topics</label>
+        <div class="topics-row">
+          <label><input type="checkbox" [(ngModel)]="newSubscriberTopics.blog_posts"> Blog Posts</label>
+          <label><input type="checkbox" [(ngModel)]="newSubscriberTopics.major_updates"> Major Updates</label>
+          <label><input type="checkbox" [(ngModel)]="newSubscriberTopics.promotions"> Promotions (UI-ready)</label>
+        </div>
+      </div>
+      <div class="form-group actions">
+        <p-button
+          label="Add Subscriber"
+          icon="pi pi-user-plus"
+          (onClick)="addSubscriber()"
+          [loading]="isSaving"
+          [disabled]="isSaving || isRemoving">
+        </p-button>
+      </div>
+    </div>
+  </p-card>
+
+  <p-card class="subscriber-list-card">
+    <div class="card-header">
+      <h3>Subscribers</h3>
+      <div class="filter-row">
+        <input
+          pInputText
+          type="text"
+          [(ngModel)]="searchQuery"
+          (input)="onSearchQueryChanged()"
+          placeholder="Search email, status, topic..." />
+        <label class="checkbox-inline">
+          <input type="checkbox" [(ngModel)]="includeUnsubscribed" (change)="loadSubscribers()">
+          Include Unsubscribed
+        </label>
+        <p-button
+          label="Refresh"
+          icon="pi pi-refresh"
+          styleClass="p-button-outlined p-button-sm"
+          [loading]="isLoading"
+          (onClick)="loadSubscribers()">
+        </p-button>
+      </div>
+    </div>
+
+    <div class="loading-row" *ngIf="isLoading">Loading subscribers...</div>
+    <div class="loading-row" *ngIf="!isLoading && filteredSubscribers.length === 0">No subscribers found.</div>
+
+    <div class="subscriber-grid" *ngIf="!isLoading && filteredSubscribers.length > 0">
+      <article class="subscriber-row" *ngFor="let sub of visibleSubscribers; trackBy: trackBySubscriber">
+        <div class="subscriber-main">
+          <div class="email">{{ sub.email }}</div>
+          <div class="meta">
+            <p-tag [value]="sub.status" [severity]="sub.status === 'SUBSCRIBED' ? 'success' : (sub.status === 'PENDING' ? 'warning' : 'secondary')"></p-tag>
+            <span *ngIf="sub.updatedAt">updated {{ sub.updatedAt | date:'short' }}</span>
+            <span *ngIf="sub.source">source: {{ sub.source }}</span>
+          </div>
+          <div class="topics">
+            <p-tag *ngFor="let topic of sub.topics" [value]="topic" severity="info"></p-tag>
+            <p-tag *ngIf="hasDraft(sub)" value="local draft" severity="warn"></p-tag>
+          </div>
+        </div>
+        <div class="subscriber-actions">
+          <p-button
+            label="Edit Preferences"
+            icon="pi pi-sliders-h"
+            styleClass="p-button-outlined p-button-sm"
+            (onClick)="startPreferenceEdit(sub)">
+          </p-button>
+          <p-button
+            label="Remove"
+            icon="pi pi-trash"
+            styleClass="p-button-danger p-button-sm"
+            [disabled]="isRemoving"
+            (onClick)="removeSubscriber(sub)">
+          </p-button>
+        </div>
+
+        <div class="preference-editor" *ngIf="editingPreferencesFor === sub.emailHash && getPreferenceDraft(sub) as draft">
+          <h4>Preference Draft (UI only for now)</h4>
+          <div class="topics-row">
+            <label><input type="checkbox" [(ngModel)]="draft.blog_posts"> Blog Posts</label>
+            <label><input type="checkbox" [(ngModel)]="draft.major_updates"> Major Updates</label>
+            <label><input type="checkbox" [(ngModel)]="draft.promotions"> Promotions</label>
+          </div>
+          <div class="editor-actions">
+            <p-button
+              label="Save Draft"
+              icon="pi pi-save"
+              styleClass="p-button-sm"
+              (onClick)="savePreferenceDraft(sub)">
+            </p-button>
+            <p-button
+              label="Cancel"
+              icon="pi pi-times"
+              styleClass="p-button-outlined p-button-sm"
+              (onClick)="cancelPreferenceEdit()">
+            </p-button>
+          </div>
+          <small>Backend update endpoint for preference categories will be added later.</small>
+        </div>
+      </article>
+    </div>
+
+    <div class="load-more-row" *ngIf="!isLoading && hasMoreSubscribers">
+      <p-button
+        label="Load More Subscribers"
+        icon="pi pi-angle-down"
+        styleClass="p-button-outlined"
+        (onClick)="loadMoreSubscribers()">
+      </p-button>
+    </div>
+  </p-card>
+</div>

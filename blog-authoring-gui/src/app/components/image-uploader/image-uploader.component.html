@@ -30,7 +30,7 @@
     </p-fileUpload>
     <p *ngIf="!previewUrl && !currentImage" class="upload-hint">
       Drag and drop an image here, or click to select<br>
-      <small>Max size: 10MB &mdash; images are auto-compressed and resized</small>
+      <small>Max size: 10MB &mdash; images are auto-compressed/resized and converted to AVIF/WebP when supported</small>
     </p>
     <p *ngIf="isCompressing" class="upload-status">
       <i class="pi pi-spin pi-spinner"></i> Compressing...

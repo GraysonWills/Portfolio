@@ -145,13 +145,13 @@ jobs:
         run: |
           BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${S3_BUCKET}/index.html" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "text/html"
           aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${S3_BUCKET}/favicon.ico" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "image/x-icon"
           aws s3 cp "$BUILD_DIR/favicon.png" "s3://${S3_BUCKET}/favicon.png" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "image/png"
 
       - name: Ensure CloudFront apex redirect + SPA viewer-request handler
@@ -203,13 +203,13 @@ jobs:
         run: |
           BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${BLOG_AUTHORING_S3_BUCKET}/index.html" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "text/html"
           aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.ico" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "image/x-icon"
           aws s3 cp "$BUILD_DIR/favicon.png" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.png" \
-            --cache-control "no-cache" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
             --content-type "image/png"
 
       - name: Invalidate CloudFront shell paths

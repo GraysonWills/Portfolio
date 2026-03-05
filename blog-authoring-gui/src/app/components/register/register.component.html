@@ -1,0 +1,55 @@
+<div class="login-container">
+  <div class="login-card">
+    <h2 class="login-title">Create Blog Authoring Account</h2>
+
+    <form *ngIf="!verificationRequired" [formGroup]="registerForm" (ngSubmit)="submitRegistration()" class="login-form">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input id="username" type="text" pInputText formControlName="username" placeholder="Choose a username" />
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input id="email" type="email" pInputText formControlName="email" placeholder="you@example.com" />
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input id="password" type="password" pInputText formControlName="password" placeholder="Minimum 8 characters" />
+      </div>
+
+      <div *ngIf="errorMessage" class="error-alert">{{ errorMessage }}</div>
+
+      <p-button
+        type="submit"
+        label="Register"
+        icon="pi pi-user-plus"
+        [loading]="isSubmitting"
+        [disabled]="registerForm.invalid || isSubmitting"
+        styleClass="p-button-lg p-button-primary login-button">
+      </p-button>
+    </form>
+
+    <form *ngIf="verificationRequired" [formGroup]="verifyForm" (ngSubmit)="submitVerification()" class="login-form">
+      <p>Enter the verification code sent to your email.</p>
+
+      <div class="form-group">
+        <label for="code">Verification Code</label>
+        <input id="code" type="text" pInputText formControlName="code" placeholder="6-digit code" />
+      </div>
+
+      <div *ngIf="errorMessage" class="error-alert">{{ errorMessage }}</div>
+
+      <p-button
+        type="submit"
+        label="Verify Email"
+        icon="pi pi-check"
+        [loading]="isVerifying"
+        [disabled]="verifyForm.invalid || isVerifying"
+        styleClass="p-button-lg p-button-primary login-button">
+      </p-button>
+    </form>
+
+    <button type="button" class="forgot-link" routerLink="/login">Back to login</button>
+  </div>
+</div>

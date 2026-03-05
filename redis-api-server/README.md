@@ -1,490 +1,220 @@
-# Redis API Server
+# Portfolio API Service (`redis-api-server`)
 
-Backend API server for portfolio/blog content management. Supports DynamoDB-first operation with optional Redis compatibility mode.
+Express backend for portfolio reads, authoring writes, notifications, subscriptions, analytics, and media services.
 
-## Features
+## Runtime Model
 
-- RESTful API endpoints for content CRUD operations
-- Content storage backend: **DynamoDB (recommended)** or **Redis compatibility mode**
-- Image upload (S3-backed)
-- Health check endpoint
-- Redis JSON storage support (with fallback to string storage)
-- CORS enabled for Angular frontend
-- Environment variable configuration
-- Auto-detects TLS for RedisLabs connections
-- **Optional**: Redis Cloud API integration for management operations
-- **Write auth:** POST/PUT/DELETE + uploads can be protected with Cognito JWTs (read endpoints stay public)
-- **Optional**: Queue-backed blog notification delivery via SQS + Lambda consumer
-- **Optional**: Queue-backed analytics ingestion (SQS) with S3 landing files for Athena/QuickSight
-- **Recommended**: Photo asset architecture (S3 binaries + DynamoDB metadata + signed uploads)
+- Deploy target: AWS Lambda (`portfolio-redis-api`) behind API Gateway custom domain `api.grayson-wills.com`.
+- Same app can also run as containerized ECS task (alternate workflow exists).
+- Content backend:
+  - **primary in production:** DynamoDB (`CONTENT_BACKEND=dynamodb`)
+  - optional Redis compatibility mode (`CONTENT_BACKEND=redis`) for fallback/migration use.
 
-## Prerequisites
+## Main Capabilities
 
-- Node.js (LTS version 18.x or higher)
-- npm or yarn
-- **DynamoDB** table access for content and preview sessions
-- **Optional** Redis access only if you run legacy compatibility mode
-- **Optional**: Redis Cloud API keys (Account Key + User Key) for admin operations
+- Public read APIs + authenticated write APIs.
+- Additive `v2` paged/metadata-first endpoints for progressive frontend hydration.
+- Preview sessions for draft overlays (`previewToken` model).
+- Queue-backed blog notification delivery (SQS -> Lambda worker -> SES).
+- Subscription lifecycle (request/confirm/unsubscribe/preferences) in DynamoDB + SES.
+- Analytics event ingestion endpoint with async queue/data-lake flow.
+- Photo asset architecture:
+  - S3 object storage
+  - DynamoDB metadata/state
+  - signed browser upload URLs.
+- Public `/media/:key` S3 proxy for private-bucket delivery.
 
-## Quick Setup
+## Endpoint Inventory
 
-### Option 1: Automated Setup (Windows PowerShell)
+Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 
-```powershell
-cd redis-api-server
-.\setup.ps1
-npm install
-npm start
-```
+### Health
+- `GET /api/health`
+- `GET /api/health/liveness`
+- `GET /api/health/readiness`
 
-The setup script will prompt you for:
-- **Redis Cloud Database Connection:**
-  - Redis Cloud endpoint (e.g., `redis-15545.c14.us-east-1-2.ec2.cloud.redislabs.com:15545`)
-  - Redis Cloud database password (for data operations)
-  - TLS is automatically enabled for Redis Cloud (port 15545)
-  
-- **Redis Cloud API Keys (Optional):**
-  - Account Key (x-api-key)
-  - User Key (x-api-secret-key)
+### Content (legacy + v2)
+- `GET /api/content`
+- `GET /api/content/:id`
+- `GET /api/content/page/:pageId`
+- `GET /api/content/page/:pageId/content/:contentId`
+- `GET /api/content/list-item/:listItemId`
+- `POST /api/content`
+- `POST /api/content/batch`
+- `PUT /api/content/:id`
+- `DELETE /api/content/:id`
+- `DELETE /api/content/list-item/:listItemId`
+- `POST /api/content/preview/session`
+- `GET /api/content/preview/:token`
+- `GET /api/content/v2/page/:pageId`
+- `GET /api/content/v2/blog/cards`
+- `GET /api/content/v2/blog/cards/media`
+- `POST /api/content/v2/list-items/batch`
 
-- **Server Configuration:**
-  - API server port (default: 3000)
+### Notifications
+- `POST /api/notifications/worker/publish` (scheduler secret)
+- `GET /api/notifications/subscribers` (auth)
+- `POST /api/notifications/subscribers` (auth)
+- `DELETE /api/notifications/subscribers/:emailHash` (auth)
+- `POST /api/notifications/send-now` (auth)
+- `POST /api/notifications/schedule` (auth)
+- `DELETE /api/notifications/schedule/:scheduleName` (auth)
 
-**Important:** The database password and API keys serve different purposes:
-- **Database Password**: Required for data operations (read/write blog posts, content)
-- **API Keys**: Optional, used only for management/admin operations (view database info, status, logs)
+### Subscriptions
+- `POST /api/subscriptions/request`
+- `GET /api/subscriptions/confirm`
+- `GET /api/subscriptions/unsubscribe`
+- `POST /api/subscriptions/preferences`
 
-### Option 2: Manual Setup
+### Analytics
+- `POST /api/analytics/events`
 
-1. **Install Dependencies:**
-   ```bash
-   npm install
-   ```
+### Media + Assets
+- `POST /api/upload/image` (auth)
+- `POST /api/photo-assets/upload-url` (auth)
+- `POST /api/photo-assets/:assetId/complete` (auth)
+- `GET /api/photo-assets` (auth)
+- `GET /api/photo-assets/:assetId` (auth)
+- `DELETE /api/photo-assets/:assetId` (auth)
+- `GET /media/:key`
 
-2. **Create `.env` file:**
-   ```bash
-   cp .env.example .env
-   ```
+## Security Controls
 
-3. **Edit `.env` with your runtime configuration:**
-   ```env
-   # Recommended: DynamoDB content backend
-   CONTENT_BACKEND=dynamodb
-   CONTENT_TABLE_NAME=portfolio-content
-   PREVIEW_SESSIONS_TABLE_NAME=portfolio-content-preview-sessions
-   DDB_REGION=us-east-2
+- `helmet` hardening.
+- origin allowlist CORS with apex/www normalization.
+- API rate limits:
+  - general `/api/*`
+  - stricter write limiter
+  - separate analytics limiter.
+- write auth middleware via Cognito JWT validation.
+- request body size limits (`2mb` JSON/urlencoded).
+- in-process GET response cache with write invalidation.
+- browser cache-control headers for GET responses.
 
-   # Optional: Redis compatibility mode (only if needed)
-   # REDIS_HOST=redis-host
-   # REDIS_PORT=6379
-   # REDIS_PASSWORD=...
-   # REDIS_TLS=true
-   
-   # Server Configuration
-   PORT=3000
-   NODE_ENV=development
-   ```
+## Environment Variables (Core)
 
-4. **Start Server:**
-   ```bash
-   # Development (with auto-reload)
-   npm run dev
-   
-   # Production
-   npm start
-   ```
+### General
 
-## Configuration
+| Variable | Purpose |
+|---|---|
+| `PORT` | local server port |
+| `NODE_ENV` | runtime mode |
+| `ALLOWED_ORIGINS` | CORS allowlist |
+| `CACHE_TTL_MS` | server in-memory GET cache TTL |
+| `CACHE_MAX_ENTRIES` | server in-memory cache max entries |
+| `BROWSER_CACHE_MAX_AGE_SECONDS` | browser `max-age` for GET responses |
+| `BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS` | browser stale-while-revalidate seconds |
 
-### Optional: Redis Compatibility Connection
+### Auth
 
-These are used for **data operations** (storing/retrieving content):
+| Variable | Purpose |
+|---|---|
+| `COGNITO_REGION` | Cognito region |
+| `COGNITO_USER_POOL_ID` | pool id |
+| `COGNITO_CLIENT_ID` | app client id |
+| `DISABLE_AUTH` | local-only write-auth bypass |
+| `SCHEDULER_WEBHOOK_SECRET` | protects internal scheduler callback route |
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `REDIS_HOST` | Redis host | ❌ Optional |
-| `REDIS_PORT` | Redis port | ❌ Optional |
-| `REDIS_PASSWORD` | Redis password | ❌ Optional |
-| `REDIS_TLS` | Enable TLS connection | ❌ Optional |
-| `REDIS_DB` | Redis database number | No (default: 0) |
+### Content + Preview
 
-**Note:** 
-- If `REDIS_HOST` is unset, Redis is disabled.
-- DynamoDB mode does not require Redis.
+| Variable | Purpose |
+|---|---|
+| `CONTENT_BACKEND` | `dynamodb` or `redis` |
+| `CONTENT_TABLE_NAME` | DynamoDB content table |
+| `PREVIEW_SESSIONS_TABLE_NAME` | DynamoDB preview sessions table |
+| `PREVIEW_TTL_SECONDS` | preview token/session TTL |
+| `PREVIEW_MAX_UPSERTS` | preview payload upsert cap |
+| `PREVIEW_MAX_DELETES` | preview payload delete cap |
+| `PREVIEW_MAX_BYTES` | preview payload size cap |
 
-### Optional: Redis Cloud REST API Keys
+### Optional Redis Compatibility
 
-These are used for **management/admin operations** only (not for data):
+| Variable | Purpose |
+|---|---|
+| `REDIS_HOST` | Redis endpoint |
+| `REDIS_PORT` | Redis port |
+| `REDIS_PASSWORD` | Redis password |
+| `REDIS_TLS` | TLS on/off |
+| `REDIS_DB` | DB index |
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `REDIS_CLOUD_ACCOUNT_KEY` | Redis Cloud Account API Key | ❌ Optional |
-| `REDIS_CLOUD_USER_KEY` | Redis Cloud User API Key | ❌ Optional |
+### Subscriptions + Email
 
-**When to use API keys:**
-- Viewing database information and status
-- Monitoring usage and metrics
-- Managing databases programmatically
-- Getting connection details via API
+| Variable | Purpose |
+|---|---|
+| `PUBLIC_SITE_URL` | URL used in email links |
+| `SES_FROM_EMAIL` | SES sender |
+| `SUBSCRIBERS_TABLE_NAME` | subscriber table name |
+| `TOKENS_TABLE_NAME` | action token table name |
+| `SUBSCRIBE_ALLOWED_TOPICS` | comma-separated topics |
+| `EMAIL_BRAND_LOGO_URL` | optional logo URL in email templates |
 
-**When NOT to use API keys:**
-- Reading/writing blog posts
-- Storing/retrieving portfolio content
-- Data operations (these use the database password)
+### Notification Queue
 
-### Server Configuration
+| Variable | Purpose |
+|---|---|
+| `NOTIFICATION_QUEUE_ENABLED` | toggle queue-backed sends |
+| `NOTIFICATION_QUEUE_URL` | SQS queue URL |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | API server port | `3000` |
-| `NODE_ENV` | Environment | `development` |
-| `ALLOWED_ORIGINS` | Comma-separated frontend origins for CORS | `http://localhost:4200,http://localhost:3000` |
-| `CACHE_TTL_MS` | In-memory GET cache TTL (milliseconds) | `60000` |
-| `PREVIEW_TTL_SECONDS` | Preview session TTL in seconds | `21600` |
-| `PREVIEW_SESSIONS_TABLE_NAME` | DynamoDB table for preview payloads | `portfolio-content-preview-sessions` |
-| `PREVIEW_MAX_BYTES` | Max preview payload size in bytes | `1048576` |
-| `PREVIEW_MAX_UPSERTS` | Max upsert records per preview session | `500` |
-| `PREVIEW_MAX_DELETES` | Max delete IDs/listItemIDs per preview session | `500` |
+### Analytics Queue/Data Lake
 
-### Optional: DynamoDB Content Store (Recommended)
-
-ElastiCache Global Datastore requires **large** instance classes and is usually
-overkill/too expensive for a portfolio site. To get multi-region durability
-without changing your frontend/API payloads, you can store content in DynamoDB
-(and optionally use DynamoDB Global Tables for cross-region replication).
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CONTENT_BACKEND` | `redis` or `dynamodb` | `redis` |
-| `CONTENT_TABLE_NAME` | DynamoDB table name for content (required if `CONTENT_BACKEND=dynamodb`) | *(none)* |
-
-### Optional: Cognito Auth (Recommended)
-
-If set, all **write** endpoints require `Authorization: Bearer <Cognito ID token>`.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `COGNITO_REGION` | Cognito region | ✅ Yes |
-| `COGNITO_USER_POOL_ID` | User pool ID | ✅ Yes |
-| `COGNITO_CLIENT_ID` | App client ID | ✅ Yes |
-| `DISABLE_AUTH` | Set to `true` to disable auth checks (local only) | ❌ Optional |
-
-### Optional: S3 Uploads (Recommended)
-
-If set, `POST /api/upload/image` stores images in S3 and returns a public URL.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `S3_UPLOAD_BUCKET` | S3 bucket to store images | ✅ Yes |
-| `S3_UPLOAD_REGION` | S3 bucket region | ✅ Yes |
-| `S3_UPLOAD_PREFIX` | Key prefix (default: `uploads/`) | ❌ Optional |
-
-### Recommended: Photo Assets (S3 + DynamoDB)
-
-This architecture stores image binaries in S3 and tracks metadata/state in DynamoDB.
-The authoring app requests a signed URL, uploads directly to S3, then marks the asset as ready.
-This reduces API memory/CPU pressure and creates a queryable asset catalog.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `PHOTO_ASSETS_TABLE_NAME` | DynamoDB table for photo metadata | ✅ Yes |
-| `PHOTO_ASSETS_BUCKET` | S3 bucket for photo files | ✅ Yes |
-| `PHOTO_ASSETS_REGION` | S3 bucket region | ❌ Optional (`AWS_REGION`) |
-| `PHOTO_ASSETS_PREFIX` | Object key prefix (default `photo-assets/`) | ❌ Optional |
-| `PHOTO_ASSETS_PRESIGN_EXPIRES_SECONDS` | Signed upload URL TTL seconds | ❌ Optional (`900`) |
-| `PHOTO_ASSETS_MAX_FILE_BYTES` | Max upload file size bytes | ❌ Optional (`15728640`) |
-| `PHOTO_ASSETS_ALLOWED_MIME` | Allowed MIME list (comma-separated) | ❌ Optional |
-| `PHOTO_ASSETS_CDN_BASE_URL` | Optional CloudFront/CDN base URL for delivery | ❌ Optional |
-
-Bucket hardening for signed browser uploads:
-- Enable S3 CORS for authoring origins with `PUT/GET/HEAD`.
-- Use bucket ownership controls (`BucketOwnerEnforced`), encryption at rest, and public access block.
-- `scripts/setup_photo_assets_stack.sh` configures these defaults automatically.
-
-### Optional: Notification Queue (Recommended for production)
-
-If configured, blog publish notifications are enqueued to SQS and sent asynchronously by Lambda.
-If not configured, the API falls back to direct SES sends.
-Signup confirmation emails are currently direct-send; queueing those is a planned follow-up.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `NOTIFICATION_QUEUE_ENABLED` | Enable queue-backed sends (`true`/`false`) | ❌ Optional (default `true` when queue URL exists) |
-| `NOTIFICATION_QUEUE_URL` | SQS queue URL used for blog notification jobs | ✅ Yes (to enable queue mode) |
-
-### Optional: Analytics Queue + Data Lake (Recommended)
-
-If configured, public frontend interaction events are accepted by `POST /api/analytics/events`,
-queued to SQS, and written by Lambda to S3 as gzipped NDJSON (`events/dt=YYYY-MM-DD/hr=HH/...`).
-Athena can query this directly and QuickSight can build dashboards on top.
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `ANALYTICS_QUEUE_ENABLED` | Enable analytics queue ingestion (`true`/`false`) | ❌ Optional |
-| `ANALYTICS_QUEUE_URL` | SQS queue URL for analytics events | ✅ Yes (to enable queue mode) |
-| `ANALYTICS_S3_BUCKET` | S3 bucket for analytics landing files (Lambda consumer) | ✅ Yes (for queue consumer) |
-| `ANALYTICS_S3_PREFIX` | S3 prefix for event files | ❌ Optional (`events/`) |
-| `ANALYTICS_S3_REGION` | Region for analytics bucket | ❌ Optional |
-| `ANALYTICS_DEFAULT_SOURCE` | Default source label for events | ❌ Optional (`portfolio-app`) |
-| `ANALYTICS_IP_HASH_SALT` | Optional salt for client IP hashing | ❌ Optional |
-
-## API Endpoints
-
-### Health Check
-
-- **GET** `/api/health` - Check server/database status (Redis + DynamoDB sections)
-
-### Content Operations
-
-- **GET** `/api/content` - Get all content
-- **GET** `/api/content/:id` - Get content by ID
-- **GET** `/api/content/page/:pageId` - Get content by PageID
-- **GET** `/api/content/list-item/:listItemId` - Get content by ListItemID
-- **GET** `/api/content/preview/:token` - Get tokenized draft preview payload
-- **POST** `/api/content` - Create new content item (auth required)
-- **POST** `/api/content/batch` - Create multiple content items (auth required)
-- **POST** `/api/content/preview/session` - Create short-lived preview session (auth required)
-- **PUT** `/api/content/:id` - Update content by ID (auth required)
-- **DELETE** `/api/content/:id` - Delete content by ID (auth required)
-- **DELETE** `/api/content/list-item/:listItemId` - Delete all content by ListItemID (auth required)
-
-### Admin (Optional - requires API keys)
-
-- **GET** `/api/admin/databases` - List all databases
-- **GET** `/api/admin/databases/:id` - Get database information
-- **GET** `/api/admin/databases/:id/status` - Get database status summary
-
-### Upload
-
-- **POST** `/api/upload/image` - Upload image (auth required)
-  - Content-Type: `multipart/form-data`
-  - Form field: `image` (file)
-  - Returns `{ url }` (S3 URL)
+| Variable | Purpose |
+|---|---|
+| `ANALYTICS_QUEUE_ENABLED` | analytics queue enable |
+| `ANALYTICS_QUEUE_URL` | analytics SQS queue URL |
+| `ANALYTICS_S3_BUCKET` | analytics landing bucket |
+| `ANALYTICS_S3_PREFIX` | analytics key prefix |
+| `ANALYTICS_S3_REGION` | analytics bucket region |
+| `ANALYTICS_DEFAULT_SOURCE` | event source label |
+| `ANALYTICS_IP_HASH_SALT` | optional hash salt |
 
 ### Photo Assets
 
-- **POST** `/api/photo-assets/upload-url` - Create pending asset + signed upload URL (auth required)
-- **POST** `/api/photo-assets/:assetId/complete` - Validate uploaded object and mark asset ready (auth required)
-- **GET** `/api/photo-assets` - List photo assets with pagination (`limit`, `nextToken`, `status`, `usage`, `mine`) (auth required)
-- **GET** `/api/photo-assets/:assetId` - Get one asset record (auth required)
-- **DELETE** `/api/photo-assets/:assetId` - Soft delete asset metadata (`?hard=true` also deletes object from S3) (auth required)
+| Variable | Purpose |
+|---|---|
+| `PHOTO_ASSETS_TABLE_NAME` | metadata table |
+| `PHOTO_ASSETS_BUCKET` | object bucket |
+| `PHOTO_ASSETS_REGION` | bucket region |
+| `PHOTO_ASSETS_PREFIX` | key prefix |
+| `PHOTO_ASSETS_PRESIGN_EXPIRES_SECONDS` | upload URL TTL |
+| `PHOTO_ASSETS_MAX_FILE_BYTES` | max upload size |
+| `PHOTO_ASSETS_ALLOWED_MIME` | allowed MIME list |
+| `PHOTO_ASSETS_CDN_BASE_URL` | optional CDN base override |
 
-### Analytics
-
-- **POST** `/api/analytics/events` - Ingest analytics event batch (public)
-
-## Redis Data Structure
-
-Content is stored in Redis with the following structure:
-
-```json
-{
-  "ID": "unique-id",
-  "Text": "content text",
-  "Photo": "image-url-or-base64",
-  "ListItemID": "group-id",
-  "PageID": 0,
-  "PageContentID": 0,
-  "Metadata": {},
-  "CreatedAt": "2024-01-01T00:00:00.000Z",
-  "UpdatedAt": "2024-01-01T00:00:00.000Z"
-}
-```
-
-**Storage Format:**
-- Redis JSON module: `content:{ID}` (if RedisJSON is available)
-- Fallback: String storage with JSON serialization
-- DynamoDB: store the same JSON document as an item (PK: `ID`)
-
-**PageID Values:**
-- `0` - Landing
-- `1` - Work
-- `2` - Projects
-- `3` - Blog
-
-**PageContentID Values:**
-- `0` - HeaderText
-- `1` - HeaderIcon
-- `2` - FooterIcon
-- `3` - BlogItem
-- `4` - BlogText
-- `5` - BlogImage
-- `6` - LandingPhoto
-- `7` - LandingText
-- `8` - WorkText
-- `9` - ProjectsCategoryPhoto
-- `10` - ProjectsCategoryText
-- `11` - ProjectsPhoto
-- `12` - ProjectsText
-- `13` - BlogBody
-- `14` - WorkSkillMetric
-
-### ID and Grouping Conventions
-
-- Redis key pattern: `content:{ID}`
-- `ID` is the immutable row identifier used by `PUT /api/content/:id` and `DELETE /api/content/:id`.
-- `ListItemID` groups multiple records into one logical entity:
-  - Blog post rows (metadata/text/image/body) share one `ListItemID`.
-  - Work timeline entries use `experience-{n}`.
-  - Career metric bars use `career-metric-{n}`.
-- Use `Metadata.order` when a grouped collection must render in a fixed order.
-
-### Work Skill Metric Payload
-
-For `PageID = 1` and `PageContentID = 14`, store JSON in `Text`:
-
-```json
-{
-  "label": "AI Systems Architecture",
-  "value": 86,
-  "level": "Advanced",
-  "summary": "Production design and platform integration across analytics + AI workflows"
-}
-```
-
-## Frontend Integration
-
-### Update Angular Environment Files
-
-**Blog Authoring GUI:**
-```typescript
-// src/environments/environment.ts
-export const environment = {
-  production: false,
-  redisApiUrl: 'http://localhost:3000/api',
-  appName: 'Blog Authoring GUI'
-};
-```
-
-**Portfolio App:**
-```typescript
-// src/environments/environment.ts
-export const environment = {
-  production: false,
-  redisApiUrl: 'http://localhost:3000/api',
-  // ... other config
-};
-```
-
-For production, update to your deployed API URL:
-```typescript
-redisApiUrl: 'https://your-api-domain.com/api'
-```
-
-## Authentication Methods Summary
-
-### 1. Database Password (Required for Data Operations)
-
-**What it's for:** Reading/writing data to Redis database
-
-**Where to get it:**
-- Redis Cloud Dashboard → Your Database → Configuration
-- Or set when you created the database
-
-**Used by:** Direct Redis connection for all data operations
-
-### 2. API Keys (Optional for Management Operations)
-
-**What it's for:** Admin tasks like viewing database info, status, logs
-
-**Where to get them:**
-- Redis Cloud Dashboard → Account Settings → API Keys
-- You need both:
-  - **Account Key** (x-api-key)
-  - **User Key** (x-api-secret-key)
-
-**Used by:** Redis Cloud REST API for management operations
-
-**Important:** API keys CANNOT replace the database password for data operations. You need both if you want to use admin features.
-
-## Testing
-
-Test the API server:
+## Local Development
 
 ```bash
-# Health check
-curl http://localhost:3000/api/health
-
-# Get all content
-curl http://localhost:3000/api/content
-
-# Create content
-curl -X POST http://localhost:3000/api/content \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Text": "Hello World",
-    "PageID": 3,
-    "PageContentID": 4
-  }'
-
-# Admin: List databases (requires API keys)
-curl http://localhost:3000/api/admin/databases
+cd /Users/grayson/Desktop/Portfolio/redis-api-server
+npm ci
+npm run dev
 ```
 
-## Security Notes
+Default local URL: `http://localhost:3000`
 
-- **Never commit `.env` file** to version control
-- Use strong Redis passwords
-- Keep API keys secure
-- Enable TLS for production Redis connections
-- Consider adding authentication middleware for production
-- Implement rate limiting for public endpoints
-- Use HTTPS in production
-
-## Troubleshooting
-
-### Connection Issues (Redis compatibility mode)
-
-1. **Check Redis credentials** in `.env`
-2. **Verify TLS settings** - RedisLabs requires TLS on port 15545
-3. **Test connection:**
-   ```bash
-   redis-cli -h redis-15545.c14.us-east-1-2.ec2.cloud.redislabs.com -p 15545 --tls -a YOUR_PASSWORD ping
-   ```
-
-### API Key Issues
-
-- Verify both Account Key and User Key are set correctly
-- Check that API keys are active in Redis Cloud dashboard
-- Ensure IP allow-lists (if configured) include your server IP
-
-### Redis JSON Module Not Available
-
-When Redis compatibility mode is enabled, the server automatically falls back to string storage if RedisJSON module is not available.
-
-### Preview Session Errors
-
-If preview links fail with 404/500:
-1. Verify `PREVIEW_SESSIONS_TABLE_NAME` is configured.
-2. Ensure the table exists with partition key `token` (String).
-3. Enable DynamoDB TTL on attribute `expiresAtEpoch`.
-
-## Deployment
-
-For production deployment:
-
-1. Set `NODE_ENV=production` in `.env`
-2. Use a process manager like PM2:
-   ```bash
-   npm install -g pm2
-   pm2 start src/server.js --name redis-api
-   ```
-3. Configure reverse proxy (nginx/Apache) if needed
-4. Enable HTTPS with SSL certificates
-5. Set up environment variables on your hosting platform
-6. Keep `.env` file secure and never commit it
-
-## DynamoDB Migration
-
-To migrate existing content from the live API into DynamoDB:
+Health check:
 
 ```bash
-AWS_PROFILE=grayson-sso node redis-api-server/scripts/migrate-content-to-ddb.js \
-  --api-url https://api.grayson-wills.com/api \
-  --region us-east-2 \
-  --table portfolio-content
+curl -s http://localhost:3000/api/health | jq
 ```
 
-AI Disclosure: Drafted with AI assistance.  
-Validated By: Codex (GPT-5)  
-Validation Date: 2026-02-26
+## Tests
+
+```bash
+cd /Users/grayson/Desktop/Portfolio/redis-api-server
+npm test
+```
+
+Includes node test runner coverage for:
+- pagination token behavior
+- `v2` content route logic.
+
+## Deployment Automation
+
+- Lambda workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/api-deploy.yml`
+- ECS workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/ecs-deploy.yml`
+
+## Reference Docs
+
+- Root project overview: `/Users/grayson/Desktop/Portfolio/README.md`
+- `v2` content contract: `/Users/grayson/Desktop/Portfolio/docs/content-v2-streaming.md`
+- comprehensive architecture pack: `/Users/grayson/Desktop/Portfolio/docs/comprehensive/README.md`
+

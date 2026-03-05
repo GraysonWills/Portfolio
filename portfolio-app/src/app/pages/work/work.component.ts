@@ -1,8 +1,9 @@
 import { Component, OnInit, HostListener } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
-import { RedisContent, PageContentID } from '../../models/redis-content.model';
+import { RedisContent, PageContentID, PageID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
+import { forkJoin } from 'rxjs';
 
 interface WorkTimelineEvent {
   id: string;
@@ -26,6 +27,17 @@ interface CareerMetric {
   order: number;
 }
 
+interface CommunityRole {
+  id: string;
+  role: string;
+  organization: string;
+  period: string;
+  cause?: string;
+  summary: string;
+  isCurrent: boolean;
+  order: number;
+}
+
 @Component({
   selector: 'app-work',
   standalone: false,
@@ -39,9 +51,11 @@ export class WorkComponent implements OnInit {
   topSkills: string[] = [];
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   experienceData: any[] = [];
+  communityRoles: CommunityRole[] = [];
   isLoading: boolean = true;
   timelineAlign: 'alternate' | 'left' = 'alternate';
   private loadCount = 0;
+  private timelineNextToken: string | null = null;
 
   constructor(
     private redisService: RedisService,
@@ -68,10 +82,31 @@ export class WorkComponent implements OnInit {
    * Load work page content from Redis
    */
   private loadWorkContent(): void {
-    this.redisService.getWorkPageContent().subscribe({
-      next: (content: RedisContent[]) => {
-        this.workContent = content;
+    forkJoin({
+      metrics: this.redisService.getContentPageV2(PageID.Work, {
+        limit: 20,
+        fields: 'standard',
+        contentIds: [PageContentID.WorkSkillMetric],
+        sort: 'id_asc',
+        cacheScope: 'route:/work:metrics'
+      }),
+      timeline: this.redisService.getContentPageV2(PageID.Work, {
+        limit: 8,
+        fields: 'standard',
+        contentIds: [PageContentID.WorkText],
+        sort: 'id_asc',
+        cacheScope: 'route:/work:timeline'
+      })
+    }).subscribe({
+      next: ({ metrics, timeline }) => {
+        const metricItems = this.extractItems(metrics);
+        const timelineItems = this.extractItems(timeline);
+        this.workContent = this.mergeById([...metricItems, ...timelineItems]);
         this.processWorkContent();
+        this.timelineNextToken = (timeline as any)?.nextToken || null;
+        if (this.timelineNextToken) {
+          this.loadNextTimelineChunk(this.timelineNextToken);
+        }
         this.checkLoaded();
       },
       error: (error) => {
@@ -84,6 +119,54 @@ export class WorkComponent implements OnInit {
         });
       }
     });
+  }
+
+  private loadNextTimelineChunk(nextToken: string): void {
+    const token = String(nextToken || '').trim();
+    if (!token) return;
+
+    this.redisService.getContentPageV2(PageID.Work, {
+      limit: 8,
+      fields: 'standard',
+      contentIds: [PageContentID.WorkText],
+      sort: 'id_asc',
+      nextToken: token,
+      cacheScope: 'route:/work:timeline'
+    }).subscribe({
+      next: (response) => {
+        const rows = this.extractItems(response);
+        if (rows.length) {
+          this.workContent = this.mergeById([...this.workContent, ...rows]);
+          this.processWorkContent();
+        }
+        const next = (response as any)?.nextToken || null;
+        if (next) {
+          this.timelineNextToken = next;
+          this.loadNextTimelineChunk(next);
+        } else {
+          this.timelineNextToken = null;
+        }
+      },
+      error: () => {
+        this.timelineNextToken = null;
+      }
+    });
+  }
+
+  private extractItems(response: any): RedisContent[] {
+    if (Array.isArray(response?.items)) return response.items as RedisContent[];
+    if (Array.isArray(response)) return response as RedisContent[];
+    return [];
+  }
+
+  private mergeById(items: RedisContent[]): RedisContent[] {
+    const map = new Map<string, RedisContent>();
+    for (const item of items) {
+      const id = String(item?.ID || '').trim();
+      if (!id) continue;
+      map.set(id, item);
+    }
+    return Array.from(map.values());
   }
 
   /**
@@ -124,6 +207,16 @@ export class WorkComponent implements OnInit {
         this.topSkills = profile.topSkills;
         this.certifications = profile.certifications;
         this.experienceData = profile.experience;
+        this.communityRoles = (profile.communityService || []).map((item, index) => ({
+          id: `community-${index + 1}`,
+          role: item.role,
+          organization: item.organization,
+          period: `${item.startDate} - ${item.endDate || 'Present'}`,
+          cause: item.cause,
+          summary: item.summary,
+          isCurrent: !item.endDate || item.endDate === 'Present',
+          order: index + 1
+        }));
         this.processExperienceData();
         this.checkLoaded();
       },

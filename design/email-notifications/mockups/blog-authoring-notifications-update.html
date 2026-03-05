@@ -11,7 +11,7 @@
       <header class="hero">
         <div class="hero-top">
           <span class="chip">Blog Authoring Update Mockup</span>
-          <span class="chip">Publish + Email Automation</span>
+          <span class="chip">Publish + Queue + Email Automation</span>
         </div>
         <h1>Editor + Dashboard Controls for Scheduled Sends</h1>
         <p>
@@ -62,7 +62,7 @@
                   <span class="btn primary">Save + Schedule</span>
                 </div>
                 <div class="note">
-                  If status is `scheduled`, backend creates EventBridge one-time job. If `published`, backend sends immediately.
+                  If status is `scheduled`, backend creates EventBridge one-time job. If `published`, backend queues recipient sends immediately.
                 </div>
               </div>
             </div>
@@ -105,7 +105,7 @@
                     <span>Automating Everything with n8n</span>
                     <span>Feb 20, 2026 09:00</span>
                     <span>Blog Subscribers</span>
-                    <span class="pill">Scheduled</span>
+                    <span class="pill">Queued</span>
                   </div>
                   <div class="table-row">
                     <span>Building Scalable APIs with Redis</span>
@@ -124,12 +124,19 @@
               <div class="app-section">
                 <div class="section-title">Delivery Snapshot</div>
                 <div class="row">
+                  <span class="pill">Queue Depth: 42</span>
+                  <span class="pill">Oldest Age: 18s</span>
+                </div>
+                <div class="row">
                   <span class="pill success">Sent: 1,294</span>
                   <span class="pill">Open Rate: 44%</span>
                 </div>
                 <div class="row">
                   <span class="pill">Bounced: 6</span>
                   <span class="pill">Complaints: 0</span>
+                </div>
+                <div class="row">
+                  <span class="pill warn">Signup Confirm Queue: Planned</span>
                 </div>
               </div>
             </div>

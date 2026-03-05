@@ -1,34 +1,25 @@
-# Approval Checklist: Email Notifications + Scheduling
+# Email Notifications Status Checklist
 
-## Architecture Approval
+Last updated: 2026-03-04
 
-- [ ] SES + EventBridge Scheduler + Lambda + DynamoDB architecture is acceptable.
-- [ ] Double opt-in + unsubscribe flow is required and approved.
-- [ ] Redis remains the source of post content; subscriber state is stored separately.
-- [ ] Scheduled publish should auto-trigger optional email send.
+## Implemented
 
-## Security Approval
+- [x] Double opt-in request/confirm/unsubscribe API flow is live.
+- [x] Subscriber/token state is stored in DynamoDB tables.
+- [x] Blog publish notification path is queue-backed (SQS -> SES worker).
+- [x] Authoring has send-now and schedule controls wired to backend routes.
+- [x] Portfolio includes subscribe + notification management routes.
+- [x] Duplicate subscription handling returns explicit states.
+- [x] Branded logo URL support exists for outbound template rendering (`EMAIL_BRAND_LOGO_URL`).
 
-- [ ] Frontend secret removal (Mailchimp key in browser) is approved.
-- [ ] Token hashing + TTL strategy is approved.
-- [ ] IAM least-privilege model is approved.
-- [ ] Bounce/complaint automation is required before full-scale sends.
+## Partially Implemented
 
-## Portfolio UX Approval
+- [ ] Signup confirmation emails are still direct-send (not queue-backed yet).
+- [ ] Bounce/complaint lifecycle to `BOUNCED`/`COMPLAINED` states requires full SNS feedback integration verification.
 
-- [ ] Blog page subscription card placement is approved.
-- [ ] Preference center and unsubscribe route UX is approved.
-- [ ] Copy/tone for subscription prompts matches your brand voice.
+## Pending Hardening
 
-## Blog Authoring UX Approval
+- [ ] Queue depth/age CloudWatch alarms for email queues.
+- [ ] Dashboard split and operational metrics for `publish notifications` vs `signup confirmations`.
+- [ ] End-to-end load test for high-volume send windows.
 
-- [ ] Notification controls in editor sidebar are approved.
-- [ ] Scheduled sends dashboard panel is approved.
-- [ ] Publish-now vs scheduled behavior is clearly communicated in UI.
-
-## Release Gate
-
-- [ ] Safe to begin implementation in `redis-api-server`.
-- [ ] Safe to begin implementation in `portfolio-app`.
-- [ ] Safe to begin implementation in `blog-authoring-gui`.
-- [ ] Safe to run deployment workflows after feature testing passes.

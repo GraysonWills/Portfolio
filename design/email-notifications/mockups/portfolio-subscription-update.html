@@ -11,12 +11,12 @@
       <header class="hero">
         <div class="hero-top">
           <span class="chip">Portfolio Update Mockup</span>
-          <span class="chip">Email Subscription UX</span>
+          <span class="chip">Email Subscription + Queue UX</span>
         </div>
         <h1>Blog Subscription + Preferences Experience</h1>
         <p>
           Designed to sit inside the existing portfolio blog routes without changing blog content structure. Focus: easy subscribe,
-          explicit consent, and frictionless unsubscribe/preferences.
+          explicit consent, queue-backed delivery for publishes, and frictionless unsubscribe/preferences.
         </p>
       </header>
 
@@ -114,6 +114,21 @@
                 <div class="section-title">Compliance UX</div>
                 <div class="note">
                   Unsubscribe must not require login. One-click links in emails land here with a signed token and confirm action.
+                  Publish notifications are queued through SQS before SES delivery.
+                </div>
+              </div>
+
+              <div class="app-section">
+                <div class="section-title">Queue Backing (Current)</div>
+                <div class="row">
+                  <div class="stack">
+                    <span class="pill success">Blog Publish Emails: Queued</span>
+                    <span class="pill">Retries + DLQ: Enabled</span>
+                  </div>
+                  <div class="stack">
+                    <span class="pill warn">Signup Confirmations: Direct Send</span>
+                    <span class="pill">Roadmap: Queue confirmations</span>
+                  </div>
                 </div>
               </div>
             </div>

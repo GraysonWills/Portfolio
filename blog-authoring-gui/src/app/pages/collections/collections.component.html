@@ -1,0 +1,293 @@
+<div class="collections-container">
+  <div class="collections-header">
+    <div class="header-title">
+      <h1>Collections Studio</h1>
+      <p>Author non-blog text content, organize by category tabs, and control public visibility.</p>
+    </div>
+    <div class="header-actions">
+      <p-button
+        label="Dashboard"
+        icon="pi pi-home"
+        styleClass="p-button-outlined"
+        (onClick)="goToDashboard()">
+      </p-button>
+      <p-button
+        label="Site Content"
+        icon="pi pi-sliders-h"
+        styleClass="p-button-outlined"
+        (onClick)="goToContentStudio()">
+      </p-button>
+      <p-button
+        label="Subscribers"
+        icon="pi pi-users"
+        styleClass="p-button-outlined"
+        (onClick)="goToSubscribers()">
+      </p-button>
+      <p-button
+        label="Logout"
+        icon="pi pi-sign-out"
+        styleClass="p-button-outlined"
+        (onClick)="logout()">
+      </p-button>
+    </div>
+  </div>
+
+  <p-card class="category-manager-card">
+    <div class="card-header">
+      <h3>Category Tabs</h3>
+      <label class="checkbox-inline">
+        <input type="checkbox" [(ngModel)]="showArchivedCategories">
+        Show archived tabs
+      </label>
+    </div>
+
+    <div class="category-create-row">
+      <input
+        id="collections-new-category-name"
+        pInputText
+        type="text"
+        [(ngModel)]="newCategoryName"
+        placeholder="New category name (e.g., Lyrics, Poems, Interviews)">
+      <input
+        pInputText
+        type="text"
+        [(ngModel)]="newCategoryDescription"
+        placeholder="Optional description">
+      <p-button
+        label="Add Category"
+        icon="pi pi-plus"
+        [loading]="isSaving"
+        (onClick)="addCategory()">
+      </p-button>
+    </div>
+
+    <div class="category-tabs">
+      <button
+        type="button"
+        class="category-tab"
+        *ngFor="let category of visibleCategories"
+        [class.active]="category.id === selectedCategoryId"
+        [class.archived]="category.isArchived"
+        (click)="selectCategory(category.id)">
+        {{ category.name }}
+        <span *ngIf="category.isArchived">(Archived)</span>
+      </button>
+    </div>
+
+    <div class="category-selected-row" *ngIf="selectedCategory as category">
+      <div class="selected-meta">
+        <strong>{{ category.name }}</strong>
+        <small>{{ category.description || 'No description set.' }}</small>
+      </div>
+      <div class="selected-actions">
+        <p-button
+          *ngIf="!category.isArchived"
+          label="Archive Tab"
+          icon="pi pi-eye-slash"
+          styleClass="p-button-outlined p-button-sm"
+          [loading]="isSaving"
+          (onClick)="archiveCategory(category, true)">
+        </p-button>
+        <p-button
+          *ngIf="category.isArchived"
+          label="Restore Tab"
+          icon="pi pi-eye"
+          styleClass="p-button-outlined p-button-sm"
+          [loading]="isSaving"
+          (onClick)="archiveCategory(category, false)">
+        </p-button>
+      </div>
+    </div>
+  </p-card>
+
+  <p-card class="entries-card">
+    <div class="card-header">
+      <h3>Collection Entries</h3>
+      <div class="entry-header-actions">
+        <p-button
+          label="New Entry"
+          icon="pi pi-file-edit"
+          (onClick)="openCreateEntry()">
+        </p-button>
+        <p-button
+          label="Refresh"
+          icon="pi pi-refresh"
+          styleClass="p-button-outlined"
+          [loading]="isLoading"
+          (onClick)="refresh()">
+        </p-button>
+      </div>
+    </div>
+
+    <div class="entry-filters">
+      <input
+        pInputText
+        type="text"
+        [(ngModel)]="searchQuery"
+        placeholder="Search title, summary, body text, tags...">
+      <p-dropdown
+        [options]="typeOptions"
+        [(ngModel)]="selectedTypeFilter"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body">
+      </p-dropdown>
+      <p-dropdown
+        [options]="visibilityOptions"
+        [(ngModel)]="selectedVisibilityFilter"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body">
+      </p-dropdown>
+    </div>
+
+    <div class="loading-row" *ngIf="isLoading">Loading entries...</div>
+    <div class="loading-row" *ngIf="!isLoading && filteredEntries.length === 0">No entries match your filters.</div>
+
+    <div class="entries-grid" *ngIf="!isLoading && filteredEntries.length > 0">
+      <article class="entry-card" *ngFor="let entry of filteredEntries">
+        <div class="entry-top">
+          <h4>{{ entry.metadata.title }}</h4>
+          <div class="entry-tags">
+            <p-tag [value]="entry.metadata.entryType" severity="info"></p-tag>
+            <p-tag [value]="entry.metadata.visibility" [severity]="entry.metadata.isPublic ? 'success' : 'secondary'"></p-tag>
+          </div>
+        </div>
+
+        <div class="entry-meta">
+          <span><i class="pi pi-folder"></i> {{ getEntryCategoryName(entry) }}</span>
+          <span *ngIf="entry.metadata.updatedAt"><i class="pi pi-clock"></i> {{ entry.metadata.updatedAt | date:'short' }}</span>
+        </div>
+
+        <p class="entry-summary" *ngIf="entry.metadata.summary">{{ entry.metadata.summary }}</p>
+        <p class="entry-preview">{{ entry.item.Text || '' }}</p>
+
+        <div class="entry-keywords" *ngIf="entry.metadata.tags?.length">
+          <p-tag *ngFor="let tag of entry.metadata.tags" [value]="tag" severity="secondary"></p-tag>
+        </div>
+
+        <div class="entry-actions">
+          <p-button
+            label="Edit"
+            icon="pi pi-pencil"
+            styleClass="p-button-outlined p-button-sm"
+            (onClick)="openEditEntry(entry)">
+          </p-button>
+          <p-button
+            [label]="entry.metadata.isPublic ? 'Hide' : 'Unhide'"
+            [icon]="entry.metadata.isPublic ? 'pi pi-eye-slash' : 'pi pi-eye'"
+            styleClass="p-button-outlined p-button-sm"
+            (onClick)="toggleEntryVisibility(entry)">
+          </p-button>
+          <p-button
+            label="Delete"
+            icon="pi pi-trash"
+            styleClass="p-button-danger p-button-sm"
+            (onClick)="deleteEntry(entry)">
+          </p-button>
+        </div>
+      </article>
+    </div>
+  </p-card>
+
+  <p-dialog
+    [(visible)]="editorOpen"
+    [modal]="true"
+    [dismissableMask]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [style]="{ width: 'min(960px, 95vw)' }"
+    [header]="editorDraft.id ? 'Edit Collection Entry' : 'Create Collection Entry'"
+    (onHide)="closeEditor()">
+    <div class="editor-layout">
+      <div class="editor-main">
+        <div class="form-group">
+          <label for="entry-title">Title *</label>
+          <input id="entry-title" pInputText type="text" [(ngModel)]="editorDraft.title" placeholder="Entry title">
+        </div>
+
+        <div class="form-group">
+          <label for="entry-summary">Summary</label>
+          <textarea id="entry-summary" class="p-inputtext" rows="3" [(ngModel)]="editorDraft.summary" placeholder="Short summary"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="entry-body">Content *</label>
+          <textarea id="entry-body" class="p-inputtext content-textarea" rows="16" [(ngModel)]="editorDraft.body" placeholder="Paste or write text content here"></textarea>
+        </div>
+      </div>
+
+      <div class="editor-side">
+        <div class="form-group">
+          <label for="entry-category">Category *</label>
+          <p-dropdown
+            inputId="entry-category"
+            [options]="visibleCategories"
+            optionLabel="name"
+            optionValue="id"
+            [(ngModel)]="editorDraft.categoryId"
+            appendTo="body">
+          </p-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label for="entry-type">Text Type</label>
+          <p-dropdown
+            inputId="entry-type"
+            [options]="typeOptions.slice(1)"
+            optionLabel="label"
+            optionValue="value"
+            [(ngModel)]="editorDraft.entryType"
+            appendTo="body">
+          </p-dropdown>
+        </div>
+
+        <div class="form-group">
+          <label for="entry-tags">Tags</label>
+          <input id="entry-tags" pInputText type="text" [(ngModel)]="editorDraft.tagsInput" placeholder="comma, separated, tags">
+        </div>
+
+        <div class="form-group">
+          <label>Public Visibility</label>
+          <p-toggleButton
+            [(ngModel)]="editorDraft.isPublic"
+            onLabel="Public"
+            offLabel="Hidden"
+            onIcon="pi pi-eye"
+            offIcon="pi pi-eye-slash"
+            styleClass="full-width">
+          </p-toggleButton>
+          <small>Hidden entries stay in authoring only until you unhide.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="entry-import">Import Text File</label>
+          <input
+            id="entry-import"
+            type="file"
+            accept=".txt,.md,.rtf,.csv,.json,.html"
+            (change)="onImportTextFile($event)">
+          <small>Loads file text into the content field.</small>
+        </div>
+      </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+      <p-button
+        label="Cancel"
+        icon="pi pi-times"
+        styleClass="p-button-outlined"
+        (onClick)="closeEditor()">
+      </p-button>
+      <p-button
+        label="Save Entry"
+        icon="pi pi-save"
+        [loading]="isSaving"
+        (onClick)="saveEntry()">
+      </p-button>
+    </ng-template>
+  </p-dialog>
+
+  <p-toast></p-toast>
+  <p-confirmDialog></p-confirmDialog>
+</div>

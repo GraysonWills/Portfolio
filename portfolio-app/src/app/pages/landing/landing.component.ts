@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
-import { RedisContent, PageContentID } from '../../models/redis-content.model';
+import { RedisContent, PageContentID, PageID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from '../../services/analytics.service';
 
@@ -25,22 +25,22 @@ export class LandingComponent implements OnInit, OnDestroy {
   private readonly heroAutoplayMs = 5000;
   private readonly defaultHeroSlides: Array<{ photo: string; alt: string; order: number }> = [
     {
-      photo: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1920&q=80',
+      photo: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?auto=format&fit=crop&fm=webp&w=1920&q=80',
       alt: 'Artificial intelligence neural network visualization',
       order: 1
     },
     {
-      photo: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1920&q=80',
+      photo: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&fm=webp&w=1920&q=80',
       alt: 'Machine learning data flow concept',
       order: 2
     },
     {
-      photo: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1920&q=80',
+      photo: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&fm=webp&w=1920&q=80',
       alt: 'Data analytics dashboard visualization',
       order: 3
     },
     {
-      photo: 'https://images.unsplash.com/photo-1518432031352-d6fc5c10da5a?w=1920&q=80',
+      photo: 'https://images.unsplash.com/photo-1518432031352-d6fc5c10da5a?auto=format&fit=crop&fm=webp&w=1920&q=80',
       alt: 'Abstract technology and coding environment',
       order: 4
     }
@@ -65,15 +65,24 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   private loadLandingContent(): void {
-    this.redisService.getLandingPageContent().subscribe({
-      next: (content: RedisContent[]) => {
-        this.landingPhotos = content.filter(
-          item => item.PageContentID === PageContentID.LandingPhoto
+    this.redisService.getContentPageV2(PageID.Landing, {
+      limit: 40,
+      fields: 'standard',
+      sort: 'id_asc',
+      cacheScope: 'route:/landing:metadata'
+    }).subscribe({
+      next: (response: any) => {
+        const items = Array.isArray(response?.items)
+          ? (response.items as RedisContent[])
+          : (Array.isArray(response) ? (response as RedisContent[]) : []);
+        this.landingPhotos = items.filter(
+          (item) => item.PageContentID === PageContentID.LandingPhoto
         );
-        this.landingText = content.filter(
+        this.landingText = items.filter(
           item => item.PageContentID === PageContentID.LandingText
         );
         this.refreshHeroSlides();
+        this.hydrateLandingMedia();
 
         const summaryContent = this.landingText.find(
           item => item.Metadata?.['type'] === 'summary'
@@ -89,6 +98,28 @@ export class LandingComponent implements OnInit, OnDestroy {
           summary: 'Error',
           detail: 'Failed to load landing page content'
         });
+      }
+    });
+  }
+
+  private hydrateLandingMedia(): void {
+    this.redisService.getContentPageV2(PageID.Landing, {
+      limit: 20,
+      fields: 'full',
+      contentIds: [PageContentID.LandingPhoto],
+      sort: 'id_asc',
+      cacheScope: 'route:/landing:media'
+    }).subscribe({
+      next: (response) => {
+        const mediaItems = Array.isArray((response as any)?.items)
+          ? ((response as any).items as RedisContent[])
+          : (response as unknown as RedisContent[]);
+        if (!mediaItems.length) return;
+        this.landingPhotos = mediaItems.filter((item) => item.PageContentID === PageContentID.LandingPhoto);
+        this.refreshHeroSlides();
+      },
+      error: () => {
+        // Keep default/fallback hero images if media hydration fails.
       }
     });
   }

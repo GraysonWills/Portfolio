@@ -1,0 +1,17 @@
+flowchart LR
+  Editor["Author clicks Save/Publish/Schedule"] --> BA["Blog Authoring GUI"]
+  BA --> API["POST /api/content + /api/notifications/*"]
+  API --> Validate["Auth + payload validation"]
+  Validate --> Choice{"Publish mode"}
+  Choice -->|"Immediate"| PubNow["Set post status: published"]
+  Choice -->|"Scheduled"| CreateJob["Create EventBridge one-time schedule"]
+  CreateJob --> Scheduler["EventBridge Scheduler"]
+  Scheduler --> Worker["/api/notifications/worker/publish"]
+  Worker --> PubNow
+  PubNow --> SelectSubs["Query DynamoDB SUBSCRIBED users"]
+  SelectSubs --> BuildEmail["Render per-post template"]
+  BuildEmail --> SES["SES send"]
+  SES --> Events["Bounce/Complaint events"]
+  Events --> StatusSync["Update subscriber status"]
+  StatusSync --> DDB["DynamoDB subscribers table"]
+  PubNow --> Redis["Redis content update"]

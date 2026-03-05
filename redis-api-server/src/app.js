@@ -157,6 +157,14 @@ function createApp() {
   const cache = new Map();
   const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS, 10) || 60_000;
   const MAX_CACHE_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES, 10) || 500;
+  const BROWSER_CACHE_MAX_AGE_SECONDS = Math.max(
+    0,
+    parseInt(process.env.BROWSER_CACHE_MAX_AGE_SECONDS || '120', 10) || 120
+  );
+  const BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS = Math.max(
+    0,
+    parseInt(process.env.BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS || '300', 10) || 300
+  );
   let lastSweepAt = 0;
 
   function evictExpired(now = Date.now()) {
@@ -179,8 +187,22 @@ function createApp() {
     }
   }
 
+  function setBrowserCacheHeaders(res) {
+    const directives = [
+      `public`,
+      `max-age=${BROWSER_CACHE_MAX_AGE_SECONDS}`,
+      `stale-while-revalidate=${BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS}`
+    ];
+    res.set('Cache-Control', directives.join(', '));
+  }
+
   function cacheMiddleware(req, res, next) {
     if (req.method !== 'GET') return next();
+    if ((req.originalUrl || '').includes('/preview/')) {
+      // Preview payloads can contain unpublished content and should never be cached.
+      res.set('Cache-Control', 'no-store');
+      return next();
+    }
 
     const now = Date.now();
     evictExpired(now);
@@ -190,6 +212,7 @@ function createApp() {
 
     if (cached && now - cached.timestamp < CACHE_TTL) {
       res.set('X-Cache', 'HIT');
+      setBrowserCacheHeaders(res);
       return res.json(cached.data);
     }
 
@@ -202,6 +225,7 @@ function createApp() {
       cache.set(key, { data, timestamp: Date.now() });
       enforceCacheBounds();
       res.set('X-Cache', 'MISS');
+      setBrowserCacheHeaders(res);
       return originalJson(data);
     };
 

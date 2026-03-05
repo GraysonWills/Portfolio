@@ -23,6 +23,12 @@
         styleClass="p-button-outlined">
       </p-button>
       <p-button
+        label="Collections"
+        icon="pi pi-folder"
+        (onClick)="goToCollections()"
+        styleClass="p-button-outlined">
+      </p-button>
+      <p-button
         label="Preview in Site"
         icon="pi pi-external-link"
         (onClick)="previewCurrentPageOnSite()"
@@ -119,7 +125,7 @@
         <p-dropdown
           [options]="contentOptions"
           [(ngModel)]="selectedContentId"
-          (onChange)="onFilterChanged()"
+          (onChange)="onContentTypeChanged()"
           optionLabel="label"
           optionValue="value"
           appendTo="body">
@@ -147,7 +153,7 @@
     </div>
 
     <div class="content-grid" *ngIf="!isLoading">
-      <p-card *ngFor="let item of filteredContent" class="content-card">
+      <p-card *ngFor="let item of visibleFilteredContent; trackBy: trackByContentItem" class="content-card">
         <div class="card-header">
           <div class="card-id">
             <h3>{{ item.ID }}</h3>
@@ -180,10 +186,10 @@
           <div class="photo-preview" *ngIf="item.Photo">
             <img [src]="item.Photo" [alt]="item.ID + ' image'" loading="lazy">
           </div>
-          <p class="text-preview" *ngIf="item.Text">{{ getTextPreview(item.Text) }}</p>
+          <p class="text-preview" *ngIf="item.Text">{{ getContentTextPreview(item) }}</p>
           <p class="meta-preview" *ngIf="item.Metadata">
             <span class="meta-pill">Metadata</span>
-            <code>{{ (item.Metadata | json) }}</code>
+            <code>{{ getContentMetadataPreview(item) }}</code>
           </p>
         </div>
       </p-card>
@@ -191,6 +197,15 @@
       <div class="empty" *ngIf="filteredContent.length === 0">
         No content items match your filters.
       </div>
+    </div>
+
+    <div class="load-more-row" *ngIf="!isLoading && hasMoreFilteredRows">
+      <p-button
+        label="Load More Items"
+        icon="pi pi-angle-down"
+        styleClass="p-button-outlined"
+        (onClick)="loadMoreVisibleRows()">
+      </p-button>
     </div>
   </section>
 

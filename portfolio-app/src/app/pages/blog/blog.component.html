@@ -89,20 +89,26 @@
     <!-- Blog Posts -->
     <section class="posts-section" *ngIf="!isLoading" aria-label="Blog posts">
       <div [class]="'posts-' + layout" role="list">
-        <article *ngFor="let post of filteredPosts; trackBy: trackByPost" 
+        <article *ngFor="let post of visiblePosts; trackBy: trackByPost" 
                 class="blog-card" 
                 role="listitem"
                 [routerLink]="['/blog', post.listItemID]"
-                (click)="trackPostOpen(post)"
-                [attr.aria-label]="'Read: ' + getPostData(post).title"
+                (click)="trackPostOpen(post.source)"
+                [attr.aria-label]="'Read: ' + post.title"
                 appScrollReveal>
-          <ng-container *ngTemplateOutlet="blogPostCard; context: {post: getPostData(post)}"></ng-container>
+          <ng-container *ngTemplateOutlet="blogPostCard; context: {post: post}"></ng-container>
         </article>
       </div>
       
       <div *ngIf="filteredPosts.length === 0" class="no-posts" appScrollReveal>
         <i class="pi pi-inbox empty-icon" aria-hidden="true"></i>
         <p>No blog posts found. Check back soon!</p>
+      </div>
+
+      <div *ngIf="hasMorePosts" class="blog-load-more" appScrollReveal>
+        <button type="button" class="load-more-btn" (click)="loadMorePosts()">
+          Load More Posts
+        </button>
       </div>
     </section>
 
@@ -131,7 +137,7 @@
       <p class="blog-summary">{{ post.summary }}</p>
       <div class="blog-footer">
         <div class="blog-tags" *ngIf="post.tags?.length">
-          <span *ngFor="let tag of post.tags.slice(0, 2)" class="blog-tag">{{ tag }}</span>
+          <span *ngFor="let tag of post.tags.slice(0, 2); trackBy: trackByTag" class="blog-tag">{{ tag }}</span>
         </div>
         <span class="read-more-link" [attr.aria-label]="'Read full article: ' + post.title">
           Read More <i class="pi pi-arrow-right"></i>

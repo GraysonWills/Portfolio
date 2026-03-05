@@ -62,18 +62,31 @@ function buildPublicMediaUrlForKey(req, key, cfg = getMediaConfig()) {
 }
 
 function parseS3ObjectKeyFromUrl(rawUrl, cfg = getMediaConfig()) {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) return '';
+
+  // Handle already-proxied media paths so we can migrate them to CDN URLs.
+  if (raw.startsWith('/media/')) {
+    return decodeS3PathSegments(raw.replace(/^\/media\/+/, ''));
+  }
+
   const bucket = String(cfg.bucket || '').trim().toLowerCase();
   if (!bucket) return '';
 
   let parsed;
   try {
-    parsed = new URL(String(rawUrl || ''));
+    parsed = new URL(raw);
   } catch {
     return '';
   }
 
   const host = String(parsed.hostname || '').trim().toLowerCase();
-  const path = String(parsed.pathname || '').replace(/^\/+/, '');
+  const pathname = String(parsed.pathname || '');
+  const path = pathname.replace(/^\/+/, '');
+
+  if (pathname.startsWith('/media/')) {
+    return decodeS3PathSegments(pathname.replace(/^\/media\/+/, ''));
+  }
 
   const bucketVirtualHostPattern = new RegExp(`^${bucket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.s3(?:[.-][a-z0-9-]+)?\\.amazonaws\\.com$`, 'i');
   if (bucketVirtualHostPattern.test(host)) {

@@ -7,7 +7,8 @@ export enum PageID {
   Landing = 0,
   Work = 1,
   Projects = 2,
-  Blog = 3
+  Blog = 3,
+  Collections = 4
 }
 
 export enum PageContentID {
@@ -26,7 +27,9 @@ export enum PageContentID {
   ProjectsText = 12,
   BlogBody = 13,
   WorkSkillMetric = 14,
-  BlogSignatureSettings = 15
+  BlogSignatureSettings = 15,
+  CollectionsCategoryRegistry = 16,
+  CollectionsEntry = 17
 }
 
 export interface RedisContent {
@@ -71,4 +74,45 @@ export interface ContentGroup {
   listItemID: string;
   items: RedisContent[];
   metadata?: BlogPostMetadata | Record<string, unknown>;
+}
+
+export type CollectionsEntryType =
+  | 'lyrics'
+  | 'poem'
+  | 'quote'
+  | 'transcript'
+  | 'interview'
+  | 'note'
+  | 'article'
+  | 'custom';
+
+export interface CollectionsCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  isArchived?: boolean;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CollectionsCategoryRegistry {
+  categories: CollectionsCategory[];
+  updatedAt?: string;
+}
+
+export interface CollectionsEntryMetadata {
+  title: string;
+  summary?: string;
+  entryType: CollectionsEntryType;
+  categoryId: string;
+  categorySlug?: string;
+  categoryName?: string;
+  tags?: string[];
+  isPublic: boolean;
+  visibility: 'public' | 'hidden';
+  createdAt?: string;
+  updatedAt?: string;
+  publishedAt?: string;
 }

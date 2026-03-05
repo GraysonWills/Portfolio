@@ -1,2 +1,36 @@
 <router-outlet></router-outlet>
 <p-toast></p-toast>
+
+<p-dialog
+  [(visible)]="hotkeyHelpVisible"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [dismissableMask]="true"
+  [style]="{ width: 'min(760px, 94vw)' }"
+  header="Keyboard Shortcuts"
+  (onHide)="closeHotkeysDialog()">
+  <div class="hotkeys-help">
+    <p class="help-description">
+      Use these shortcuts to move around authoring quickly. Global shortcuts work from any page.
+    </p>
+
+    <div class="hotkey-table">
+      <div class="hotkey-row hotkey-head">
+        <span>Scope</span>
+        <span>Shortcut</span>
+        <span>Action</span>
+      </div>
+      <div class="hotkey-row" *ngFor="let row of hotkeyBindings">
+        <span class="scope-pill" [class.scope-page]="row.scope === 'Page'">{{ row.scope }}</span>
+        <span><kbd>{{ row.comboLabel }}</kbd></span>
+        <span>{{ row.description }}</span>
+      </div>
+      <div class="hotkey-row empty-row" *ngIf="hotkeyBindings.length === 0">
+        <span>-</span>
+        <span>-</span>
+        <span>No shortcuts available on this route.</span>
+      </div>
+    </div>
+  </div>
+</p-dialog>

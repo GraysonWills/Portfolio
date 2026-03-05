@@ -238,6 +238,8 @@
   cursor: pointer;
   text-decoration: none;
   color: inherit;
+  content-visibility: auto;
+  contain-intrinsic-size: 360px;
 
   @media (hover: hover) {
     &:hover {
@@ -381,6 +383,32 @@
   p {
     color: var(--text-muted);
     font-size: 1.1rem;
+  }
+}
+
+.blog-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.load-more-btn {
+  appearance: none;
+  border: 1px solid rgba(11, 79, 159, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  color: var(--primary);
+  padding: 0.65rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--primary);
+    background: rgba(11, 79, 159, 0.05);
   }
 }
 

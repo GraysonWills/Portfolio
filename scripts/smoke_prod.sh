@@ -107,7 +107,7 @@ retry 30 10 expect_redirect_location "${APEX_URL}/some/path?x=1" "https://www.gr
 echo "== API =="
 retry 30 10 expect_code "${API_URL}/health" "200"
 retry 30 10 expect_json_array_len_gt "${API_URL}/content" 0
-retry 30 10 expect_code "http://api.grayson-wills.com/api/health" "301"
+# Note: API Gateway custom domains serve HTTPS only; plain HTTP on port 80 is not expected.
 
 echo "== Authz sanity (writes must be protected) =="
 unauth_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API_URL}/content" -H 'Content-Type: application/json' -d '{}' || true)"

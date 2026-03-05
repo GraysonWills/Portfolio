@@ -17,7 +17,7 @@
 
     <!-- Projects by Category (Accordion) -->
     <section class="projects-section" *ngIf="!isLoading" aria-label="Project categories">
-      <div *ngFor="let category of categoryGroups; let i = index"
+      <div *ngFor="let category of visibleCategories; let i = index; trackBy: trackByCategory"
            class="accordion-section"
            appScrollReveal>
 
@@ -46,8 +46,11 @@
         <div class="accordion-body"
              [id]="'cat-' + category.listItemID"
              [class.expanded]="isCategoryExpanded(category.listItemID)">
+          <div class="category-loading" *ngIf="isCategoryLoading(category.listItemID)">
+            Loading projects...
+          </div>
           <div class="projects-list" role="list" aria-label="Projects in this category">
-            <article *ngFor="let project of getProjectsInCategory(category)"
+            <article *ngFor="let project of getProjectsInCategory(category); trackBy: trackByProject"
                      class="project-card"
                      role="listitem">
               <div class="project-content">
@@ -60,7 +63,7 @@
                   <h3 class="project-title">{{ project.title || 'Project' }}</h3>
                   <p class="project-description">{{ project.description || project.text }}</p>
                   <div class="project-tech-stack" *ngIf="project.techStack?.length" role="list" aria-label="Technologies used">
-                    <span *ngFor="let tech of project.techStack?.slice(0, 4)" class="tech-tag" role="listitem">{{ tech }}</span>
+                    <span *ngFor="let tech of project.techStack?.slice(0, 4); trackBy: trackByTech" class="tech-tag" role="listitem">{{ tech }}</span>
                   </div>
                   <div class="project-actions" *ngIf="project.githubUrl || project.liveUrl">
                     <a *ngIf="project.githubUrl"
@@ -83,8 +86,18 @@
                 </div>
               </div>
             </article>
+            <div class="category-empty"
+                 *ngIf="!isCategoryLoading(category.listItemID) && getProjectsInCategory(category).length === 0">
+              No projects loaded for this category yet.
+            </div>
           </div>
         </div>
+      </div>
+
+      <div *ngIf="hasMoreCategories" class="projects-load-more" appScrollReveal>
+        <button type="button" class="load-more-btn" (click)="loadMoreCategories()">
+          Load More Categories
+        </button>
       </div>
     </section>
 

@@ -104,34 +104,6 @@ a:hover { color: var(--primary); }
   border-radius: var(--radius-sm);
 }
 
-/* Skip-to-content for screen readers */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: var(--primary);
-  color: white;
-  padding: 0.5rem 1rem;
-  z-index: 10000;
-  transition: top var(--transition-fast);
-
-  &:focus {
-    top: 0;
-  }
-}
-
 /* ── Utility: Container ── */
 .container {
   max-width: var(--container-max);
@@ -483,23 +455,29 @@ app-header .p-menubar-root-list > .p-menuitem.active-route > .p-menuitem-link {
 
 /* ── Work Page PrimeNG Overrides (global scope) ── */
 app-work .custom-timeline .p-timeline-event {
-  min-height: 140px;
+  min-height: 132px;
 }
 
 app-work .custom-timeline .p-timeline-event-opposite {
-  padding-top: 0.3rem;
+  flex: 1 1 0;
+  min-width: 0;
+  padding-top: 0.22rem;
 }
 
 app-work .custom-timeline .p-timeline-event-separator {
   margin-inline: 0.95rem;
+  padding-top: 0.2rem;
 }
 
 app-work .custom-timeline .p-timeline-event-connector {
   width: 3px !important;
+  min-height: 72px;
   background: linear-gradient(180deg, rgba(11, 79, 159, 0.26), rgba(42, 125, 225, 0.16), rgba(191, 87, 0, 0.22)) !important;
 }
 
 app-work .custom-timeline .p-timeline-event-content {
+  flex: 1 1 0;
+  min-width: 0;
   padding: 0 0 1rem 0 !important;
 }
 
@@ -552,5 +530,10 @@ input, select, textarea {
 
   app-work .custom-timeline .p-timeline-event-separator {
     margin-inline: 0.6rem;
+  }
+
+  app-work .custom-timeline .p-timeline-event-opposite {
+    flex: 0 0 auto;
+    min-width: 0;
   }
 }

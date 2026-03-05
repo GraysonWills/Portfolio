@@ -35,6 +35,6 @@ This package proposes a full visual and interaction overhaul for the portfolio e
 ## Scope Guardrails
 
 1. Keep existing content fields and page types intact.
-2. Keep existing data flows intact (Redis schema, page routes, editor save model).
+2. Keep existing data flows intact (DynamoDB-backed API schema, page routes, editor save model).
 3. Focus changes on UI structure, visual language, and authoring ergonomics.
 4. Defer implementation in production code until design approval.

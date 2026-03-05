@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { AuthService } from '../../services/auth.service';
@@ -6,6 +6,7 @@ import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
+import { HotkeysService } from '../../services/hotkeys.service';
 
 type Option<T> = { label: string; value: T };
 
@@ -28,7 +29,7 @@ type RedisContentDraft = {
   styleUrl: './content-studio.component.scss',
   standalone: false
 })
-export class ContentStudioComponent implements OnInit {
+export class ContentStudioComponent implements OnInit, OnDestroy {
   // Connection
   apiEndpoint: string = '';
   connectionStatus: 'connected' | 'disconnected' | 'testing' = 'disconnected';
@@ -44,7 +45,8 @@ export class ContentStudioComponent implements OnInit {
     { label: 'Landing (0)', value: PageID.Landing },
     { label: 'Work (1)', value: PageID.Work },
     { label: 'Projects (2)', value: PageID.Projects },
-    { label: 'Blog (3)', value: PageID.Blog }
+    { label: 'Blog (3)', value: PageID.Blog },
+    { label: 'Collections (4)', value: PageID.Collections }
   ];
   pageOptionsEditable: Option<number>[] = [];
   contentOptions: Option<number>[] = [];
@@ -57,18 +59,28 @@ export class ContentStudioComponent implements OnInit {
   isLoading: boolean = false;
   content: RedisContent[] = [];
   filteredContent: RedisContent[] = [];
+  visibleFilteredContent: RedisContent[] = [];
 
   // Editor
   editorOpen: boolean = false;
   editorSaving: boolean = false;
   draft: RedisContentDraft | null = null;
   isPreviewOpening: boolean = false;
+  private cleanupHotkeys: (() => void) | null = null;
+  private visibleCount = 0;
+  private readonly pageSize = 30;
+  private readonly scrollLoadBufferPx = 500;
+  private contentNextToken: string | null = null;
+  private isFetchingNextPage = false;
+  private textPreviewById = new Map<string, string>();
+  private metadataPreviewById = new Map<string, string>();
 
   private pageLabels = new Map<number, string>([
     [0, 'Landing'],
     [1, 'Work'],
     [2, 'Projects'],
-    [3, 'Blog']
+    [3, 'Blog'],
+    [4, 'Collections']
   ]);
 
   private contentLabels = new Map<number, string>([
@@ -86,7 +98,10 @@ export class ContentStudioComponent implements OnInit {
     [11, 'ProjectsPhoto'],
     [12, 'ProjectsText'],
     [13, 'BlogBody'],
-    [14, 'WorkSkillMetric']
+    [14, 'WorkSkillMetric'],
+    [15, 'BlogSignatureSettings'],
+    [16, 'CollectionsCategoryRegistry'],
+    [17, 'CollectionsEntry']
   ]);
 
   constructor(
@@ -95,7 +110,8 @@ export class ContentStudioComponent implements OnInit {
     public txLog: TransactionLogService,
     private messageService: MessageService,
     private confirmationService: ConfirmationService,
-    private router: Router
+    private router: Router,
+    private hotkeys: HotkeysService
   ) {}
 
   // Expose Router for template navigation (keeps header component-free for now)
@@ -114,8 +130,27 @@ export class ContentStudioComponent implements OnInit {
     this.buildContentOptions();
     this.pageOptionsEditable = this.pageOptions.filter((o) => o.value !== -1);
     this.contentOptionsEditable = this.contentOptions.filter((o) => o.value !== -1);
+    this.coerceFilterSelections();
     this.testConnection();
     this.loadContent();
+    this.registerHotkeys();
+  }
+
+  ngOnDestroy(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = null;
+  }
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (this.editorOpen || this.isLoading || !this.hasMoreFilteredRows) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
+      this.loadMoreVisibleRows();
+    }
   }
 
   // ── Navigation ────────────────────────────────────────────────
@@ -124,9 +159,37 @@ export class ContentStudioComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
+  goToCollections(): void {
+    this.router.navigate(['/collections']);
+  }
+
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  private registerHotkeys(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = this.hotkeys.register('content', [
+      {
+        combo: 'mod+alt+n',
+        description: 'Create new content item',
+        action: () => this.newItem(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+r',
+        description: 'Refresh content list',
+        action: () => this.refresh(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+p',
+        description: 'Preview selected page in site',
+        action: () => this.previewCurrentPageOnSite(),
+        allowInInputs: true
+      }
+    ]);
   }
 
   // ── Connection ────────────────────────────────────────────────
@@ -200,16 +263,56 @@ export class ContentStudioComponent implements OnInit {
     this.applyFilters();
   }
 
+  onContentTypeChanged(): void {
+    this.coerceFilterSelections();
+    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1) {
+      this.loadContent();
+      return;
+    }
+    this.applyFilters();
+  }
+
   loadContent(): void {
+    this.coerceFilterSelections();
     this.isLoading = true;
+    this.contentNextToken = null;
+    this.isFetchingNextPage = false;
 
-    const source$ = this.selectedPageId === -1
-      ? this.blogApi.getAllContent()
-      : this.blogApi.getContentByPage(this.selectedPageId);
+    if (this.selectedPageId === -1 || !this.blogApi.isContentV2StreamingEnabled()) {
+      const source$ = this.selectedPageId === -1
+        ? this.blogApi.getAllContent()
+        : this.blogApi.getContentByPage(this.selectedPageId);
 
-    source$.subscribe({
-      next: (items) => {
-        this.content = Array.isArray(items) ? items : [];
+      source$.subscribe({
+        next: (items) => {
+          this.content = Array.isArray(items) ? items : [];
+          this.buildCardPreviewMaps(this.content);
+          this.applyFilters();
+          this.isLoading = false;
+        },
+        error: () => {
+          this.isLoading = false;
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load content from API'
+          });
+        }
+      });
+      return;
+    }
+
+    this.blogApi.getContentPageV2(this.selectedPageId, {
+      limit: 50,
+      fields: 'full',
+      sort: 'updated_desc',
+      contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
+      cacheScope: `route:/content:page-${this.selectedPageId}`
+    }).subscribe({
+      next: (response) => {
+        this.content = Array.isArray(response?.items) ? response.items : [];
+        this.contentNextToken = response?.nextToken || null;
+        this.buildCardPreviewMaps(this.content);
         this.applyFilters();
         this.isLoading = false;
       },
@@ -225,6 +328,7 @@ export class ContentStudioComponent implements OnInit {
   }
 
   private applyFilters(): void {
+    this.coerceFilterSelections();
     const query = this.searchQuery.trim().toLowerCase();
 
     let items = [...this.content];
@@ -251,6 +355,7 @@ export class ContentStudioComponent implements OnInit {
     });
 
     this.filteredContent = items;
+    this.resetVisibleRows();
   }
 
   // ── Labels / Display ──────────────────────────────────────────
@@ -267,6 +372,123 @@ export class ContentStudioComponent implements OnInit {
     if (!text) return '';
     const oneLine = text.replace(/\s+/g, ' ').trim();
     return oneLine.length > 140 ? `${oneLine.slice(0, 140)}…` : oneLine;
+  }
+
+  getContentTextPreview(item: RedisContent): string {
+    const key = this.getContentKey(item);
+    return this.textPreviewById.get(key) || this.getTextPreview(item.Text);
+  }
+
+  getContentMetadataPreview(item: RedisContent): string {
+    const key = this.getContentKey(item);
+    return this.metadataPreviewById.get(key) || '';
+  }
+
+  get hasMoreFilteredRows(): boolean {
+    this.coerceFilterSelections();
+    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1 && !this.searchQuery.trim()) {
+      return this.visibleFilteredContent.length < this.filteredContent.length || !!this.contentNextToken;
+    }
+    return this.visibleFilteredContent.length < this.filteredContent.length;
+  }
+
+  loadMoreVisibleRows(): void {
+    this.coerceFilterSelections();
+    if (!this.hasMoreFilteredRows) return;
+    if (this.visibleFilteredContent.length < this.filteredContent.length) {
+      this.visibleCount += this.pageSize;
+      this.visibleFilteredContent = this.filteredContent.slice(0, this.visibleCount);
+    }
+
+    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1) {
+      const nearLoadedEnd = this.visibleFilteredContent.length >= (this.filteredContent.length - 3);
+      if (nearLoadedEnd) {
+        this.fetchNextContentPage();
+      }
+    }
+  }
+
+  trackByContentItem(index: number, item: RedisContent): string {
+    return this.getContentKey(item) || `${index}`;
+  }
+
+  private resetVisibleRows(): void {
+    this.visibleCount = this.pageSize;
+    this.visibleFilteredContent = this.filteredContent.slice(0, this.visibleCount);
+  }
+
+  private buildCardPreviewMaps(items: RedisContent[]): void {
+    this.textPreviewById.clear();
+    this.metadataPreviewById.clear();
+
+    for (const item of items || []) {
+      const key = this.getContentKey(item);
+      this.textPreviewById.set(key, this.getTextPreview(item.Text));
+      this.metadataPreviewById.set(key, this.stringifyMetadata(item.Metadata));
+    }
+  }
+
+  private stringifyMetadata(metadata: unknown): string {
+    if (!metadata) return '';
+    try {
+      const value = JSON.stringify(metadata);
+      if (!value) return '';
+      return value.length > 420 ? `${value.slice(0, 420)}…` : value;
+    } catch {
+      return '';
+    }
+  }
+
+  private getContentKey(item: RedisContent): string {
+    return String(item?.ID || `${item?.ListItemID || 'no-list'}-${item?.PageID || 0}-${item?.PageContentID || 0}`);
+  }
+
+  private fetchNextContentPage(): void {
+    this.coerceFilterSelections();
+    if (this.isFetchingNextPage || !this.contentNextToken || this.selectedPageId === -1) return;
+
+    this.isFetchingNextPage = true;
+    this.blogApi.getContentPageV2(this.selectedPageId, {
+      limit: 50,
+      fields: 'full',
+      sort: 'updated_desc',
+      contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
+      nextToken: this.contentNextToken,
+      cacheScope: `route:/content:page-${this.selectedPageId}`
+    }).subscribe({
+      next: (response) => {
+        this.isFetchingNextPage = false;
+        this.contentNextToken = response?.nextToken || null;
+        const incoming = Array.isArray(response?.items) ? response.items : [];
+        if (!incoming.length) return;
+        this.content = this.mergeById([...this.content, ...incoming]);
+        this.buildCardPreviewMaps(this.content);
+        this.applyFilters();
+      },
+      error: () => {
+        this.isFetchingNextPage = false;
+      }
+    });
+  }
+
+  private mergeById(items: RedisContent[]): RedisContent[] {
+    const map = new Map<string, RedisContent>();
+    for (const item of items || []) {
+      const id = this.getContentKey(item);
+      map.set(id, item);
+    }
+    return Array.from(map.values());
+  }
+
+  private coerceFilterSelections(): void {
+    this.selectedPageId = this.normalizeSelectionNumber(this.selectedPageId, PageID.Landing);
+    this.selectedContentId = this.normalizeSelectionNumber(this.selectedContentId, -1);
+  }
+
+  private normalizeSelectionNumber(value: unknown, fallback: number): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.trunc(parsed);
   }
 
   // ── Editor Dialog ─────────────────────────────────────────────

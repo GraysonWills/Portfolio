@@ -12,7 +12,7 @@ export class ImageUploaderComponent implements OnInit {
   @Input() currentImage: string | null = null;
   @Input() maxWidth: number = 1200;   // Max width for resize
   @Input() maxHeight: number = 800;   // Max height for resize
-  @Input() quality: number = 0.8;     // JPEG compression quality (0-1)
+  @Input() quality: number = 0.8;     // Compression quality (0-1)
   @Output() imageUploaded = new EventEmitter<string>();
 
   isUploading: boolean = false;
@@ -20,6 +20,7 @@ export class ImageUploaderComponent implements OnInit {
   previewUrl: string | null = null;
   originalSize: number = 0;
   compressedSize: number = 0;
+  outputMimeType: string = 'image/webp';
 
   constructor(
     private blogApi: BlogApiService,
@@ -67,10 +68,21 @@ export class ImageUploaderComponent implements OnInit {
    * Compress, resize, then upload
    */
   private compressAndUpload(file: File): void {
-    this.isCompressing = true;
+    const mime = String(file.type || '').toLowerCase();
+    if (mime === 'image/gif' || mime === 'image/svg+xml') {
+      // Preserve original bytes for animated GIF/vector SVG content.
+      this.previewFile(file);
+      this.isCompressing = false;
+      this.compressedSize = file.size;
+      this.uploadImage(file);
+      return;
+    }
 
-    this.compressImage(file, this.maxWidth, this.maxHeight, this.quality)
-      .then((compressedBlob) => {
+    this.isCompressing = true;
+    this.outputMimeType = this.getPreferredOutputMimeType();
+
+    this.compressImage(file, this.maxWidth, this.maxHeight, this.quality, this.outputMimeType)
+      .then((compressedBlob: Blob) => {
         this.compressedSize = compressedBlob.size;
         const savings = Math.round((1 - compressedBlob.size / this.originalSize) * 100);
 
@@ -78,36 +90,28 @@ export class ImageUploaderComponent implements OnInit {
           this.messageService.add({
             severity: 'info',
             summary: 'Compressed',
-            detail: `Image compressed by ${savings}% (${this.formatBytes(this.originalSize)} → ${this.formatBytes(this.compressedSize)})`
+            detail: `Image compressed by ${savings}% (${this.formatBytes(this.originalSize)} -> ${this.formatBytes(this.compressedSize)}), format: ${this.getFormatLabel(this.outputMimeType)}`
           });
         }
 
-        // Show preview from compressed blob
-        const reader = new FileReader();
-        reader.onload = (e: any) => {
-          this.previewUrl = e.target.result;
-        };
-        reader.readAsDataURL(compressedBlob);
+        this.previewBlob(compressedBlob);
 
         this.isCompressing = false;
 
-        // Upload the compressed image
+        // Upload the compressed image.
+        const extension = this.getExtensionForMimeType(this.outputMimeType);
+        const nextName = this.replaceFileExtension(file.name, extension);
         const compressedFile = new File(
           [compressedBlob],
-          file.name.replace(/\.[^.]+$/, '.jpg'),
-          { type: 'image/jpeg' }
+          nextName,
+          { type: this.outputMimeType }
         );
         this.uploadImage(compressedFile);
       })
       .catch((error) => {
         console.error('Compression failed, uploading original:', error);
         this.isCompressing = false;
-        // Fallback: show preview and upload original
-        const reader = new FileReader();
-        reader.onload = (e: any) => {
-          this.previewUrl = e.target.result;
-        };
-        reader.readAsDataURL(file);
+        this.previewFile(file);
         this.uploadImage(file);
       });
   }
@@ -120,7 +124,8 @@ export class ImageUploaderComponent implements OnInit {
     file: File,
     maxWidth: number,
     maxHeight: number,
-    quality: number
+    quality: number,
+    outputMimeType: string
   ): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -148,7 +153,7 @@ export class ImageUploaderComponent implements OnInit {
         }
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Export as compressed JPEG
+        // Export as compressed modern image format.
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -157,7 +162,7 @@ export class ImageUploaderComponent implements OnInit {
               reject(new Error('Canvas toBlob returned null'));
             }
           },
-          'image/jpeg',
+          outputMimeType,
           quality
         );
       };
@@ -169,6 +174,62 @@ export class ImageUploaderComponent implements OnInit {
 
       img.src = url;
     });
+  }
+
+  private getPreferredOutputMimeType(): string {
+    if (this.isMimeTypeSupported('image/avif')) return 'image/avif';
+    if (this.isMimeTypeSupported('image/webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  private isMimeTypeSupported(mimeType: string): boolean {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    try {
+      const dataUrl = canvas.toDataURL(mimeType);
+      return typeof dataUrl === 'string' && dataUrl.startsWith(`data:${mimeType}`);
+    } catch {
+      return false;
+    }
+  }
+
+  private getExtensionForMimeType(mimeType: string): string {
+    switch ((mimeType || '').toLowerCase()) {
+      case 'image/avif':
+        return '.avif';
+      case 'image/webp':
+        return '.webp';
+      default:
+        return '.jpg';
+    }
+  }
+
+  private getFormatLabel(mimeType: string): string {
+    const ext = this.getExtensionForMimeType(mimeType).replace('.', '');
+    return ext.toUpperCase();
+  }
+
+  private replaceFileExtension(filename: string, extension: string): string {
+    const safeName = String(filename || 'image').trim() || 'image';
+    if (!/\.[a-z0-9]+$/i.test(safeName)) return `${safeName}${extension}`;
+    return safeName.replace(/\.[a-z0-9]+$/i, extension);
+  }
+
+  private previewBlob(blob: Blob): void {
+    const reader = new FileReader();
+    reader.onload = (e: any) => {
+      this.previewUrl = e.target.result;
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  private previewFile(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e: any) => {
+      this.previewUrl = e.target.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   /**

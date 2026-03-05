@@ -84,8 +84,7 @@ async function ddbGetContentById(id) {
   const resp = await getDdbDoc().send(
     new GetCommand({
       TableName: tableName,
-      Key: { ID: id },
-      ConsistentRead: true
+      Key: { ID: id }
     })
   );
   return resp?.Item || null;
@@ -106,8 +105,7 @@ async function ddbScanAllContent() {
     const resp = await ddb.send(
       new ScanCommand({
         TableName: tableName,
-        ExclusiveStartKey,
-        ConsistentRead: true
+        ExclusiveStartKey
       })
     );
     if (Array.isArray(resp?.Items)) items.push(...resp.Items);
@@ -192,7 +190,7 @@ async function ddbDeleteContentByListItemId(listItemId) {
 async function ddbPing() {
   const tableName = requireTableName();
   const start = Date.now();
-  await getDdbDoc().send(new ScanCommand({ TableName: tableName, Limit: 1, ConsistentRead: true }));
+  await getDdbDoc().send(new ScanCommand({ TableName: tableName, Limit: 1 }));
   return { ok: true, latencyMs: Date.now() - start };
 }
 
@@ -210,4 +208,3 @@ module.exports = {
   ddbGetContentByListItemId,
   ddbDeleteContentByListItemId,
 };
-

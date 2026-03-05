@@ -125,33 +125,33 @@
       <div class="container">
         <h2 class="recent-posts-title">Recent Posts</h2>
         <div class="recent-posts-grid">
-          <article *ngFor="let post of recentPosts" 
+          <article *ngFor="let post of recentPostCards; trackBy: trackByRecentPost" 
                    class="blog-card"
                    [routerLink]="['/blog', post.listItemID]"
                    role="link"
-                   [attr.aria-label]="'Read: ' + getPostData(post).title">
+                   [attr.aria-label]="'Read: ' + post.title">
             <div class="blog-post-content">
-              <img *ngIf="getPostData(post).image" 
-                   [src]="getPostData(post).image" 
-                   [alt]="getPostData(post).title + ' cover image'" 
+              <img *ngIf="post.image" 
+                   [src]="post.image" 
+                   [alt]="post.title + ' cover image'" 
                    class="blog-image"
                    loading="lazy">
               <div class="blog-details">
                 <div class="blog-meta">
-                  <span *ngIf="getPostData(post).publishDate" class="publish-date">
+                  <span *ngIf="post.publishDate" class="publish-date">
                     <i class="pi pi-calendar" aria-hidden="true"></i>
-                    {{ getPostData(post).publishDate | date:'mediumDate' }}
+                    {{ post.publishDate | date:'mediumDate' }}
                   </span>
-                  <span *ngIf="getPostData(post).readTime" class="read-time">
+                  <span *ngIf="post.readTime" class="read-time">
                     <i class="pi pi-clock" aria-hidden="true"></i>
-                    {{ getPostData(post).readTime }} min read
+                    {{ post.readTime }} min read
                   </span>
                 </div>
-                <h3 class="blog-title">{{ getPostData(post).title }}</h3>
-                <p class="blog-summary">{{ getPostData(post).summary }}</p>
+                <h3 class="blog-title">{{ post.title }}</h3>
+                <p class="blog-summary">{{ post.summary }}</p>
                 <div class="blog-footer">
-                  <div class="blog-tags" *ngIf="getPostData(post).tags?.length">
-                    <span *ngFor="let tag of getPostData(post).tags.slice(0, 2)" class="blog-tag">{{ tag }}</span>
+                  <div class="blog-tags" *ngIf="post.tags?.length">
+                    <span *ngFor="let tag of post.tags.slice(0, 2); trackBy: trackByTag" class="blog-tag">{{ tag }}</span>
                   </div>
                   <span class="read-more-link">
                     Read More <i class="pi pi-arrow-right"></i>

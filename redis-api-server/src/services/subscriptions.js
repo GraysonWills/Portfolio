@@ -1,4 +1,4 @@
-const { PutCommand, GetCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { getDdbDoc, getSes } = require('./aws/clients');
 const { sha256Hex, randomToken, normalizeEmail, maskEmail } = require('../utils/crypto');
@@ -411,5 +411,156 @@ module.exports = {
   confirmSubscription,
   unsubscribe,
   updatePreferences,
+  listSubscribersAdmin,
+  upsertSubscriberAdmin,
+  deleteSubscriberAdmin,
   getConfig,
 };
+
+async function listSubscribersAdmin({ topic, status } = {}) {
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+
+  const rows = [];
+  let lastEvaluatedKey;
+
+  do {
+    const res = await ddb.send(new ScanCommand({
+      TableName: cfg.subscribersTable,
+      ProjectionExpression: 'emailHash, email, #status, #topics, #source, createdAt, updatedAt, confirmedAt, unsubscribedAt',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+        '#topics': 'topics',
+        '#source': 'source'
+      },
+      ExclusiveStartKey: lastEvaluatedKey
+    }));
+
+    const batch = Array.isArray(res?.Items) ? res.Items : [];
+    rows.push(...batch);
+    lastEvaluatedKey = res?.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+
+  const normalizedTopic = String(topic || '').trim().toLowerCase();
+  const normalizedStatus = String(status || '').trim().toUpperCase();
+
+  return rows
+    .map((item) => ({
+      emailHash: String(item?.emailHash || '').trim(),
+      email: normalizeEmail(item?.email),
+      status: String(item?.status || 'UNKNOWN').toUpperCase(),
+      topics: Array.isArray(item?.topics) ? item.topics.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean) : [],
+      source: String(item?.source || ''),
+      createdAt: item?.createdAt || null,
+      updatedAt: item?.updatedAt || null,
+      confirmedAt: item?.confirmedAt || null,
+      unsubscribedAt: item?.unsubscribedAt || null
+    }))
+    .filter((row) => !!row.emailHash && !!row.email)
+    .filter((row) => !normalizedStatus || row.status === normalizedStatus)
+    .filter((row) => !normalizedTopic || row.topics.includes(normalizedTopic))
+    .sort((a, b) => {
+      const aTs = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const bTs = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return bTs - aTs;
+    });
+}
+
+async function upsertSubscriberAdmin({ email, topics, status = 'SUBSCRIBED', source = 'authoring-admin' } = {}) {
+  const cfg = getConfig();
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    const err = new Error('Invalid email address');
+    err.status = 400;
+    throw err;
+  }
+
+  const normalizedStatus = String(status || 'SUBSCRIBED').trim().toUpperCase();
+  if (!['PENDING', 'SUBSCRIBED', 'UNSUBSCRIBED'].includes(normalizedStatus)) {
+    const err = new Error('Invalid subscriber status');
+    err.status = 400;
+    throw err;
+  }
+
+  const topicList = sanitizeTopics(topics, cfg.allowedTopics);
+  const emailHash = sha256Hex(normalized);
+  const nowIso = new Date().toISOString();
+  const ddb = getDdbDoc();
+
+  const expressionParts = [
+    '#email = :email',
+    '#status = :status',
+    '#topics = :topics',
+    '#source = :source',
+    '#updatedAt = :now',
+    '#createdAt = if_not_exists(#createdAt, :now)'
+  ];
+
+  if (normalizedStatus === 'SUBSCRIBED') {
+    expressionParts.push('#confirmedAt = if_not_exists(#confirmedAt, :now)');
+  }
+
+  if (normalizedStatus === 'UNSUBSCRIBED') {
+    expressionParts.push('#unsubscribedAt = :now');
+  }
+
+  await ddb.send(new UpdateCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash },
+    UpdateExpression: `SET ${expressionParts.join(', ')}`,
+    ExpressionAttributeNames: {
+      '#email': 'email',
+      '#status': 'status',
+      '#topics': 'topics',
+      '#source': 'source',
+      '#updatedAt': 'updatedAt',
+      '#createdAt': 'createdAt',
+      '#confirmedAt': 'confirmedAt',
+      '#unsubscribedAt': 'unsubscribedAt'
+    },
+    ExpressionAttributeValues: {
+      ':email': normalized,
+      ':status': normalizedStatus,
+      ':topics': topicList,
+      ':source': String(source || 'authoring-admin'),
+      ':now': nowIso
+    }
+  }));
+
+  return {
+    ok: true,
+    emailHash,
+    email: normalized,
+    status: normalizedStatus,
+    topics: topicList
+  };
+}
+
+async function deleteSubscriberAdmin({ emailHash, email } = {}) {
+  const normalizedHash = String(emailHash || '').trim() || sha256Hex(normalizeEmail(email));
+  if (!normalizedHash) {
+    const err = new Error('Missing emailHash or email');
+    err.status = 400;
+    throw err;
+  }
+
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const res = await ddb.send(new DeleteCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash: normalizedHash },
+    ReturnValues: 'ALL_OLD'
+  }));
+
+  if (!res?.Attributes) {
+    const err = new Error('Subscriber not found');
+    err.status = 404;
+    throw err;
+  }
+
+  return {
+    ok: true,
+    deleted: true,
+    emailHash: normalizedHash
+  };
+}

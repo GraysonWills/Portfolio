@@ -1,381 +1,452 @@
-# Portfolio Site - Full Stack Project
+# Portfolio Platform (Public Site + Authoring + API)
 
-A comprehensive portfolio website project consisting of an Angular frontend, Node.js/Express backend API, and a blog authoring GUI. The frontend is deployed to AWS S3 + CloudFront via GitHub Actions. The Redis API server is currently intended to run locally (production hosting TBD).
+Full-stack portfolio platform with:
+- Public Angular site (`portfolio-app`)
+- Authenticated Angular authoring console (`blog-authoring-gui`)
+- Node.js/Express API (`redis-api-server`)
+- AWS static hosting + API + notifications infrastructure
 
-## Project Structure
+## Production Endpoints
 
-This repository contains three main projects:
+| Surface | URL |
+|---|---|
+| Public portfolio | `https://www.grayson-wills.com` |
+| Apex redirect | `https://grayson-wills.com` -> `https://www.grayson-wills.com` |
+| Blog authoring dev | `https://d39s45clv1oor3.cloudfront.net` |
+| API base | `https://api.grayson-wills.com/api` |
 
-### 1. Portfolio App (`portfolio-app/`)
-The main Angular portfolio website featuring:
-- Multi-page architecture (Landing, Work, Projects, Blog)
-- **Full blog detail pages** — click any blog card to read the complete article
-- Rich blog content: Markdown paragraphs, inline images, image carousels, headings, block quotes
-- Recent posts section at the bottom of each blog article
-- PrimeNG UI components
-- Dynamic content loading from Redis
-- LinkedIn integration
-- Mailchimp newsletter subscription
-- Responsive design
+## Repository Layout
 
-**Tech Stack:**
-- Angular 19.x
-- PrimeNG 19.x
-- TypeScript
-- SCSS
-- `marked` (Markdown rendering)
+- `portfolio-app/` — Public website frontend (Angular 19 + PrimeNG)
+- `blog-authoring-gui/` — Authenticated authoring frontend (Angular 19 + Cognito)
+- `redis-api-server/` — API layer (Express + DynamoDB-first + AWS integrations)
+- `blog-author/` — Legacy local-only authoring app (Node/Express + vanilla UI)
+- `design/` — UX/UI and architecture documentation + mockups
+- `docs/comprehensive/` — end-to-end architecture/code documentation pack (Markdown + Word companions)
+- `platform-blueprint/` — Reusable architecture/process blueprint for future website projects
+- `scripts/` — smoke tests, review automation, sync utilities
+- `.github/workflows/` — CI/CD + security + review pipelines
 
-### 2. Redis API Server (`redis-api-server/`)
-Node.js/Express backend API for Redis Cloud integration:
-- RESTful API endpoints for content management
-- Redis Cloud database connection
-- Image upload handling
-- Admin operations via Redis Cloud REST API
-- Health check endpoints
+## Comprehensive Documentation Pack
 
-**Tech Stack:**
-- Node.js (LTS 18.x+)
-- Express.js
-- Redis (via `redis` package)
-- RedisJSON support
+The full architecture-to-code documentation set is in:
+- `/Users/grayson/Desktop/Portfolio/docs/comprehensive/README.md`
 
-### 3. Blog Author (`blog-author/`)
-Lightweight Node.js/Express + vanilla HTML/CSS/JS application for creating and managing blog posts:
-- **Card Info Editor** — title, category, status, tags, cover image, summary
-- **Article Body Editor** — block-based content editor with:
-  - Paragraphs (with Markdown formatting toolbar: bold, italic, code, links, lists)
-  - Headings (H2, H3, H4)
-  - Inline images with alt text and captions
-  - Image carousels with multiple slides
-  - Block quotes with optional author attribution
-- **Live Preview** — card preview + full article preview matching portfolio rendering
-- Direct publishing to Redis via the API server
-- Reorder, add, and delete content blocks
-- Runs locally at `http://localhost:4201` (not deployed)
+Word companions (generated from the Markdown sources):
+- `/Users/grayson/Desktop/Portfolio/docs/comprehensive/word/portfolio-platform-comprehensive-documentation.docx`
+- `/Users/grayson/Desktop/Portfolio/docs/comprehensive/word/portfolio-platform-visual-mockups.docx`
 
-**Tech Stack:**
-- Node.js + Express.js
-- Vanilla HTML/CSS/JS
-- `marked` (Markdown rendering in preview)
-- PrimeIcons
+## Architecture (Current)
 
-## Prerequisites
+```mermaid
+flowchart LR
+  U["Visitor"] --> CFW["CloudFront: Portfolio"]
+  A["Author"] --> CFA["CloudFront: Authoring"]
 
-- **Node.js** (LTS version 18.x or higher)
-- **npm** (10.x or higher)
-- **Angular CLI** (19.x or higher) - for Angular projects
-- **Redis Cloud** account and database
-- **Git** for version control
+  CFW --> FE["Angular Public Site"]
+  CFA --> BA["Angular Authoring GUI"]
 
-## Quick Start
+  FE --> API["API Gateway /api"]
+  BA --> API
 
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd Portfolio
+  API --> APP["Portfolio API Service"]
+  APP --> RC["DynamoDB content store"]
+  APP --> DDB["DynamoDB subscribers/tokens"]
+  APP --> DDBA["DynamoDB photo asset metadata"]
+  APP --> S3M["S3 media/photo binaries"]
+  APP --> SQS["SQS notification queue"]
+  SQS --> SES["SES notifications"]
+  APP --> SCH["EventBridge Scheduler"]
 ```
 
-### 2. Set Up Environment Variables
+## Implemented Capabilities
 
-**Redis API Server** (`redis-api-server/.env`):
+### Public Site (`portfolio-app`)
+
+- Multi-page experience: Landing, Work, Projects, Blog, Notifications
+- Blog list + full blog detail pages with rich body blocks
+- Metadata-first loading with progressive image/body hydration and route-scoped browser cache
+- SEO basics (`robots.txt`, `sitemap.xml`, meta tags)
+- Email subscription UX:
+  - Blog subscribe form
+  - First-visit subscribe popup
+  - Duplicate-aware messaging (`already subscribed`, `already pending`)
+  - Confirm/unsubscribe pages under `/notifications/*`
+- Cloud preview mode support using preview tokens (`previewToken` query param)
+- Route-level metadata and SEO service updates
+
+### Authoring GUI (`blog-authoring-gui`)
+
+- Cognito-authenticated access (`/login`, `/forgot-password`, guarded routes)
+- Dashboard + content studio for editing portfolio/blog content
+- Metadata-first dashboard/content loading with route-scoped cache + batched hydration
+- Keyboard shortcut system for global navigation + page-level actions
+- Collections studio for non-blog writing assets (`/collections`):
+  - category tab registry (create/archive/restore tabs)
+  - collection entry CRUD (lyrics, poems, quotes, transcripts, interviews, notes, custom)
+  - visibility control (`hidden` vs `public`) without exposing anything on the portfolio yet
+  - text-file import (`.txt`, `.md`, `.rtf`, `.csv`, `.json`, `.html`) into entry body
+- Blog editor with preview modes (title card + full post)
+- Notification controls integrated into publish workflow
+- Scheduled publish controls + immediate notify actions
+- Cloud preview generation against deployed public site using preview sessions
+
+### Authoring Hotkey Standard (For New Pages)
+
+When adding any new authoring page/route, include hotkeys by default:
+- Add/confirm a route context in `HotkeyContext` (`/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/hotkeys.service.ts`).
+- Map route to context in `resolveContextFromUrl` (`/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/app.component.ts`).
+- Register page-specific bindings in the page component via `hotkeys.register('<context>', [...])`.
+- Prefer the common pattern:
+  - `Cmd/Ctrl + Alt + R` refresh
+  - `Cmd/Ctrl + Alt + N` create new
+  - one page-specific focus/action combo (`E`, `K`, `P`, etc.)
+- Set `allowInInputs: true` only when the action is safe while typing.
+- Verify visibility in the in-app hotkeys dialog (`Cmd/Ctrl + Alt + /`).
+
+### API (`redis-api-server`)
+
+- Route groups:
+  - `/api/health`
+  - `/api/content`
+  - `/api/upload`
+  - `/api/photo-assets`
+  - `/api/admin`
+  - `/api/subscriptions`
+  - `/api/notifications`
+- Security middleware stack:
+  - `helmet`, CORS allowlist, rate limiting, body size limits
+  - write endpoint protection via Cognito JWT middleware
+- Content backends:
+  - DynamoDB primary (`CONTENT_BACKEND=dynamodb|ddb`)
+  - Redis compatibility mode (`CONTENT_BACKEND=redis`) for fallback/migration only
+- Preview session API:
+  - `POST /api/content/preview/session`
+  - `GET /api/content/preview/:token`
+- Streaming `v2` content APIs (additive, `v1` unchanged):
+  - `GET /api/content/v2/page/:pageId`
+  - `GET /api/content/v2/blog/cards`
+  - `GET /api/content/v2/blog/cards/media`
+  - `POST /api/content/v2/list-items/batch`
+  - token-based pagination with filter-hash validation
+  - frontend fallback to legacy `v1` reads if any `v2` call fails
+  - feed telemetry events: `cards_rendered_initial`, `cards_images_hydrated`, `cards_next_page_loaded`
+- Full API details:
+  - `/Users/grayson/Desktop/Portfolio/docs/content-v2-streaming.md`
+- Subscription lifecycle:
+  - request/confirm/unsubscribe/preferences
+  - duplicate prevention (`ALREADY_SUBSCRIBED`, `ALREADY_PENDING`)
+- Notification pipeline:
+  - send now (queue-backed when enabled)
+  - schedule publish/send
+  - SQS consumer for async SES delivery
+  - worker callback endpoint for scheduled jobs
+
+## Data Model
+
+### Core Content Record
+
+| Field | Type | Notes |
+|---|---|---|
+| `ID` | string | stable unique record id |
+| `Text` | string? | text payload |
+| `Photo` | string? | image/media URL |
+| `ListItemID` | string? | groups related records |
+| `PageID` | number | page bucket |
+| `PageContentID` | number | semantic content role |
+| `Metadata` | object? | status/tags/order/etc |
+| `CreatedAt` | ISO date? | optional |
+| `UpdatedAt` | ISO date? | optional |
+
+### `PageContentID` Values
+
+| ID | Name |
+|---|---|
+| 0 | HeaderText |
+| 1 | HeaderIcon |
+| 2 | FooterIcon |
+| 3 | BlogItem |
+| 4 | BlogText |
+| 5 | BlogImage |
+| 6 | LandingPhoto |
+| 7 | LandingText |
+| 8 | WorkText |
+| 9 | ProjectsCategoryPhoto |
+| 10 | ProjectsCategoryText |
+| 11 | ProjectsPhoto |
+| 12 | ProjectsText |
+| 13 | BlogBody |
+| 14 | WorkSkillMetric |
+| 15 | BlogSignatureSettings |
+| 16 | CollectionsCategoryRegistry |
+| 17 | CollectionsEntry |
+
+### Collections Authoring Records (Authoring-Only)
+
+Collections content is stored in the same `portfolio-content` table and API:
+- `PageID=4`, `PageContentID=16`: single category-registry record (`Metadata.registry.categories[]`)
+- `PageID=4`, `PageContentID=17`: one record per entry (body in `Text`, structured metadata in `Metadata`)
+
+`CollectionsEntry` metadata includes:
+- `title`, `summary`, `entryType`, `categoryId`
+- `tags[]`
+- `isPublic` + `visibility` (`public`/`hidden`)
+- timestamps (`createdAt`, `updatedAt`, optional `publishedAt`)
+
+This keeps the portfolio frontend unchanged while allowing authoring-side staging and visibility control.
+
+### Blog Post Grouping
+
+A blog post is represented by multiple records sharing one `ListItemID`:
+- Blog metadata (`BlogItem`)
+- Fallback/plain text (`BlogText`)
+- Cover image (`BlogImage`)
+- Rich body block JSON (`BlogBody`)
+
+### Email Subscriber State
+
+DynamoDB tables:
+- `portfolio-email-subscribers` (status + topics + consent metadata)
+- `portfolio-email-tokens` (hashed action tokens with TTL)
+
+### Photo Asset State
+
+Photo binaries + metadata:
+- S3 bucket/prefix stores original files (`photo-assets/...`)
+- DynamoDB table `portfolio-photo-assets` stores metadata + lifecycle state (`pending` -> `ready` -> `deleted`)
+- Authoring flow:
+  1. `POST /api/photo-assets/upload-url`
+  2. Upload file directly to signed S3 URL
+  3. `POST /api/photo-assets/:assetId/complete`
+
+## Local Development
+
+### Prerequisites
+
+- Node.js **22 LTS** recommended
+- npm 10+
+- Angular CLI 19+
+- DynamoDB (content + preview sessions tables)
+- Optional Redis only for legacy compatibility mode
+
+### Install
+
+```bash
+cd /Users/grayson/Desktop/Portfolio
+
+cd redis-api-server && npm ci && cd ..
+cd portfolio-app && npm ci && cd ..
+cd blog-authoring-gui && npm ci && cd ..
+# optional legacy tool
+cd blog-author && npm ci && cd ..
+```
+
+### API Environment (`redis-api-server/.env`)
+
+Minimum local setup:
+
 ```env
-REDIS_HOST=redis-15545.c14.us-east-1-2.ec2.cloud.redislabs.com
-REDIS_PORT=15545
-REDIS_PASSWORD=your-redis-cloud-password
-REDIS_TLS=true
-REDIS_DB=0
 PORT=3000
-ALLOWED_ORIGINS=http://localhost:4200,http://localhost:4201,http://localhost:4300,http://localhost:4301,http://localhost:3000
+NODE_ENV=development
+
+ALLOWED_ORIGINS=http://localhost:4200,http://localhost:4300,http://localhost:4301,http://localhost:3000
 CACHE_TTL_MS=60000
 CACHE_MAX_ENTRIES=500
+
+COGNITO_REGION=us-east-2
+COGNITO_USER_POOL_ID=<pool-id>
+COGNITO_CLIENT_ID=<client-id>
+# local-only shortcut if needed
+# DISABLE_AUTH=true
+
+S3_UPLOAD_BUCKET=<optional-media-bucket>
+S3_UPLOAD_REGION=us-east-2
+S3_UPLOAD_PREFIX=uploads/
+PHOTO_ASSETS_BUCKET=<optional-media-bucket>
+PHOTO_ASSETS_REGION=us-east-2
+PHOTO_ASSETS_PREFIX=photo-assets/
+PHOTO_ASSETS_TABLE_NAME=portfolio-photo-assets
+PHOTO_ASSETS_PRESIGN_EXPIRES_SECONDS=900
+PHOTO_ASSETS_MAX_FILE_BYTES=15728640
+
+PUBLIC_SITE_URL=http://localhost:4200
+SES_FROM_EMAIL=<optional-sender>
+SUBSCRIBERS_TABLE_NAME=portfolio-email-subscribers
+TOKENS_TABLE_NAME=portfolio-email-tokens
+SUBSCRIBE_ALLOWED_TOPICS=blog_posts,major_updates
+NOTIFICATION_QUEUE_ENABLED=true
+NOTIFICATION_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/<account-id>/portfolio-email-notifications
+
+CONTENT_BACKEND=dynamodb
+CONTENT_TABLE_NAME=portfolio-content
+PREVIEW_SESSIONS_TABLE_NAME=portfolio-content-preview-sessions
+
+# Optional Redis compatibility mode
+# REDIS_HOST=<host>
+# REDIS_PORT=<port>
+# REDIS_PASSWORD=<password>
+# REDIS_TLS=true
+# REDIS_DB=0
 ```
 
-**Blog Author** (`blog-author/.env`):
-```env
-PORT=4201
-REDIS_API_URL=http://localhost:3000
+### Frontend Feature Flags (`portfolio-app` + `blog-authoring-gui`)
+
+```ts
+useContentV2Stream: true
+useBlogV2Cards: true
 ```
 
-### 3. Install Dependencies
+- `true`: use metadata-first `v2` reads + progressive hydration.
+- `false`: fallback to existing `v1` content reads.
+
+### Run Locally
 
 ```bash
-# Redis API Server
-cd redis-api-server && npm install && cd ..
-
-# Portfolio App
-cd portfolio-app && npm install && cd ..
-
-# Blog Author
-cd blog-author && npm install && cd ..
-```
-
-### 4. Seed the Database (first time only)
-
-```bash
-cd redis-api-server
-node src/seed.js
-```
-
-### 5. Start Development Servers
-
-**Redis API Server** (must be running first):
-```bash
+# API
 cd redis-api-server && npm start
-# → http://localhost:3000
-```
 
-**Portfolio App**:
-```bash
-cd portfolio-app && npm start
-# → http://localhost:4200
-```
-
-To run on the currently used local port:
-```bash
+# Public site
 cd portfolio-app && npm start -- --port 4300
-# → http://localhost:4300
-```
 
-**Blog Authoring GUI** (Angular editor):
-```bash
-cd blog-authoring-gui && npm install && npm start -- --port 4301
-# → http://localhost:4301
-```
+# Authoring GUI
+cd blog-authoring-gui && npm start -- --port 4301
 
-**Blog Author** (optional, local only):
-```bash
+# Optional legacy author app
 cd blog-author && npm start
-# → http://localhost:4201
 ```
 
-## AWS Deployment (Frontend)
+## AWS Deployment + CI/CD
 
-The portfolio frontend (`portfolio-app/`) is hosted as a static site:
+### Workflows
 
-- **S3 bucket:** `www.grayson-wills.com` (region: `us-east-2`)
-- **CloudFront distribution:** `E28CZKZOGGZGVK` (alias: `www.grayson-wills.com`)
-- **Route53:** `www.grayson-wills.com` CNAME -> CloudFront
+| Workflow | Purpose |
+|---|---|
+| `.github/workflows/ci-cd.yml` | Build/test/deploy portfolio + authoring static apps and run smoke tests |
+| `.github/workflows/api-deploy.yml` | Deploy Lambda-based API (`portfolio-redis-api`) |
+| `.github/workflows/ecs-deploy.yml` | Deploy ECS Fargate API variant |
+| `.github/workflows/security.yml` | Gitleaks, CodeQL, npm audit |
+| `.github/workflows/senior-review.yml` | Automated senior engineer review report + PR comment |
 
-### CI/CD (GitHub Actions)
+### Static Hosting Targets
 
-Workflow: `.github/workflows/ci-cd.yml`
+- Portfolio bucket: `www.grayson-wills.com`
+- Portfolio CloudFront: `E28CZKZOGGZGVK`
+- Authoring bucket: `grayson-wills-blog-authoring-dev-381492289909`
+- Authoring CloudFront: `E31OPQLJ4WFI66`
 
-On push to `main` or `master`, the workflow:
+### Deploy Auth Model
 
-1. Builds the Angular production bundle
-2. Syncs `portfolio-app/dist/portfolio-app/browser` to `s3://www.grayson-wills.com/`
-3. Uploads `index.html` with `no-cache` headers (to avoid stale SPA shells)
-4. Invalidates CloudFront (`/*`)
+Deployments use GitHub OIDC roles (no long-lived AWS access keys committed to repo).
 
-### AWS Auth (No Long-Lived Keys)
+### Production Smoke Test
 
-Deployment uses **GitHub OIDC** (no `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets):
-
-- IAM OIDC Provider: `token.actions.githubusercontent.com`
-- IAM Role: `arn:aws:iam::381492289909:role/GitHubActionsPortfolioDeploy`
-
-If you ever need to recreate the role/provider, use the AWS CLI from a session with admin permissions and lock the role trust policy to your repo + branches.
-
-### Production Redis API Note
-
-The deployed frontend expects a live Redis API endpoint (see `portfolio-app/src/environments/environment.prod.ts`). Before shipping a build to `www.grayson-wills.com`, make sure the production `redisApiUrl` points to a real API host and that CORS/origin settings allow `https://www.grayson-wills.com`.
-
-## AWS Deployment (Redis API)
-
-The Redis API server (`redis-api-server/`) is deployed as:
-
-- **AWS Lambda:** `portfolio-redis-api` (region: `us-east-2`)
-- **API Gateway (HTTP API):** `https://api.grayson-wills.com`
-- **Base path:** `/api` (example: `https://api.grayson-wills.com/api/health`)
-
-Write endpoints (POST/PUT/DELETE + uploads) are protected by Cognito JWT auth; read endpoints remain public for the portfolio.
-
-Workflow: `.github/workflows/api-deploy.yml`
-
-## AWS Deployment (Blog Authoring Dev)
-
-The blog authoring GUI (`blog-authoring-gui/`) is deployed as a static site:
-
-- **S3 bucket:** `grayson-wills-blog-authoring-dev-381492289909` (region: `us-east-2`)
-- **CloudFront distribution:** `E31OPQLJ4WFI66`
-- **CloudFront URL:** `https://d39s45clv1oor3.cloudfront.net`
-
-Authentication is backed by **Amazon Cognito User Pool** `us-east-2_dzSpoyFyI` (password resets email a verification code to the user’s verified email).
-
-## Images (S3)
-
-Uploaded images are stored in:
-
-- **S3 bucket:** `grayson-wills-media-381492289909` (public read for `uploads/*`)
-- Upload endpoint: `POST https://api.grayson-wills.com/api/upload/image` (requires auth)
-
-## Redis Data Schema
-
-The application uses Redis with the following schema:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| ID | string | Redis-generated row identifier |
-| Text | string | Main textual content (optional) |
-| Photo | string | Associated image URL/Base64 (optional) |
-| ListItemID | string | Grouping for text/photo as list element |
-| PageID | number | Page section (0: Landing, 1: Work, 2: Projects, 3: Blog) |
-| PageContentID | number | Semantic role within page |
-| Metadata | object | Additional metadata (tags, status, etc.) |
-| CreatedAt | string | ISO timestamp |
-| UpdatedAt | string | ISO timestamp |
-
-### PageContentID Values
-
-| ID | Name | Description |
-|----|------|-------------|
-| 0 | HeaderText | Site header text |
-| 1 | HeaderIcon | Site header icon/avatar |
-| 2 | FooterIcon | Footer social icons |
-| 3 | BlogItem | Blog post metadata (title, summary, tags, etc.) |
-| 4 | BlogText | Blog post plain text (legacy/fallback) |
-| 5 | BlogImage | Blog post cover image |
-| 6 | LandingPhoto | Landing page carousel photos |
-| 7 | LandingText | Landing page text content |
-| 8 | WorkText | Work experience entries |
-| 9 | ProjectsCategoryPhoto | Project category cover photos |
-| 10 | ProjectsCategoryText | Project category names |
-| 11 | ProjectsPhoto | Individual project photos |
-| 12 | ProjectsText | Individual project details |
-| **13** | **BlogBody** | **Blog post rich body content (JSON array of blocks)** |
-| **14** | **WorkSkillMetric** | **Career/skill metric bars shown in Work page progress cards** |
-
-### Redis ID Conventions
-
-- Redis key format: `content:{ID}`
-- `ID` should be stable and unique (examples: `work-exp-001`, `work-metric-architecture`, `blog-text-1739472`)
-- `ListItemID` groups related rows that belong to one logical item:
-  - Example: all rows for one blog post share a single `ListItemID`
-  - Example: each career metric uses `career-metric-{n}` as `ListItemID`
-- `Metadata.order` is used for deterministic display order in timelines/metric lists.
-
-### Work Skill Metric Record Format
-
-`PageID = 1`, `PageContentID = 14`
-
-```json
-{
-  "ID": "work-metric-architecture",
-  "Text": "{\"label\":\"AI Systems Architecture\",\"value\":86,\"level\":\"Advanced\",\"summary\":\"Production design and platform integration across analytics + AI workflows\"}",
-  "ListItemID": "career-metric-1",
-  "PageID": 1,
-  "PageContentID": 14,
-  "Metadata": { "type": "career-metric", "order": 1 }
-}
+```bash
+cd /Users/grayson/Desktop/Portfolio
+bash scripts/smoke_prod.sh
 ```
 
-### Blog Post Structure
+Checks include:
+- static site and SPA fallback
+- SEO files
+- apex redirect
+- API health and auth boundaries
+- CORS behavior
+- direct S3 access protection
 
-Each blog post consists of 4 Redis records sharing the same `ListItemID`:
+## Security Posture
 
-1. **BlogItem** (PageContentID: 3) — Title text + `Metadata` with title, summary, tags, publishDate, status, category
-2. **BlogText** (PageContentID: 4) — Plain text fallback content
-3. **BlogImage** (PageContentID: 5) — Cover image URL + alt text in Metadata
-4. **BlogBody** (PageContentID: 13) — JSON array of content blocks stored in `Text` field
+- Public read, protected write endpoint model
+- Cognito JWT validation for mutation routes
+- API rate limiting (global + stricter write limiter)
+- Body size limits and cache invalidation on writes
+- Security scanning in CI (secret scan, SAST, dependency audit)
+- Async notification queueing to absorb bursts and reduce direct API-to-SES coupling
 
-### Blog Body Block Types
+## Design + Blueprint Documentation
 
-The `BlogBody` `Text` field contains a JSON array of blocks:
+- UX overhaul docs: `/Users/grayson/Desktop/Portfolio/design/ux-overhaul`
+- Email notifications docs: `/Users/grayson/Desktop/Portfolio/design/email-notifications`
+- Figma handoff spec (queue-aware): `/Users/grayson/Desktop/Portfolio/design/email-notifications/figma-handoff.md`
+- Queue-aware subscription mockup: `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/portfolio-subscription-update.html`
+- Queue-aware authoring mockup: `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/blog-authoring-notifications-update.html`
+- MCP research docs: `/Users/grayson/Desktop/Portfolio/design/mcp-integration`
+- Bedrock research: `/Users/grayson/Desktop/Portfolio/design/bedrock`
+- Reusable architecture blueprint: `/Users/grayson/Desktop/Portfolio/platform-blueprint`
 
-```json
-[
-  { "type": "paragraph", "content": "Markdown text with **bold**, *italic*, `code`..." },
-  { "type": "heading", "content": "Section Title", "level": 2 },
-  { "type": "image", "url": "https://...", "alt": "Description", "caption": "Optional" },
-  { "type": "carousel", "images": [{ "url": "...", "alt": "..." }], "caption": "Optional" },
-  { "type": "quote", "content": "Quote text...", "author": "Optional Author" }
-]
+### Queue Mockup Previews
+
+![Portfolio queue subscription mockup](design/email-notifications/mockups/portfolio-subscription-update.png)
+![Blog authoring queue dashboard mockup](design/email-notifications/mockups/blog-authoring-notifications-update.png)
+
+## Queue Rollout Notes
+
+- Implemented: blog publish notifications enqueue to SQS, then Lambda consumes and sends via SES.
+- AWS queue resources (us-east-2):
+  - Main: `portfolio-email-notifications`
+  - DLQ: `portfolio-email-notifications-dlq`
+  - Lambda event source mapping: `4dc22ada-a904-45bb-a863-57851beb2203`
+- Deferred: signup confirmation emails currently send directly from `/api/subscriptions/request`.
+- Planned follow-up: move signup confirmations to the same queue path for unified retries/observability.
+
+## Manual Production Deploy (Local Operator)
+
+```bash
+cd /Users/grayson/Desktop/Portfolio/portfolio-app
+npm run build
+
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws s3 sync dist/portfolio-app/browser/ s3://www.grayson-wills.com/ \
+  --exclude "index.html" \
+  --cache-control "public,max-age=31536000,immutable"
+
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws s3 cp dist/portfolio-app/browser/index.html s3://www.grayson-wills.com/index.html \
+  --cache-control "no-cache" --content-type "text/html"
+
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws cloudfront create-invalidation --distribution-id E28CZKZOGGZGVK \
+  --paths "/index.html" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*"
 ```
 
-## Blog System Architecture
+### One-Time CloudFront SPA Rewrite Hardening
 
+Run this once to stop CloudFront from serving `index.html` for missing `.js/.css/.png` files:
+
+```bash
+cd /Users/grayson/Desktop/Portfolio
+AWS_PROFILE=grayson-sso ./scripts/configure_cloudfront_spa_rewrite.sh \
+  --distribution-id E28CZKZOGGZGVK \
+  --distribution-id E31OPQLJ4WFI66
 ```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  Blog Author     │     │  Redis API       │     │  Portfolio App   │
-│  (localhost:4201) │────▶│  (localhost:3000) │◀────│  (localhost:4200)│
-│  Create/Edit     │     │  CRUD + Storage   │     │  Display/Read    │
-└──────────────────┘     └──────────────────┘     └──────────────────┘
-        │                        │                        │
-        │  POST/PUT/DELETE       │  JSON over Redis       │  GET content
-        │  /api/posts            │  RedisJSON             │  /api/content
-        └────────────────────────┘────────────────────────┘
-```
-
-**Authoring Flow:**
-1. Write post in Blog Author (card info + article body blocks)
-2. Click "Publish to Redis" → saves 4 records via API
-3. Portfolio app fetches and renders the post
-4. Clicking a blog card navigates to `/blog/:listItemId` for full article view
-
-## CI/CD
-
-### GitHub Actions
-
-GitHub Actions workflows are configured for automated CI/CD:
-- Automated testing
-- Production builds
-- Deployment to EC2
-
-**Required GitHub Secrets:**
-- `REDIS_API_URL`
-- `MAILCHIMP_API_KEY`
-- `MAILCHIMP_LIST_ID`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `EC2_HOST`
-- `EC2_USER`
-- `EC2_SSH_KEY`
-
-## Security Notes
-
-> **Important:** This repository uses `.gitignore` to exclude sensitive files:
-> - `.env` files
-> - Credentials and keys
-> - Configuration files with secrets
-> - Build artifacts
-
-Never commit sensitive information to the repository. Use environment variables and GitHub Secrets for production deployments.
-
-## Development Workflow
-
-1. **Start Redis API Server** — Must be running before portfolio app
-2. **Start Portfolio App** — Main frontend application
-3. **Use Blog Author** — For creating/managing blog posts (local only)
-4. **Test Locally** — All services should be accessible on localhost
-5. **Commit Changes** — Use conventional commit messages
-6. **Push to GitHub** — CI/CD will handle deployment
 
 ## Troubleshooting
 
-### Redis Connection Issues
-- Verify Redis Cloud endpoint and password
-- Check that TLS is enabled (`REDIS_TLS=true`)
-- Ensure Redis API server is running
-- Check network connectivity
+### API not reachable from frontend
+- Verify `redisApiUrl` in environment files
+- Verify CORS `ALLOWED_ORIGINS`
+- Check `https://api.grayson-wills.com/api/health`
 
-### Build Errors
-- Clear `node_modules` and reinstall: `rm -rf node_modules package-lock.json && npm install`
-- Clear Angular cache: `ng cache clean`
-- Check Node.js version compatibility
+### Authoring login issues
+- Verify Cognito region/pool/client values in `blog-authoring-gui/src/environments/*`
+- Confirm user exists and is confirmed in Cognito
 
-### Port Conflicts
-- Redis API Server: Change `PORT` in `redis-api-server/.env`
-- Portfolio App: Use `ng serve --port <port>`
-- Blog Author: Change `PORT` in `blog-author/.env`
+### Build issues
+- Reinstall clean:
 
-## Support
+```bash
+rm -rf node_modules package-lock.json
+npm install
+```
 
-For issues and questions:
-- Email: calvarygman@gmail.com
-- LinkedIn: www.linkedin.com/in/grayson-wills
-- Website: www.grayson-wills.com
+### Quill import error in authoring GUI
+- Ensure dependencies are installed in `blog-authoring-gui` (`npm ci` includes `quill`)
+
+## Contact
+
+- Email: `calvarygman@gmail.com`
+- LinkedIn: `www.linkedin.com/in/grayson-wills`
+- Website: `www.grayson-wills.com`
 
 ## License
 
-Copyright © 2025 Grayson Wills. All rights reserved.
+Copyright © 2026 Grayson Wills. All rights reserved.

@@ -1,15 +1,13 @@
 # Email Notifications Research + Design Package
 
-This package covers how to add AWS-native email notifications for new blog posts and scheduled publishes, plus the UI updates needed in both apps before production rollout.
+This package covers AWS-native email notifications for new blog posts and scheduled publishes, plus the UI updates needed in both apps.
 
 ## Why This Package Exists
 
-Current code has scheduling controls in the UI, but publish behavior is still forced to immediate publish:
-
-- `blog-authoring-gui/src/app/components/blog-editor/blog-editor.component.ts` collects `status` and `publishDate`.
-- `blog-authoring-gui/src/app/services/blog-api.service.ts` currently writes `status: 'published'` and `publishDate: new Date()` on create/update.
-
-That means scheduling is visible in the UI but not fully enforced in the backend pipeline yet.
+Current status:
+- Scheduled publish metadata and worker callbacks are live.
+- Blog publish notifications now enqueue to SQS and send asynchronously via a Lambda queue consumer.
+- Signup confirmation email is still direct-send (not queued yet).
 
 ## Artifacts
 
@@ -21,14 +19,22 @@ That means scheduling is visible in the UI but not fully enforced in the backend
    - `design/email-notifications/mockups/portfolio-subscription-update.html`
    - `design/email-notifications/mockups/blog-authoring-notifications-update.html`
    - `design/email-notifications/mockups/shared.css`
+   - `design/email-notifications/mockups/portfolio-subscription-update.png`
+   - `design/email-notifications/mockups/blog-authoring-notifications-update.png`
 4. Figma reconstruction spec:
    - `design/email-notifications/figma-handoff.md`
 5. Approval gate:
    - `design/email-notifications/approval-checklist.md`
 
+## Deferred Follow-up
+
+1. Move `POST /api/subscriptions/request` confirmation emails to SQS queueing.
+2. Add queue depth + age alarms specifically for confirmation-email workloads.
+3. Add dashboard split for `publish notifications` vs `signup confirmations`.
+
 ## Scope Guardrails
 
 1. Keep existing routes and content model intact.
-2. Keep Redis as source of portfolio/blog content.
+2. Keep DynamoDB as source of portfolio/blog content (Redis compatibility mode remains optional only).
 3. Add subscriber/notification data in AWS-managed services (not in frontend code).
 4. Ship only after explicit design and architecture approval.

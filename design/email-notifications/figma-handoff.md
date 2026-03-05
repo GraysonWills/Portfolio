@@ -5,6 +5,8 @@
 - `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/portfolio-subscription-update.html`
 - `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/blog-authoring-notifications-update.html`
 - `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/shared.css`
+- `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/portfolio-subscription-update.png`
+- `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/blog-authoring-notifications-update.png`
 
 ## Required Frames
 
@@ -27,7 +29,8 @@ Mobile:
 4. Unsubscribe confirmation banner
 5. Notification toggle row
 6. Schedule queue row with status badge
-7. Delivery metrics card (sent, bounced, complained)
+7. Delivery queue health card (queued, processing, failed/DLQ)
+8. Delivery metrics card (sent, bounced, complained)
 
 ## Token Mapping
 
@@ -51,3 +54,8 @@ Use and extend the existing Kinetic Atlas tokens:
 2. Add notification controls without removing existing save/publish controls.
 3. Keep status values aligned with current metadata (`draft|scheduled|published`).
 4. Preserve accessibility: focus states, contrast, keyboard navigation.
+5. Show queue-backed delivery in authoring/dashboard copy:
+   - `Queued for send`
+   - `Processing`
+   - `Retrying (DLQ threshold warning)`
+6. Add a small roadmap note in the design for deferred signup-confirmation queueing.

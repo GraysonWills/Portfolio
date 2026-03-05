@@ -9,10 +9,16 @@ const router = express.Router();
 
 const requireAuth = require('../middleware/requireAuth');
 const {
+  listSubscribersAdmin,
+  upsertSubscriberAdmin,
+  deleteSubscriberAdmin
+} = require('../services/subscriptions');
+const {
   sendBlogPostNotification,
   schedulePublish,
   cancelSchedule,
-  publishBlogPostNow
+  publishBlogPostNow,
+  listSubscribedRecipients
 } = require('../services/notifications');
 
 function requireSchedulerSecret(req, res, next) {
@@ -43,6 +49,65 @@ router.post('/worker/publish', requireSchedulerSecret, async (req, res) => {
 
 // Admin endpoints require Cognito auth.
 router.use((req, res, next) => requireAuth(req, res, next));
+
+router.get('/subscribers', async (req, res) => {
+  try {
+    const topic = String(req.query?.topic || '').trim().toLowerCase();
+    const includeUnsubscribed = String(req.query?.includeUnsubscribed || '').trim().toLowerCase() === 'true';
+
+    const statusFilter = includeUnsubscribed ? '' : 'SUBSCRIBED';
+    let rows = await listSubscribersAdmin({ topic, status: statusFilter });
+
+    // Backward-compatible fallback path for older records.
+    if (!rows.length && topic) {
+      const subscribers = await listSubscribedRecipients({ topic });
+      rows = (subscribers || []).map((s) => ({
+        email: String(s?.email || '').toLowerCase(),
+        emailHash: String(s?.emailHash || ''),
+        status: String(s?.status || 'SUBSCRIBED').toUpperCase(),
+        topics: Array.isArray(s?.topics) ? s.topics : [topic],
+        source: 'legacy-notifications',
+        createdAt: null,
+        updatedAt: null,
+        confirmedAt: null,
+        unsubscribedAt: null
+      })).filter((s) => !!s.email && !!s.emailHash);
+    }
+
+    res.json({
+      topic: topic || null,
+      count: rows.length,
+      subscribers: rows
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/subscribers', async (req, res) => {
+  try {
+    const { email, topics, status } = req.body || {};
+    const result = await upsertSubscriberAdmin({
+      email,
+      topics,
+      status: status || 'SUBSCRIBED',
+      source: 'blog-authoring-admin'
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.delete('/subscribers/:emailHash', async (req, res) => {
+  try {
+    const emailHash = String(req.params?.emailHash || '').trim();
+    const result = await deleteSubscriberAdmin({ emailHash });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
 
 router.post('/send-now', async (req, res) => {
   try {

@@ -1,136 +1,119 @@
-# Blog Authoring GUI
+# Blog Authoring GUI (`blog-authoring-gui`)
 
-A secure, standalone Angular application for creating and managing blog posts that publish directly to the Redis-backed portfolio site.
+Authenticated Angular authoring console for portfolio/blog/site content.
 
-## Features
+## Current Feature Set
 
-- **Secure Login** — Username/password authentication with local credential storage and session management (24-hour expiry).
-- **WYSIWYG Editor** — Rich text editing via PrimeNG's Quill-based editor with full formatting support.
-- **Image Handling** — Drag-and-drop image uploader with automatic client-side compression, resize (max 1200×800), and preview before upload.
-- **Post Metadata** — Title, summary, tags, publish date, status (draft / scheduled / published), and category assignment.
-- **ListItemID Pairing** — Text and image content are automatically paired via matching `ListItemID`, consistent with the portfolio's Redis schema.
-- **Redis Connectivity** — Configurable API endpoint, connection testing with visual status indicator, and robust error feedback.
-- **Confirmation Dialogs** — PrimeNG `ConfirmDialog` for publish, edit, delete, and discard-changes actions.
-- **Transaction Log** — All create, update, delete, and config-change operations are logged and persisted in the browser for audit review.
-- **CloudFront Full-Site Preview** — Generate draft preview sessions and open the deployed portfolio routes (`/`, `/work`, `/projects`, `/blog`, `/blog/:id`) without publishing.
+- Cognito auth routes:
+  - `/login`
+  - `/register`
+  - `/forgot-password`
+- Guarded admin routes:
+  - `/dashboard`
+  - `/content`
+  - `/subscribers`
+  - `/collections`
+- Blog lifecycle:
+  - create/edit/delete
+  - draft/scheduled/published states
+  - send-now + scheduled email integration.
+- Full-site preview session flow against deployed portfolio routes.
+- Content Studio for direct `PageID`/`PageContentID` editing.
+- Subscriber admin management (list/add/remove).
+- Collections authoring (`PageID=4`) for non-blog written content types.
+- Photo asset upload flow (signed URL + complete lifecycle).
+- Route-scoped `v2` reading with browser caching and fallback to legacy reads.
+- Keyboard shortcuts with global + page-scoped contexts.
 
-## Prerequisites
+## Auth and Session Behavior
 
-- Node.js 18+ and npm
-- Angular CLI 19.x (`npm install -g @angular/cli`)
-- A running instance of the **redis-api-server** (see `../redis-api-server/`)
+Implemented in `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/auth.service.ts`:
 
-## Setup
+- Cognito user-pool authentication.
+- Stored session persistence on device (ID/access/refresh token payload).
+- Auto-refresh when token approaches expiry.
+- Login throttle:
+  - max 5 failed attempts
+  - rolling 5-minute window
+  - lockout resets automatically after window expiry.
 
-1. **Install dependencies:**
+## API Dependencies
 
-   ```bash
-   cd blog-authoring-gui
-   npm install
-   ```
+Configured in `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/environments/environment*.ts`.
 
-2. **Configure the API endpoint:**
-
-   Edit `src/environments/environment.ts` and set `redisApiUrl` to your Redis API server address:
-
-   ```ts
-   export const environment = {
-     production: false,
-     redisApiUrl: 'http://localhost:3000/api'
-   };
-   ```
-
-   You can also change this at runtime via the **Settings** gear icon on the dashboard.
-
-3. **Start the dev server:**
-
-   ```bash
-   ng serve --port 4201
-   ```
-
-   Navigate to `http://localhost:4201/`.
-
-## Authentication
-
-On first launch, you'll see a login screen. The **first credentials you enter** become your stored credentials (there is no server-side auth — this is a local authoring tool). Subsequent logins must match those credentials.
-
-To reset credentials: clear `blog_authoring_credentials` from your browser's localStorage.
-
-Sessions expire after 24 hours.
-
-## Creating a Blog Post
-
-1. Click **Create New Post** on the dashboard.
-2. Fill in the required fields: Title, Summary, and Content (rich text).
-3. Optionally add a featured image (drag-and-drop or click to select). Images are automatically compressed and resized before upload.
-4. Add tags by typing and pressing Enter.
-5. Set the publish date, status, and category.
-6. Click **Save Post** and confirm in the dialog.
-
-The post is written to Redis as paired content entries (text + optional image) under `PageID: 3` (Blog), linked by a shared `ListItemID`.
-
-## Editing & Deleting Posts
-
-- Click **Edit** on any post card to re-open it in the editor.
-- Click **Delete** to permanently remove a post (confirmation required).
-- If you have unsaved changes and click Cancel, you'll be prompted to discard or keep editing.
-
-## Cloud Preview Workflow
-
-- In **Blog Editor**, use `Preview on Site (Card)` or `Preview on Site (Full)` to open CloudFront preview routes with unsaved draft data.
-- In **Dashboard**, each post includes `Site Card` and `Site Full` preview actions.
-- In **Content Studio**, click `Preview in Site` (or `Preview Draft in Site` inside the editor dialog) to preview non-blog page changes on deployed routes.
-- Preview links use short-lived tokenized sessions from the API and do not publish content.
-
-## Redis Connection Settings
-
-Click the **gear icon** in the dashboard header to open the settings panel. Enter your Redis API endpoint URL and click **Save & Test**. The connection badge in the header shows real-time status:
-
-- Green: Connected
-- Red: Disconnected
-- Yellow: Testing...
-
-## Transaction Log
-
-Click the **list icon** in the dashboard header to view the transaction log. All write operations (create, update, delete) and configuration changes are recorded with timestamps. The log persists in localStorage (max 200 entries).
-
-## Troubleshooting
-
-| Issue | Solution |
-|---|---|
-| **"Could not verify Redis connection"** | Ensure `redis-api-server` is running and the endpoint URL is correct. Check for CORS issues. |
-| **Login credentials forgotten** | Clear `blog_authoring_credentials` from localStorage in browser DevTools. |
-| **Image upload fails** | The server may not have an `/upload/image` endpoint; the app falls back to base64 encoding. Check file size (max 10MB raw). |
-| **Editor content not saving** | Verify the Redis API server is accepting POST requests at `/content/batch`. Check browser console for errors. |
-| **Session expired** | Re-login. Sessions last 24 hours. Clear `blog_authoring_session` from localStorage if issues persist. |
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── components/
-│   │   ├── blog-editor/      # WYSIWYG post editor with metadata fields
-│   │   ├── image-uploader/   # Drag-and-drop image upload with compression
-│   │   └── login/            # Authentication login form
-│   ├── models/
-│   │   └── redis-content.model.ts  # TypeScript interfaces (PageID, PageContentID, etc.)
-│   ├── pages/
-│   │   └── dashboard/        # Main dashboard with post list, settings, log
-│   └── services/
-│       ├── auth.service.ts          # Local credential/session management
-│       ├── blog-api.service.ts      # Redis API HTTP client
-│       └── transaction-log.service.ts  # Operation audit logging
-├── environments/
-│   ├── environment.ts         # Dev config (redisApiUrl)
-│   └── environment.prod.ts    # Production config
-└── styles.scss                # Global styles
+```ts
+redisApiUrl: 'https://api.grayson-wills.com/api' // prod
+useContentV2Stream: true
+useBlogV2Cards: true
+portfolioPreviewUrl: 'https://www.grayson-wills.com'
 ```
 
-## Building for Production
+Main consumed APIs:
+- `/api/content/*` and `/api/content/v2/*`
+- `/api/notifications/*`
+- `/api/subscriptions/*`
+- `/api/photo-assets/*`
+- `/api/upload/image`
+- `/api/health`
+
+## Hotkeys
+
+Open shortcuts dialog: `Cmd/Ctrl + Alt + /`
+
+Global:
+- `Cmd/Ctrl + Alt + 1` Dashboard
+- `Cmd/Ctrl + Alt + 2` Content Studio
+- `Cmd/Ctrl + Alt + 3` Subscribers
+- `Cmd/Ctrl + Alt + 4` Collections
+
+Page defaults:
+- `Cmd/Ctrl + Alt + R` refresh
+- `Cmd/Ctrl + Alt + N` create new (where applicable)
+
+Implementation references:
+- `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/hotkeys.service.ts`
+- `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/app.component.ts`
+
+## Local Development
+
+Prerequisites:
+- Node.js 22.x
+- npm 10+
+- Angular CLI 19+
+- running API server
+- configured Cognito app client/user pool
+
+Run:
 
 ```bash
-ng build --configuration production
+cd /Users/grayson/Desktop/Portfolio/blog-authoring-gui
+npm ci
+npm start -- --port 4301
 ```
 
-Output is written to `dist/blog-authoring-gui/`. Deploy the contents to any static file server or bundle with Electron for a desktop experience.
+Open: `http://localhost:4301`
+
+## Build + Test
+
+```bash
+cd /Users/grayson/Desktop/Portfolio/blog-authoring-gui
+npm test -- --watch=false --browsers=ChromeHeadless --no-progress
+npm run build -- --configuration=production
+```
+
+## Deployment
+
+Automated by:
+- `/Users/grayson/Desktop/Portfolio/.github/workflows/ci-cd.yml`
+
+Production target:
+- S3 bucket: `grayson-wills-blog-authoring-dev-381492289909`
+- CloudFront distribution: `E31OPQLJ4WFI66`
+
+## Key Files
+
+- App routing shell: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/app-routing.module.ts`
+- Admin route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/admin/admin-routing.module.ts`
+- Auth route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/auth/auth-routing.module.ts`
+- API client: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/blog-api.service.ts`
+

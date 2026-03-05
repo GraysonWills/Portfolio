@@ -1,6 +1,6 @@
 # Blog Authoring UX Improvements
 
-This plan improves drafting speed and editorial confidence without changing the existing Redis write model, metadata fields, or auth/session approach.
+This plan improves drafting speed and editorial confidence without changing the existing API write model, metadata fields, or auth/session approach.
 
 ## Pain Points Observed
 
