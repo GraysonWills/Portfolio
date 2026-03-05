@@ -1,8 +1,9 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService, ConfirmationService } from 'primeng/api';
+import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
-import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
+import { ApiHealth, BlogApiService, ContentV2PageResponse } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
@@ -278,12 +279,33 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     this.contentNextToken = null;
     this.isFetchingNextPage = false;
 
-    if (this.selectedPageId === -1 || !this.blogApi.isContentV2StreamingEnabled()) {
-      const source$ = this.selectedPageId === -1
-        ? this.blogApi.getAllContent()
-        : this.blogApi.getContentByPage(this.selectedPageId);
+    if (this.selectedPageId === -1) {
+      if (this.blogApi.isContentV2StreamingEnabled()) {
+        void this.loadAllPagesContentV2();
+        return;
+      }
 
-      source$.subscribe({
+      this.blogApi.getAllContent().subscribe({
+        next: (items) => {
+          this.content = Array.isArray(items) ? items : [];
+          this.buildCardPreviewMaps(this.content);
+          this.applyFilters();
+          this.isLoading = false;
+        },
+        error: () => {
+          this.isLoading = false;
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load content from API'
+          });
+        }
+      });
+      return;
+    }
+
+    if (!this.blogApi.isContentV2StreamingEnabled()) {
+      this.blogApi.getContentByPage(this.selectedPageId).subscribe({
         next: (items) => {
           this.content = Array.isArray(items) ? items : [];
           this.buildCardPreviewMaps(this.content);
@@ -310,8 +332,37 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
       cacheScope: `route:/content:page-${this.selectedPageId}`
     }).subscribe({
       next: (response) => {
-        this.content = Array.isArray(response?.items) ? response.items : [];
-        this.contentNextToken = response?.nextToken || null;
+        const rows = Array.isArray(response?.items) ? response.items : [];
+        const nextToken = response?.nextToken || null;
+
+        // Safety fallback: if v2 returns nothing for a known page, pull legacy page data
+        // so content studio never appears blank due transient pagination/cache issues.
+        if (!rows.length && !nextToken) {
+          this.blogApi.getContentByPage(this.selectedPageId).subscribe({
+            next: (legacyRows) => {
+              this.content = Array.isArray(legacyRows) ? legacyRows : [];
+              this.contentNextToken = null;
+              this.buildCardPreviewMaps(this.content);
+              this.applyFilters();
+              this.isLoading = false;
+            },
+            error: () => {
+              this.content = [];
+              this.contentNextToken = null;
+              this.applyFilters();
+              this.isLoading = false;
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load content from API'
+              });
+            }
+          });
+          return;
+        }
+
+        this.content = rows;
+        this.contentNextToken = nextToken;
         this.buildCardPreviewMaps(this.content);
         this.applyFilters();
         this.isLoading = false;
@@ -325,6 +376,73 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  private async loadAllPagesContentV2(): Promise<void> {
+    const pageIds = [
+      PageID.Landing,
+      PageID.Work,
+      PageID.Projects,
+      PageID.Blog,
+      PageID.Collections
+    ];
+
+    try {
+      const merged: RedisContent[] = [];
+      for (const pageId of pageIds) {
+        const rows = await this.fetchAllPageRowsV2(pageId);
+        merged.push(...rows);
+      }
+
+      const deduped = this.mergeById(merged);
+      if (!deduped.length) {
+        const legacyAll = await firstValueFrom(this.blogApi.getAllContent());
+        this.content = Array.isArray(legacyAll) ? legacyAll : [];
+      } else {
+        this.content = deduped;
+      }
+      this.contentNextToken = null;
+      this.buildCardPreviewMaps(this.content);
+      this.applyFilters();
+    } catch {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Failed to load content from API'
+      });
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  private async fetchAllPageRowsV2(pageId: number): Promise<RedisContent[]> {
+    const rows: RedisContent[] = [];
+    let nextToken: string | null = null;
+    let guard = 0;
+
+    try {
+      do {
+        const response: ContentV2PageResponse = await firstValueFrom(
+          this.blogApi.getContentPageV2(pageId, {
+            limit: 100,
+            fields: 'full',
+            sort: 'updated_desc',
+            contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
+            nextToken,
+            cacheScope: `route:/content:all-pages:p${pageId}`
+          })
+        );
+
+        const pageRows = Array.isArray(response?.items) ? response.items : [];
+        rows.push(...pageRows);
+        nextToken = response?.nextToken || null;
+        guard += 1;
+      } while (nextToken && guard < 50);
+    } catch (error) {
+      console.error(`Failed loading page ${pageId} in content studio:`, error);
+    }
+
+    return rows;
   }
 
   private applyFilters(): void {

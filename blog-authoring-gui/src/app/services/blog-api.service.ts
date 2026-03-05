@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError, of, timer } from 'rxjs';
+import { Observable, forkJoin, throwError, of, timer } from 'rxjs';
 import { catchError, map, retry, shareReplay, switchMap, tap, timeout } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import {
@@ -189,6 +189,7 @@ export class BlogApiService {
   private readonly pageSnapshotStorageKeyPrefix = 'blog_authoring_content_page_snapshot_v1_';
   private readonly listItemSnapshotStorageKeyPrefix = 'blog_authoring_content_list_item_snapshot_v1_';
   private readonly subscribersSnapshotStorageKeyPrefix = 'blog_authoring_subscribers_snapshot_v1_';
+  private readonly routeCacheStorageKeyPrefix = 'blog_authoring_route_cache_v2_';
   private readonly useContentV2Stream = !!environment.useContentV2Stream;
   private readonly useBlogV2Cards = !!environment.useBlogV2Cards;
   private apiUrl: string = environment.redisApiUrl;
@@ -579,6 +580,13 @@ export class BlogApiService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<ContentV2PageResponse>(cacheKey, this.isContentPageV2Response);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.contentPageV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const params = new URLSearchParams();
     if (request.limit) params.set('limit', String(request.limit));
     if (request.nextToken) params.set('nextToken', request.nextToken);
@@ -598,6 +606,7 @@ export class BlogApiService {
         { headers: this.headers }
       )
     ).pipe(
+      tap((response) => this.writeRouteCache(cacheKey, response)),
       catchError((error) => {
         console.warn('[BlogApiService] Falling back to legacy page read for v2/page:', error?.message || error);
         return this.getContentPageV2Legacy(pageId, request);
@@ -628,6 +637,13 @@ export class BlogApiService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<BlogCardsV2Response>(cacheKey, this.isBlogCardsV2Response);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.blogCardsV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const params = new URLSearchParams();
     if (request.limit) params.set('limit', String(request.limit));
     if (request.nextToken) params.set('nextToken', request.nextToken);
@@ -644,6 +660,7 @@ export class BlogApiService {
         { headers: this.headers }
       )
     ).pipe(
+      tap((response) => this.writeRouteCache(cacheKey, response)),
       catchError((error) => {
         console.warn('[BlogApiService] Falling back to legacy blog cards for v2/blog/cards:', error?.message || error);
         return this.getBlogCardsV2Legacy(request);
@@ -661,7 +678,7 @@ export class BlogApiService {
           .map((id) => String(id || '').trim())
           .filter(Boolean)
       )
-    ).slice(0, 50);
+    );
 
     if (!ids.length) return of([]);
 
@@ -696,42 +713,11 @@ export class BlogApiService {
       return of(cachedItems);
     }
 
-    const now = Date.now();
     const cacheScope = this.normalizeCacheScope(options.cacheScope, 'blog-media');
-    const cacheKey = this.buildCacheKey('v2-blog-media', cacheScope, { ids: missingIds });
-    const cachedBatch = this.blogMediaBatchCache.get(cacheKey);
-    if (cachedBatch && (now - cachedBatch.cachedAt) <= this.v2ReadCacheTtlMs) {
-      return cachedBatch.stream$.pipe(
-        map((rows) => this.mergeMediaRows(ids, cachedItems, rows))
-      );
-    }
-
-    const params = new URLSearchParams();
-    params.set('listItemIDs', missingIds.join(','));
-    const stream$ = this.readRequest(
-      this.http.get<{ items: BlogCardMediaItem[] }>(
-        `${this.apiUrl}/content/v2/blog/cards/media?${params.toString()}`,
-        { headers: this.headers }
-      )
-    ).pipe(
-      map((res) => Array.isArray(res?.items) ? res.items : []),
-      tap((rows) => {
-        for (const row of rows || []) {
-          const id = String(row?.listItemID || '').trim();
-          const imageUrl = String(row?.imageUrl || '').trim();
-          if (!id || !imageUrl) continue;
-          this.mediaItemsCache.set(id, { cachedAt: Date.now(), imageUrl });
-        }
-      }),
-      catchError((error) => {
-        console.warn('[BlogApiService] Falling back to legacy blog media for v2/blog/cards/media:', error?.message || error);
-        return this.getBlogCardsMediaLegacy(missingIds);
-      }),
-      shareReplay({ bufferSize: 1, refCount: false })
-    );
-    this.blogMediaBatchCache.set(cacheKey, { cachedAt: now, stream$ });
-    return stream$.pipe(
-      map((rows) => this.mergeMediaRows(ids, cachedItems, rows))
+    const chunks = this.chunkArray(missingIds, 50);
+    const requests = chunks.map((chunk) => this.getBlogCardsMediaChunkV2(chunk, cacheScope));
+    return forkJoin(requests).pipe(
+      map((chunkRows) => this.mergeMediaRows(ids, cachedItems, chunkRows.reduce((acc, rows) => acc.concat(rows), [] as BlogCardMediaItem[])))
     );
   }
 
@@ -746,30 +732,97 @@ export class BlogApiService {
           .map((id) => String(id || '').trim())
           .filter(Boolean)
       )
-    ).slice(0, 50);
+    );
     if (!ids.length) return of({});
 
     if (!this.useContentV2Stream) {
       return this.getListItemsBatchV2Legacy(ids, contentIds);
     }
 
-    const now = Date.now();
     const cacheScope = this.normalizeCacheScope(options.cacheScope, 'list-items');
+    const chunks = this.chunkArray(ids, 50);
+    const requests = chunks.map((chunk) => this.getListItemsBatchChunkV2(chunk, contentIds, cacheScope));
+    return forkJoin(requests).pipe(
+      map((parts) => this.mergeListItemGroups(parts))
+    );
+  }
+
+  private getBlogCardsMediaChunkV2(
+    missingIds: string[],
+    cacheScope: string
+  ): Observable<BlogCardMediaItem[]> {
+    if (!missingIds.length) return of([]);
+
+    const now = Date.now();
+    const cacheKey = this.buildCacheKey('v2-blog-media', cacheScope, { ids: missingIds });
+    const cachedBatch = this.blogMediaBatchCache.get(cacheKey);
+    if (cachedBatch && (now - cachedBatch.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cachedBatch.stream$;
+    }
+
+    const routeCached = this.readRouteCache<BlogCardMediaItem[]>(cacheKey, this.isBlogCardMediaList);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.blogMediaBatchCache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
+    const params = new URLSearchParams();
+    params.set('listItemIDs', missingIds.join(','));
+    const stream$ = this.readRequest(
+      this.http.get<{ items: BlogCardMediaItem[] }>(
+        `${this.apiUrl}/content/v2/blog/cards/media?${params.toString()}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      map((res) => Array.isArray(res?.items) ? res.items : []),
+      tap((rows) => {
+        this.writeRouteCache(cacheKey, rows);
+        for (const row of rows || []) {
+          const id = String(row?.listItemID || '').trim();
+          const imageUrl = String(row?.imageUrl || '').trim();
+          if (!id || !imageUrl) continue;
+          this.mediaItemsCache.set(id, { cachedAt: Date.now(), imageUrl });
+        }
+      }),
+      catchError((error) => {
+        console.warn('[BlogApiService] Falling back to legacy blog media for v2/blog/cards/media:', error?.message || error);
+        return this.getBlogCardsMediaLegacy(missingIds);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.blogMediaBatchCache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  private getListItemsBatchChunkV2(
+    ids: string[],
+    contentIds: number[] | undefined,
+    cacheScope: string
+  ): Observable<Record<string, RedisContent[]>> {
+    if (!ids.length) return of({});
+
+    const now = Date.now();
+    const safeContentIds = Array.isArray(contentIds) ? contentIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [];
     const cacheKey = this.buildCacheKey('v2-list-items', cacheScope, {
       ids,
-      contentIds: Array.isArray(contentIds) ? contentIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : []
+      contentIds: safeContentIds
     });
     const cached = this.listItemsBatchV2Cache.get(cacheKey);
     if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<Record<string, RedisContent[]>>(cacheKey, this.isListItemsBatchResponse);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.listItemsBatchV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const body: { listItemIDs: string[]; contentIds?: number[] } = { listItemIDs: ids };
-    if (Array.isArray(contentIds) && contentIds.length > 0) {
-      body.contentIds = contentIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id))
-        .slice(0, 100);
+    if (safeContentIds.length > 0) {
+      body.contentIds = safeContentIds.slice(0, 100);
     }
 
     const stream$ = this.readRequest(
@@ -780,9 +833,10 @@ export class BlogApiService {
       )
     ).pipe(
       map((res) => res?.itemsByListItemID || {}),
+      tap((groups) => this.writeRouteCache(cacheKey, groups)),
       catchError((error) => {
         console.warn('[BlogApiService] Falling back to legacy list-item batch read for v2/list-items/batch:', error?.message || error);
-        return this.getListItemsBatchV2Legacy(ids, contentIds);
+        return this.getListItemsBatchV2Legacy(ids, safeContentIds);
       }),
       shareReplay({ bufferSize: 1, refCount: false })
     );
@@ -1488,6 +1542,7 @@ export class BlogApiService {
     this.blogMediaBatchCache.clear();
     this.listItemsBatchV2Cache.clear();
     this.mediaItemsCache.clear();
+    this.clearRouteCacheSnapshots();
   }
 
   private normalizeCacheScope(scope: string | undefined, fallback: string): string {
@@ -1531,6 +1586,28 @@ export class BlogApiService {
       dedup.set(row.listItemID, row);
     }
     return Array.from(dedup.values());
+  }
+
+  private mergeListItemGroups(
+    parts: Array<Record<string, RedisContent[]>>
+  ): Record<string, RedisContent[]> {
+    const out: Record<string, RedisContent[]> = {};
+    for (const part of parts || []) {
+      for (const [key, rows] of Object.entries(part || {})) {
+        if (!out[key]) out[key] = [];
+        out[key].push(...(Array.isArray(rows) ? rows : []));
+      }
+    }
+    return out;
+  }
+
+  private chunkArray<T>(items: T[], size: number): T[][] {
+    const safeSize = Math.max(1, Number(size) || 1);
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += safeSize) {
+      chunks.push(items.slice(i, i + safeSize));
+    }
+    return chunks;
   }
 
   private readRequest<T>(request$: Observable<T>): Observable<T> {
@@ -1581,6 +1658,51 @@ export class BlogApiService {
     );
   }
 
+  private writeRouteCache(cacheKey: string, data: unknown): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private readRouteCache<T>(cacheKey: string, validator: (value: unknown) => value is T): T | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
+      const ageMs = Date.now() - Number(parsed?.ts || 0);
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.v2ReadCacheTtlMs) return null;
+      const data = parsed?.data;
+      return validator(data) ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearRouteCacheSnapshots(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i += 1) {
+        const key = sessionStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith(this.routeCacheStorageKeyPrefix)) {
+          keys.push(key);
+        }
+      }
+      for (const key of keys) {
+        sessionStorage.removeItem(key);
+      }
+    } catch {
+      // ignore storage failures
+    }
+  }
+
   private persistPageSnapshotsFromAll(items: RedisContent[]): void {
     const grouped = new Map<number, RedisContent[]>();
     for (const item of items || []) {
@@ -1624,6 +1746,28 @@ export class BlogApiService {
 
   private isNotificationSubscriberResponse(value: unknown): value is NotificationSubscribersResponse {
     return !!value && typeof value === 'object' && Array.isArray((value as NotificationSubscribersResponse).subscribers);
+  }
+
+  private isContentPageV2Response(value: unknown): value is ContentV2PageResponse {
+    return !!value
+      && typeof value === 'object'
+      && Array.isArray((value as ContentV2PageResponse).items)
+      && !!(value as ContentV2PageResponse).page;
+  }
+
+  private isBlogCardsV2Response(value: unknown): value is BlogCardsV2Response {
+    return !!value
+      && typeof value === 'object'
+      && Array.isArray((value as BlogCardsV2Response).items)
+      && !!(value as BlogCardsV2Response).page;
+  }
+
+  private isBlogCardMediaList(value: unknown): value is BlogCardMediaItem[] {
+    return Array.isArray(value);
+  }
+
+  private isListItemsBatchResponse(value: unknown): value is Record<string, RedisContent[]> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
   }
 
   /**
