@@ -527,7 +527,8 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
   }
 
   trackByContentItem(index: number, item: RedisContent): string {
-    return this.getContentKey(item) || `${index}`;
+    const key = String(item?.ID || `${item?.ListItemID || 'no-list'}-${item?.PageID || 0}-${item?.PageContentID || 0}`);
+    return key || `${index}`;
   }
 
   private resetVisibleRows(): void {
