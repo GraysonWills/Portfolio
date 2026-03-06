@@ -16,6 +16,21 @@ router.get('/', async (req, res) => {
   const backend = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
   const ddbPrimary = backend === 'dynamodb' || backend === 'ddb';
   const redisConfigured = !!redisClient.isConfigured;
+  const emailNotificationsEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false';
+  const schedulerInvokeRoleConfigured = !!String(process.env.SCHEDULER_INVOKE_ROLE_ARN || '').trim();
+  const schedulerTargetLambdaConfigured = !!String(process.env.SCHEDULER_TARGET_LAMBDA_ARN || '').trim();
+  const sesFromEmailConfigured = !!String(process.env.SES_FROM_EMAIL || '').trim();
+  const integrationIssues = [];
+
+  if (emailNotificationsEnabled && !sesFromEmailConfigured) {
+    integrationIssues.push('SES_FROM_EMAIL missing');
+  }
+  if (!schedulerInvokeRoleConfigured) {
+    integrationIssues.push('SCHEDULER_INVOKE_ROLE_ARN missing');
+  }
+  if (!schedulerTargetLambdaConfigured) {
+    integrationIssues.push('SCHEDULER_TARGET_LAMBDA_ARN missing');
+  }
 
   try {
     const checks = await Promise.allSettled([
@@ -46,7 +61,9 @@ router.get('/', async (req, res) => {
 
     const primaryOk = ddbPrimary ? Boolean(ddbRes?.ok) : (redisConfigured && Boolean(redisRes?.ok));
     const anyOk = (redisConfigured && Boolean(redisRes?.ok)) || Boolean(ddbRes?.ok);
-    const status = primaryOk ? 'healthy' : (anyOk ? 'degraded' : 'unhealthy');
+    const status = primaryOk
+      ? (integrationIssues.length ? 'degraded' : 'healthy')
+      : (anyOk ? 'degraded' : 'unhealthy');
 
     const body = {
       status,
@@ -70,6 +87,13 @@ router.get('/', async (req, res) => {
         status: 'disconnected',
         error: ddbErr ? String(ddbErr?.message || ddbErr) : 'unknown'
       }) : { status: 'disabled' },
+      integrations: {
+        emailNotificationsEnabled,
+        sesFromEmailConfigured,
+        schedulerInvokeRoleConfigured,
+        schedulerTargetLambdaConfigured,
+        issues: integrationIssues
+      },
       memory: {
         rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
         heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'

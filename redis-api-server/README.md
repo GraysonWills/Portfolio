@@ -114,6 +114,9 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 | `COGNITO_CLIENT_ID` | app client id |
 | `DISABLE_AUTH` | local-only write-auth bypass |
 | `SCHEDULER_WEBHOOK_SECRET` | protects internal scheduler callback route |
+| `SCHEDULER_GROUP_NAME` | EventBridge Scheduler group (default `portfolio-email`) |
+| `SCHEDULER_INVOKE_ROLE_ARN` | IAM role EventBridge Scheduler assumes to invoke Lambda |
+| `SCHEDULER_TARGET_LAMBDA_ARN` | Lambda ARN used as schedule target |
 
 ### Content + Preview
 
@@ -212,9 +215,44 @@ Includes node test runner coverage for:
 - Lambda workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/api-deploy.yml`
 - ECS workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/ecs-deploy.yml`
 
+## Required Post-Deploy Verification (Lambda <-> SES)
+
+After any deploy/config change affecting subscriptions, notifications, or email templates:
+
+1. Check Lambda env values:
+   - `SES_FROM_EMAIL`
+   - `SES_REGION`
+   - `PUBLIC_SITE_URL`
+   - `EMAIL_BRAND_LOGO_URL`
+2. Verify sender identity/domain in SES in the same region.
+3. Review CloudWatch log patterns in the deployment window:
+   - `"[subscriptions] SES send failed"`
+   - `"[subscriptions] Subscribed email failed"`
+4. Perform one end-to-end subscription confirm flow and verify:
+   - API returns `SUBSCRIBED` on confirm
+   - no SES failure logs
+   - subscriber state in `portfolio-email-subscribers` is `SUBSCRIBED`
+
+Suggested command snippets:
+
+```bash
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws lambda get-function-configuration \
+  --function-name portfolio-redis-api \
+  --query 'Environment.Variables.{SES_FROM_EMAIL:SES_FROM_EMAIL,SES_REGION:SES_REGION,PUBLIC_SITE_URL:PUBLIC_SITE_URL,EMAIL_BRAND_LOGO_URL:EMAIL_BRAND_LOGO_URL}'
+
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/portfolio-redis-api \
+  --start-time $((($(date +%s)-3600)*1000)) \
+  --filter-pattern '"[subscriptions] SES send failed"'
+```
+
+Health endpoint now surfaces email/scheduler config status under:
+- `GET /api/health` -> `integrations.*` and `integrations.issues[]`
+
 ## Reference Docs
 
 - Root project overview: `/Users/grayson/Desktop/Portfolio/README.md`
 - `v2` content contract: `/Users/grayson/Desktop/Portfolio/docs/content-v2-streaming.md`
 - comprehensive architecture pack: `/Users/grayson/Desktop/Portfolio/docs/comprehensive/README.md`
-

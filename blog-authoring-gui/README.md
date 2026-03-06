@@ -56,6 +56,12 @@ Main consumed APIs:
 - `/api/upload/image`
 - `/api/health`
 
+Scheduling dependency note:
+- Blog scheduling in dashboard requires API Lambda env vars:
+  - `SCHEDULER_INVOKE_ROLE_ARN`
+  - `SCHEDULER_TARGET_LAMBDA_ARN`
+  - `SCHEDULER_GROUP_NAME` (optional; defaults to `portfolio-email`)
+
 ## Hotkeys
 
 Open shortcuts dialog: `Cmd/Ctrl + Alt + /`
@@ -110,10 +116,12 @@ Production target:
 - S3 bucket: `grayson-wills-blog-authoring-dev-381492289909`
 - CloudFront distribution: `E31OPQLJ4WFI66`
 
+Operational note:
+- After API deploys that affect subscriptions/notifications, run the Lambda↔SES verification checklist in `/Users/grayson/Desktop/Portfolio/README.md` ("Required Post-Deploy Email Safety Check").
+
 ## Key Files
 
 - App routing shell: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/app-routing.module.ts`
 - Admin route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/admin/admin-routing.module.ts`
 - Auth route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/auth/auth-routing.module.ts`
 - API client: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/blog-api.service.ts`
-

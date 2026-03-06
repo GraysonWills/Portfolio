@@ -276,6 +276,9 @@ TOKENS_TABLE_NAME=portfolio-email-tokens
 SUBSCRIBE_ALLOWED_TOPICS=blog_posts,major_updates
 NOTIFICATION_QUEUE_ENABLED=true
 NOTIFICATION_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/<account-id>/portfolio-email-notifications
+SCHEDULER_GROUP_NAME=portfolio-email
+SCHEDULER_INVOKE_ROLE_ARN=arn:aws:iam::<account-id>:role/PortfolioSchedulerInvokeLambdaRole
+SCHEDULER_TARGET_LAMBDA_ARN=arn:aws:lambda:us-east-2:<account-id>:function:portfolio-redis-api
 
 CONTENT_BACKEND=dynamodb
 CONTENT_TABLE_NAME=portfolio-content
@@ -337,6 +340,37 @@ cd blog-author && npm start
 ### Deploy Auth Model
 
 Deployments use GitHub OIDC roles (no long-lived AWS access keys committed to repo).
+
+### Required Post-Deploy Email Safety Check (Lambda + SES)
+
+Run this after any change touching API deploy/config, subscriptions, notifications, or email templates.
+
+1. Verify Lambda email env vars:
+   - `SES_FROM_EMAIL`
+   - `SES_REGION`
+   - `PUBLIC_SITE_URL`
+   - `EMAIL_BRAND_LOGO_URL`
+2. Verify sender identity in SES for the same configured region.
+3. Check CloudWatch logs for email failures in the deploy window:
+   - `"[subscriptions] SES send failed"`
+   - `"[subscriptions] Subscribed email failed"`
+4. Validate one end-to-end subscription flow (request -> confirm -> subscribed).
+5. Confirm subscriber row reaches `SUBSCRIBED` in `portfolio-email-subscribers`.
+
+Example checks:
+
+```bash
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws lambda get-function-configuration \
+  --function-name portfolio-redis-api \
+  --query 'Environment.Variables.{SES_FROM_EMAIL:SES_FROM_EMAIL,SES_REGION:SES_REGION,PUBLIC_SITE_URL:PUBLIC_SITE_URL,EMAIL_BRAND_LOGO_URL:EMAIL_BRAND_LOGO_URL}'
+
+AWS_PROFILE=grayson-sso AWS_REGION=us-east-2 \
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/portfolio-redis-api \
+  --start-time $((($(date +%s)-3600)*1000)) \
+  --filter-pattern '"[subscriptions] SES send failed"'
+```
 
 ### Production Smoke Test
 
@@ -429,6 +463,14 @@ AWS_PROFILE=grayson-sso ./scripts/configure_cloudfront_spa_rewrite.sh \
 ### Authoring login issues
 - Verify Cognito region/pool/client values in `blog-authoring-gui/src/environments/*`
 - Confirm user exists and is confirmed in Cognito
+
+### Subscriber sign-up failed
+- Run the required Lambda+SES post-deploy checks above.
+- Confirm `SES_FROM_EMAIL` is present on Lambda and verified in SES (`SES_REGION`).
+- Inspect `/aws/lambda/portfolio-redis-api` for:
+  - `"[subscriptions] SES send failed"`
+  - `"[subscriptions] Subscribed email failed"`
+- If a user is stuck `PENDING`/`ALREADY_PENDING`, re-trigger confirmation only after SES wiring is fixed.
 
 ### Build issues
 - Reinstall clean:

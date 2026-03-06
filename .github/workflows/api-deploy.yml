@@ -51,6 +51,35 @@ jobs:
           role-to-assume: ${{ env.AWS_API_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Verify required Lambda email/scheduler env vars
+        run: |
+          set -euo pipefail
+          VARS_JSON="$(aws lambda get-function-configuration \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --query 'Environment.Variables' \
+            --output json)"
+
+          REQUIRED_KEYS=(
+            "SES_FROM_EMAIL"
+            "SCHEDULER_INVOKE_ROLE_ARN"
+            "SCHEDULER_TARGET_LAMBDA_ARN"
+          )
+
+          MISSING=()
+          for KEY in "${REQUIRED_KEYS[@]}"; do
+            VALUE="$(echo "${VARS_JSON}" | jq -r --arg k "${KEY}" '.[$k] // ""')"
+            if [ -z "${VALUE}" ] || [ "${VALUE}" = "null" ]; then
+              MISSING+=("${KEY}")
+            fi
+          done
+
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            echo "::error::Lambda ${LAMBDA_FUNCTION_NAME} missing required env vars: ${MISSING[*]}"
+            exit 1
+          fi
+
+          echo "Required Lambda env vars present."
+
       - name: Check Lambda runtime
         id: runtime_check
         run: |
