@@ -135,6 +135,7 @@ async function listPhotoAssets({ limit = 24, nextToken = '', owner = '', status 
   if (normalizedOwner) {
     IndexName = 'GSI2';
     KeyConditionExpression = 'gsi2pk = :gsi2pk';
+    delete expressionAttributeValues[':gsi1pk'];
     expressionAttributeValues[':gsi2pk'] = toOwnerPk(normalizedOwner);
   }
 
@@ -269,4 +270,3 @@ module.exports = {
   markPhotoAssetDeleted,
   deletePhotoAssetRecord,
 };
-
