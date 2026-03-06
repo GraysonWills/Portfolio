@@ -19,6 +19,7 @@ function getConfig() {
     allowedTopics: (process.env.SUBSCRIBE_ALLOWED_TOPICS
       ? process.env.SUBSCRIBE_ALLOWED_TOPICS.split(',').map(s => s.trim()).filter(Boolean)
       : DEFAULT_ALLOWED_TOPICS),
+    pendingResendCooldownMs: Math.max(0, parseInt(process.env.SUBSCRIBE_PENDING_RESEND_COOLDOWN_MS || '60000', 10) || 60000),
   };
 }
 
@@ -116,8 +117,11 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
   const existingRes = await ddb.send(new GetCommand({
     TableName: cfg.subscribersTable,
     Key: { emailHash },
-    ProjectionExpression: '#status',
-    ExpressionAttributeNames: { '#status': 'status' }
+    ProjectionExpression: '#status, #updatedAt',
+    ExpressionAttributeNames: {
+      '#status': 'status',
+      '#updatedAt': 'updatedAt'
+    }
   }));
   const existingStatus = String(existingRes?.Item?.status || '').toUpperCase();
   if (existingStatus === 'SUBSCRIBED') {
@@ -129,12 +133,19 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
     };
   }
   if (existingStatus === 'PENDING') {
-    return {
-      ok: true,
-      status: 'ALREADY_PENDING',
-      alreadyPending: true,
-      message: 'A confirmation email has already been sent. Please check your inbox.'
-    };
+    const lastPendingIso = String(existingRes?.Item?.updatedAt || '').trim();
+    const lastPendingTs = Date.parse(lastPendingIso);
+    const cooldownMs = cfg.pendingResendCooldownMs;
+    const withinCooldown = Number.isFinite(lastPendingTs) && ((Date.now() - lastPendingTs) < cooldownMs);
+
+    if (withinCooldown) {
+      return {
+        ok: true,
+        status: 'ALREADY_PENDING',
+        alreadyPending: true,
+        message: 'A confirmation email has already been sent. Please check your inbox.'
+      };
+    }
   }
 
   // Upsert subscriber as PENDING. Don't overwrite unsubscribed/confirmed timestamps.
