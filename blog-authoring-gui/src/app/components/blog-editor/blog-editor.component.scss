@@ -422,6 +422,8 @@
   margin: 1rem auto;
 }
 
+.preview-post-body [data-post-carousel="true"] img { height: 320px; object-fit: cover; }
+
 .preview-post-body table {
   display: block;
   width: 100% !important;
