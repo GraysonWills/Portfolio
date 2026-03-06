@@ -316,6 +316,32 @@
       display: block;
       max-width: 100% !important;
       height: auto !important;
+      margin: 1rem auto;
+    }
+
+    .post-media-row {
+      text-align: center;
+    }
+
+    .post-carousel,
+    .image-carousel,
+    .carousel,
+    [data-post-carousel="true"] {
+      display: grid;
+      gap: 0.75rem;
+      justify-items: center;
+      margin: 1rem 0;
+    }
+
+    .post-carousel img,
+    .image-carousel img,
+    .carousel img,
+    [data-post-carousel="true"] img {
+      width: min(100%, 880px);
+      height: clamp(220px, 42vw, 460px) !important;
+      object-fit: cover;
+      border-radius: var(--radius-md);
+      margin: 0 auto;
     }
 
     iframe {
@@ -386,16 +412,22 @@
 /* Image Carousel */
 .body-carousel {
   margin: 2rem 0;
+  width: min(100%, 900px);
+  margin-inline: auto;
   border-radius: var(--radius-md);
   overflow: hidden;
 
   .carousel-slide {
     padding: 0 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: clamp(240px, 48vw, 460px);
   }
 
   .carousel-image {
     width: 100%;
-    max-height: 460px;
+    height: 100%;
     object-fit: cover;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);

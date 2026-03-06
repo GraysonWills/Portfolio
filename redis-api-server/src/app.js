@@ -80,17 +80,22 @@ function createApp() {
   }));
 
   // ─── CORS ────────────────────────────────────────────────────
+  const baselineOrigins = [
+    'http://localhost:4200',
+    'http://localhost:4300',
+    'http://localhost:4301',
+    'http://localhost:3000',
+    'https://www.grayson-wills.com',
+    'https://author.grayson-wills.com',
+    'https://d39s45clv1oor3.cloudfront.net'
+  ];
   const configuredOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-    : [
-      'http://localhost:4200',
-      'http://localhost:4300',
-      'http://localhost:4301',
-      'http://localhost:3000',
-      'https://www.grayson-wills.com',
-      'https://d39s45clv1oor3.cloudfront.net'
-    ];
-  const allowedOrigins = expandAllowedOrigins(configuredOrigins);
+    : [];
+  const allowedOrigins = expandAllowedOrigins([
+    ...baselineOrigins,
+    ...configuredOrigins
+  ]);
 
   app.use(cors({
     origin: (origin, callback) => {

@@ -418,6 +418,10 @@
   height: auto;
 }
 
+.preview-post-body img {
+  margin: 1rem auto;
+}
+
 .preview-post-body table {
   display: block;
   width: 100% !important;
@@ -494,6 +498,11 @@
 ::ng-deep .p-editor-content .ql-editor svg {
   max-width: 100%;
   height: auto;
+}
+
+::ng-deep .p-editor-content .ql-editor img {
+  display: block;
+  margin: 1rem auto;
 }
 
 ::ng-deep .p-editor-content .ql-editor pre {

@@ -223,6 +223,49 @@ export class BlogEditorComponent implements OnInit {
     return Math.min(120, rounded);
   }
 
+  private normalizeEditorContentHtml(raw: any): string {
+    const source = String(raw || '');
+    if (!source.trim() || !source.includes('<') || typeof document === 'undefined') {
+      return source;
+    }
+
+    const root = document.createElement('div');
+    root.innerHTML = source;
+
+    const markCarousel = (container: Element): void => {
+      container.classList.add('post-carousel');
+      container.setAttribute('data-post-carousel', 'true');
+      container.querySelectorAll('img').forEach((img) => {
+        img.classList.add('post-inline-image', 'post-carousel-image');
+        img.removeAttribute('align');
+      });
+    };
+
+    root
+      .querySelectorAll('.post-carousel, .image-carousel, [data-carousel], [data-post-carousel="true"]')
+      .forEach((container) => markCarousel(container));
+
+    root.querySelectorAll('figure').forEach((figure) => {
+      if (figure.querySelectorAll('img').length > 1) {
+        markCarousel(figure);
+      }
+    });
+
+    root.querySelectorAll('img').forEach((img) => {
+      img.classList.add('post-inline-image');
+      img.removeAttribute('align');
+
+      const parent = img.parentElement;
+      if (!parent) return;
+      const hasSingleChild = parent.children.length === 1 && parent.children[0] === img;
+      if (hasSingleChild) {
+        parent.classList.add('post-media-row');
+      }
+    });
+
+    return root.innerHTML;
+  }
+
   getSignatureOptions(): Array<{ label: string; value: string }> {
     const options = (this.signatureSettings.signatures || []).map((sig) => ({
       label: `${sig.label}${this.signatureSettings.defaultSignatureId === sig.id ? ' (Default)' : ''}`,
@@ -388,6 +431,8 @@ export class BlogEditorComponent implements OnInit {
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
     this.flushPendingTagInputs();
+    const normalizedContent = this.normalizeEditorContentHtml(formValue.content);
+    this.blogForm.patchValue({ content: normalizedContent }, { emitEvent: false });
 
     const publicTags = [...this.publicTags];
     const privateSeoTags = [...this.privateSeoTags];
@@ -403,7 +448,7 @@ export class BlogEditorComponent implements OnInit {
       ? this.blogApi.updateBlogPost(
           listItemID,
           formValue.title,
-          formValue.content,
+          normalizedContent,
           formValue.summary,
           publicTags,
           privateSeoTags,
@@ -417,7 +462,7 @@ export class BlogEditorComponent implements OnInit {
         )
       : this.blogApi.createBlogPost(
           formValue.title,
-          formValue.content,
+          normalizedContent,
           formValue.summary,
           publicTags,
           privateSeoTags,
@@ -559,6 +604,7 @@ export class BlogEditorComponent implements OnInit {
     const selection = this.quillEditor.getSelection(true);
     const index = selection?.index ?? this.quillEditor.getLength();
     this.quillEditor.insertEmbed(index, 'image', imageUrl, 'user');
+    this.quillEditor.formatLine(index, 1, { align: 'center' }, 'user');
     this.quillEditor.setSelection(index + 1, 0, 'silent');
     this.blogForm.patchValue({ content: this.quillEditor.root.innerHTML });
     this.blogForm.get('content')?.markAsDirty();
@@ -705,7 +751,7 @@ export class BlogEditorComponent implements OnInit {
       return '<p>Add content to preview the full post body.</p>';
     }
     // Editor content is HTML (Quill). If plain text is entered, render it safely in paragraphs.
-    if (raw.includes('<')) return raw;
+    if (raw.includes('<')) return this.normalizeEditorContentHtml(raw);
     return raw
       .split(/\n+/)
       .map((line) => `<p>${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
@@ -756,7 +802,7 @@ export class BlogEditorComponent implements OnInit {
     const blogTextId = this.initialData?.blogTextId || `blog-text-${listItemID}`;
     const blogBodyId = this.initialData?.blogBodyId || `blog-body-${listItemID}`;
     const blogImageId = this.initialData?.blogImageId || `blog-image-${listItemID}`;
-    const contentValue = String(this.blogForm.get('content')?.value || '');
+    const contentValue = this.normalizeEditorContentHtml(this.blogForm.get('content')?.value || '');
 
     const upserts: Partial<RedisContent>[] = [
       {
