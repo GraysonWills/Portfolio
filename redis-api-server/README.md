@@ -88,7 +88,7 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
   - stricter write limiter
   - separate analytics limiter.
 - write auth middleware via Cognito JWT validation.
-- request body size limits (`2mb` JSON/urlencoded).
+- request body size limits (configurable via `REQUEST_BODY_LIMIT`, default `6mb`).
 - in-process GET response cache with write invalidation.
 - browser cache-control headers for GET responses.
 
@@ -103,6 +103,7 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 | `ALLOWED_ORIGINS` | CORS allowlist |
 | `CACHE_TTL_MS` | server in-memory GET cache TTL |
 | `CACHE_MAX_ENTRIES` | server in-memory cache max entries |
+| `REQUEST_BODY_LIMIT` | JSON/urlencoded max request payload (default `6mb`) |
 | `BROWSER_CACHE_MAX_AGE_SECONDS` | browser `max-age` for GET responses |
 | `BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS` | browser stale-while-revalidate seconds |
 

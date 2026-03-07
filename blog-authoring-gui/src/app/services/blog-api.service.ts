@@ -1443,12 +1443,7 @@ export class BlogApiService {
       }),
       catchError((err) => {
         console.warn('Signed image upload failed; falling back to legacy upload endpoint:', err);
-        return this.uploadImageLegacy(file).pipe(
-          catchError((legacyErr) => {
-            console.warn('Legacy image upload failed; falling back to base64:', legacyErr);
-            return this.convertToBase64(file);
-          })
-        );
+        return this.uploadImageLegacy(file);
       })
     );
   }
@@ -1461,23 +1456,6 @@ export class BlogApiService {
       `${this.apiUrl}/upload/image`,
       formData
     ).pipe(map((res) => res.url));
-  }
-
-  /**
-   * Convert file to base64
-   */
-  private convertToBase64(file: File): Observable<string> {
-    return new Observable(observer => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        observer.next(reader.result as string);
-        observer.complete();
-      };
-      reader.onerror = error => {
-        observer.error(error);
-      };
-      reader.readAsDataURL(file);
-    });
   }
 
   /**

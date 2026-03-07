@@ -1,5 +1,6 @@
 import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import { BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
@@ -431,122 +432,198 @@ export class BlogEditorComponent implements OnInit {
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
     this.flushPendingTagInputs();
-    const normalizedContent = this.normalizeEditorContentHtml(formValue.content);
-    this.blogForm.patchValue({ content: normalizedContent }, { emitEvent: false });
+    this.prepareContentForSave(formValue.content)
+      .then((normalizedContent) => {
+        this.blogForm.patchValue({ content: normalizedContent }, { emitEvent: false });
 
-    const publicTags = [...this.publicTags];
-    const privateSeoTags = [...this.privateSeoTags];
-    const selectedSignature = this.getSelectedSignature() || undefined;
-    const selectedSignatureId = selectedSignature?.id || '';
-    const readTimeMinutes = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
+        const publicTags = [...this.publicTags];
+        const privateSeoTags = [...this.privateSeoTags];
+        const selectedSignature = this.getSelectedSignature() || undefined;
+        const selectedSignatureId = selectedSignature?.id || '';
+        const readTimeMinutes = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
 
-    const listItemID = isEdit && this.initialData?.listItemID
-      ? this.initialData.listItemID
-      : `blog-${Date.now()}`;
+        const listItemID = isEdit && this.initialData?.listItemID
+          ? this.initialData.listItemID
+          : `blog-${Date.now()}`;
 
-    const request$ = isEdit
-      ? this.blogApi.updateBlogPost(
-          listItemID,
-          formValue.title,
-          normalizedContent,
-          formValue.summary,
-          publicTags,
-          privateSeoTags,
-          this.uploadedImage || undefined,
-          formValue.publishDate,
-          formValue.status,
-          formValue.category,
-          readTimeMinutes || undefined,
-          selectedSignatureId,
-          selectedSignature
-        )
-      : this.blogApi.createBlogPost(
-          formValue.title,
-          normalizedContent,
-          formValue.summary,
-          publicTags,
-          privateSeoTags,
-          this.uploadedImage || undefined,
-          listItemID,
-          formValue.publishDate,
-          formValue.status,
-          formValue.category,
-          readTimeMinutes || undefined,
-          selectedSignatureId,
-          selectedSignature
-        );
+        const request$ = isEdit
+          ? this.blogApi.updateBlogPost(
+              listItemID,
+              formValue.title,
+              normalizedContent,
+              formValue.summary,
+              publicTags,
+              privateSeoTags,
+              this.uploadedImage || undefined,
+              formValue.publishDate,
+              formValue.status,
+              formValue.category,
+              readTimeMinutes || undefined,
+              selectedSignatureId,
+              selectedSignature
+            )
+          : this.blogApi.createBlogPost(
+              formValue.title,
+              normalizedContent,
+              formValue.summary,
+              publicTags,
+              privateSeoTags,
+              this.uploadedImage || undefined,
+              listItemID,
+              formValue.publishDate,
+              formValue.status,
+              formValue.category,
+              readTimeMinutes || undefined,
+              selectedSignatureId,
+              selectedSignature
+            );
 
-    request$.subscribe({
-      next: () => {
-        const sendEmailUpdate = !!formValue.sendEmailUpdate;
+        request$.subscribe({
+          next: () => {
+            const sendEmailUpdate = !!formValue.sendEmailUpdate;
 
-        const onDone = () => {
-          const action = isEdit ? 'UPDATED' : 'CREATED';
-          this.txLog.log(
-            action,
-            `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, readTime: ${readTimeMinutes || 'auto'}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
-          );
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
-          });
-          this.isSaving = false;
-          this.saved.emit();
-        };
-
-        // Schedule or notify depending on status
-        if (formValue.status === 'scheduled') {
-          this.blogApi.schedulePublish(listItemID, formValue.publishDate, sendEmailUpdate, 'blog_posts').subscribe({
-            next: () => onDone(),
-            error: (err) => {
-              const reason = err?.error?.error || err?.message || 'Unknown error';
-              this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${reason}`);
-              this.messageService.add({ severity: 'warn', summary: 'Saved', detail: `Post saved, but scheduling failed: ${reason}` });
+            const onDone = () => {
+              const action = isEdit ? 'UPDATED' : 'CREATED';
+              this.txLog.log(
+                action,
+                `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, readTime: ${readTimeMinutes || 'auto'}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
+              );
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
+              });
               this.isSaving = false;
               this.saved.emit();
+            };
+
+            // Schedule or notify depending on status
+            if (formValue.status === 'scheduled') {
+              this.blogApi.schedulePublish(listItemID, formValue.publishDate, sendEmailUpdate, 'blog_posts').subscribe({
+                next: () => onDone(),
+                error: (err) => {
+                  const reason = err?.error?.error || err?.message || 'Unknown error';
+                  this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${reason}`);
+                  this.messageService.add({ severity: 'warn', summary: 'Saved', detail: `Post saved, but scheduling failed: ${reason}` });
+                  this.isSaving = false;
+                  this.saved.emit();
+                }
+              });
+              return;
             }
-          });
-          return;
-        }
 
-        const priorStatus = String(this.initialData?.status || '').toLowerCase();
-        const isPublishTransition = !isEdit || priorStatus !== 'published';
+            const priorStatus = String(this.initialData?.status || '').toLowerCase();
+            const isPublishTransition = !isEdit || priorStatus !== 'published';
 
-        if (formValue.status === 'published' && sendEmailUpdate && isPublishTransition) {
-          this.blogApi.sendNotificationNow(listItemID, 'blog_posts').subscribe({
-            next: () => onDone(),
-            error: (err) => {
-              this.txLog.log('NOTIFY_FAILED', `Failed to send notification for "${formValue.title}" — ${err.message}`);
-              this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but email notify failed.' });
-              this.isSaving = false;
-              this.saved.emit();
+            if (formValue.status === 'published' && sendEmailUpdate && isPublishTransition) {
+              this.blogApi.sendNotificationNow(listItemID, 'blog_posts').subscribe({
+                next: () => onDone(),
+                error: (err) => {
+                  this.txLog.log('NOTIFY_FAILED', `Failed to send notification for "${formValue.title}" — ${err.message}`);
+                  this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but email notify failed.' });
+                  this.isSaving = false;
+                  this.saved.emit();
+                }
+              });
+              return;
             }
-          });
-          return;
-        }
 
-        if (formValue.status === 'published' && sendEmailUpdate && !isPublishTransition) {
-          this.txLog.log('NOTIFY_SKIPPED', `Skipped notify for "${formValue.title}" — already published`);
-          this.messageService.add({
-            severity: 'info',
-            summary: 'Email Skipped',
-            detail: 'This post was already published, so duplicate notification was skipped.'
-          });
-        }
+            if (formValue.status === 'published' && sendEmailUpdate && !isPublishTransition) {
+              this.txLog.log('NOTIFY_SKIPPED', `Skipped notify for "${formValue.title}" — already published`);
+              this.messageService.add({
+                severity: 'info',
+                summary: 'Email Skipped',
+                detail: 'This post was already published, so duplicate notification was skipped.'
+              });
+            }
 
-        onDone();
-      },
-      error: (error) => {
-        this.txLog.log('SAVE_FAILED', `Failed to save "${formValue.title}" — ${error.message}`);
+            onDone();
+          },
+          error: (error) => {
+            this.txLog.log('SAVE_FAILED', `Failed to save "${formValue.title}" — ${error.message}`);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to ${isEdit ? 'update' : 'save'} blog post`
+            });
+            this.isSaving = false;
+          }
+        });
+      })
+      .catch((error) => {
+        const message = String(error?.message || 'Failed to process inline images before save.');
+        this.txLog.log('INLINE_IMAGE_PREP_FAILED', `Failed to prepare "${formValue.title}" — ${message}`);
         this.messageService.add({
           severity: 'error',
-          summary: 'Error',
-          detail: `Failed to ${isEdit ? 'update' : 'save'} blog post`
+          summary: 'Image Processing Failed',
+          detail: message
         });
         this.isSaving = false;
+      });
+  }
+
+  private async prepareContentForSave(rawContent: any): Promise<string> {
+    const normalized = this.normalizeEditorContentHtml(rawContent);
+    return this.replaceInlineDataImages(normalized);
+  }
+
+  private async replaceInlineDataImages(html: string): Promise<string> {
+    const source = String(html || '');
+    if (!source.trim() || typeof document === 'undefined') return source;
+
+    const root = document.createElement('div');
+    root.innerHTML = source;
+    const images = Array.from(root.querySelectorAll('img'));
+    const inlineImages = images.filter((img) => /^data:image\//i.test(String(img.getAttribute('src') || '').trim()));
+    if (!inlineImages.length) return root.innerHTML;
+
+    const uploadedBySource = new Map<string, string>();
+    let counter = 0;
+
+    for (const img of inlineImages) {
+      const dataUrl = String(img.getAttribute('src') || '').trim();
+      if (!dataUrl) continue;
+
+      let uploadedUrl = uploadedBySource.get(dataUrl);
+      if (!uploadedUrl) {
+        const file = this.dataUrlToFile(dataUrl, `inline-image-${Date.now()}-${counter++}`);
+        uploadedUrl = await firstValueFrom(this.blogApi.uploadImage(file));
+        uploadedBySource.set(dataUrl, uploadedUrl);
       }
-    });
+
+      img.setAttribute('src', uploadedUrl);
+      img.removeAttribute('srcset');
+    }
+
+    return root.innerHTML;
+  }
+
+  private dataUrlToFile(dataUrl: string, basename: string): File {
+    const match = String(dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error('Unsupported inline image format. Please use standard image uploads.');
+    }
+
+    const mime = match[1].toLowerCase();
+    const raw = match[2];
+    const binary = atob(raw);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'image/svg+xml': 'svg'
+    };
+    const ext = extMap[mime] || 'png';
+    const filename = `${basename}.${ext}`;
+    return new File([bytes], filename, { type: mime });
   }
 
   canUnpublish(): boolean {
