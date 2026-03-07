@@ -89,7 +89,9 @@ flowchart LR
 - Blog editor with preview modes (title card + full post)
 - Notification controls integrated into publish workflow
 - Scheduled publish controls + immediate notify actions
+- One-click unpublish action from the editor (published/scheduled -> draft + removed from public portfolio feed)
 - Cloud preview generation against deployed public site using preview sessions
+- Save-time inline image normalization: embedded `data:image/*` content is uploaded and rewritten to URL references before post save to avoid oversized payload failures
 
 ### Authoring Hotkey Standard (For New Pages)
 
@@ -139,8 +141,10 @@ When adding any new authoring page/route, include hotkeys by default:
 - Notification pipeline:
   - send now (queue-backed when enabled)
   - schedule publish/send
+  - unpublish API to immediately hide a post from public portfolio visibility
   - SQS consumer for async SES delivery
   - worker callback endpoint for scheduled jobs
+  - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
 
 ## Data Model
 
@@ -252,6 +256,7 @@ NODE_ENV=development
 ALLOWED_ORIGINS=http://localhost:4200,http://localhost:4300,http://localhost:4301,http://localhost:3000
 CACHE_TTL_MS=60000
 CACHE_MAX_ENTRIES=500
+REQUEST_BODY_LIMIT=6mb
 
 COGNITO_REGION=us-east-2
 COGNITO_USER_POOL_ID=<pool-id>
@@ -301,6 +306,13 @@ useBlogV2Cards: true
 
 - `true`: use metadata-first `v2` reads + progressive hydration.
 - `false`: fallback to existing `v1` content reads.
+
+### Save Payload Guidance (Blog Authoring)
+
+- Blog post content should store image URLs, not embedded base64 data URLs.
+- The editor now automatically uploads inline `data:image/*` content and rewrites HTML before save.
+- API request size cap is controlled by `REQUEST_BODY_LIMIT` (default `6mb`).
+- If save returns `413`, verify image upload endpoints are healthy and the editor is connected to the current production API.
 
 ### Run Locally
 

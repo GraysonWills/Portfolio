@@ -16,12 +16,17 @@ Authenticated Angular authoring console for portfolio/blog/site content.
 - Blog lifecycle:
   - create/edit/delete
   - draft/scheduled/published states
+  - explicit unpublish action (moves post to draft + hides from portfolio)
   - send-now + scheduled email integration.
 - Full-site preview session flow against deployed portfolio routes.
 - Content Studio for direct `PageID`/`PageContentID` editing.
 - Subscriber admin management (list/add/remove).
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
+- Inline editor image guard:
+  - detects embedded `data:image/*` tags before save
+  - uploads those assets via API and rewrites post HTML to URL-based images
+  - avoids API `413 request entity too large` failures on large posts
 - Route-scoped `v2` reading with browser caching and fallback to legacy reads.
 - Keyboard shortcuts with global + page-scoped contexts.
 
@@ -51,6 +56,7 @@ portfolioPreviewUrl: 'https://www.grayson-wills.com'
 Main consumed APIs:
 - `/api/content/*` and `/api/content/v2/*`
 - `/api/notifications/*`
+- includes `/api/notifications/unpublish`
 - `/api/subscriptions/*`
 - `/api/photo-assets/*`
 - `/api/upload/image`

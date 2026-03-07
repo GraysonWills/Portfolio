@@ -16,6 +16,10 @@ Express backend for portfolio reads, authoring writes, notifications, subscripti
 - Additive `v2` paged/metadata-first endpoints for progressive frontend hydration.
 - Preview sessions for draft overlays (`previewToken` model).
 - Queue-backed blog notification delivery (SQS -> Lambda worker -> SES).
+- Scheduler hardening for publish flow:
+  - schedule payloads carry `scheduleName`
+  - worker ignores stale/non-active schedule executions
+  - stale schedule cleanup is performed during reschedule/unpublish paths
 - Subscription lifecycle (request/confirm/unsubscribe/preferences) in DynamoDB + SES.
 - Analytics event ingestion endpoint with async queue/data-lake flow.
 - Photo asset architecture:
@@ -60,6 +64,11 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `POST /api/notifications/schedule` (auth)
 - `DELETE /api/notifications/schedule/:scheduleName` (auth)
 - `POST /api/notifications/unpublish` (auth)
+
+Unpublish behavior:
+- cancels known active schedule for the post (if present)
+- removes stale schedules for the same `listItemID`
+- sets metadata status to `draft` and clears active `scheduleName`
 
 ### Subscriptions
 - `POST /api/subscriptions/request`
