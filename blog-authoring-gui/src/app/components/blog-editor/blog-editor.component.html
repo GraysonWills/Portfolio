@@ -329,6 +329,15 @@
           (onClick)="cancel()"
           styleClass="p-button-outlined">
         </p-button>
+        <p-button
+          *ngIf="canUnpublish()"
+          label="Unpublish"
+          icon="pi pi-eye-slash"
+          (onClick)="unpublishPost()"
+          [disabled]="isSaving"
+          [loading]="isSaving"
+          styleClass="p-button-outlined p-button-danger">
+        </p-button>
         <p-button 
           label="Save Post" 
           icon="pi pi-save"

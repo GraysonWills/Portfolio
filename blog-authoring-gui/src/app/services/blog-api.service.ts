@@ -1320,6 +1320,22 @@ export class BlogApiService {
     ).pipe(catchError(this.handleError));
   }
 
+  unpublishPost(listItemID: string): Observable<any> {
+    const safeListItemID = String(listItemID || '').trim();
+    if (!safeListItemID) {
+      return throwError(() => new Error('Missing listItemID'));
+    }
+
+    return this.http.post<any>(
+      `${this.apiUrl}/notifications/unpublish`,
+      { listItemID: safeListItemID },
+      { headers: this.headers }
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
+  }
+
   getNotificationSubscribers(topic: string = 'blog_posts', includeUnsubscribed: boolean = false): Observable<NotificationSubscribersResponse> {
     const safeTopic = String(topic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
     const cacheKey = `${safeTopic}:${includeUnsubscribed ? 'all' : 'active'}`;

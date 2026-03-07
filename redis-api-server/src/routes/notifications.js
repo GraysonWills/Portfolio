@@ -17,6 +17,7 @@ const {
   sendBlogPostNotification,
   schedulePublish,
   cancelSchedule,
+  unpublishBlogPost,
   publishBlogPostNow,
   listSubscribedRecipients
 } = require('../services/notifications');
@@ -152,6 +153,17 @@ router.delete('/schedule/:scheduleName', async (req, res) => {
   try {
     const scheduleName = req.params.scheduleName;
     const result = await cancelSchedule({ scheduleName });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/unpublish', async (req, res) => {
+  try {
+    const { listItemID } = req.body || {};
+    if (!listItemID) return res.status(400).json({ error: 'Missing listItemID' });
+    const result = await unpublishBlogPost({ listItemID });
     res.json(result);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

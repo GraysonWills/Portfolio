@@ -549,6 +549,54 @@ export class BlogEditorComponent implements OnInit {
     });
   }
 
+  canUnpublish(): boolean {
+    const listItemID = String(this.initialData?.listItemID || '').trim();
+    if (!listItemID) return false;
+
+    const status = String(this.blogForm.get('status')?.value || this.initialData?.status || '').toLowerCase();
+    return status === 'published' || status === 'scheduled';
+  }
+
+  unpublishPost(): void {
+    const listItemID = String(this.initialData?.listItemID || '').trim();
+    if (!listItemID || this.isSaving) return;
+
+    const title = String(this.blogForm.get('title')?.value || this.initialData?.title || 'Untitled').trim() || 'Untitled';
+    this.confirmationService.confirm({
+      message: `Unpublish "${title}"? It will be removed from the public portfolio blog immediately.`,
+      header: 'Confirm Unpublish',
+      icon: 'pi pi-eye-slash',
+      acceptLabel: 'Unpublish',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => {
+        this.isSaving = true;
+        this.blogApi.unpublishPost(listItemID).subscribe({
+          next: () => {
+            this.blogForm.patchValue({ status: 'draft' }, { emitEvent: false });
+            this.txLog.log('UNPUBLISHED', `Blog post "${title}" unpublished and hidden from portfolio.`);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Unpublished',
+              detail: 'Post is now hidden from the public portfolio.'
+            });
+            this.isSaving = false;
+            this.saved.emit();
+          },
+          error: (error) => {
+            this.txLog.log('UNPUBLISH_FAILED', `Failed to unpublish "${title}" — ${error?.message || 'Unknown error'}`);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unpublish Failed',
+              detail: error?.message || 'Unable to unpublish this post right now.'
+            });
+            this.isSaving = false;
+          }
+        });
+      }
+    });
+  }
+
   /**
    * Cancel editing
    */

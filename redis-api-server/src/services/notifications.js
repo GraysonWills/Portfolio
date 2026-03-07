@@ -1100,6 +1100,65 @@ async function cancelSchedule({ scheduleName }) {
   return { ok: true };
 }
 
+async function unpublishBlogPost({ listItemID }) {
+  const normalizedListItemID = String(listItemID || '').trim();
+  if (!normalizedListItemID) {
+    const err = new Error('Missing listItemID');
+    err.status = 400;
+    throw err;
+  }
+
+  const cfg = getConfig();
+  const items = await assertBlogPostExists(normalizedListItemID);
+  const { meta: existingMeta } = extractBlogMetadata(items);
+  const previousStatus = String(existingMeta?.status || 'published').trim().toLowerCase() || 'published';
+  const previousScheduleName = String(existingMeta?.scheduleName || '').trim();
+
+  // Best-effort: remove recorded active schedule.
+  if (previousScheduleName) {
+    try {
+      await cancelSchedule({ scheduleName: previousScheduleName });
+    } catch (err) {
+      if (err?.name !== 'ResourceNotFoundException') {
+        console.warn('[notifications] Failed to cancel schedule during unpublish', {
+          listItemID: normalizedListItemID,
+          scheduleName: previousScheduleName,
+          message: String(err?.message || err)
+        });
+      }
+    }
+  }
+
+  // Best-effort: remove any stale schedules for this list item.
+  try {
+    await cleanupSchedulesForListItem({
+      groupName: cfg.schedulerGroupName,
+      listItemID: normalizedListItemID
+    });
+  } catch (err) {
+    console.warn('[notifications] Failed stale schedule cleanup during unpublish', {
+      listItemID: normalizedListItemID,
+      message: String(err?.message || err)
+    });
+  }
+
+  const unpublishedAt = new Date().toISOString();
+  await updateBlogMetadata(normalizedListItemID, {
+    status: 'draft',
+    scheduleName: null,
+    unpublishedAt
+  });
+
+  return {
+    ok: true,
+    listItemID: normalizedListItemID,
+    previousStatus,
+    previousScheduleName: previousScheduleName || null,
+    status: 'draft',
+    unpublishedAt
+  };
+}
+
 async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail = true, topic = 'blog_posts' }) {
   const incomingScheduleName = String(scheduleName || '').trim();
   console.info('[notifications] Scheduler publish trigger received', {
@@ -1166,6 +1225,7 @@ module.exports = {
   sendBlogPostNotification,
   schedulePublish,
   cancelSchedule,
+  unpublishBlogPost,
   publishBlogPostNow,
   processNotificationQueueRecords,
   listSubscribedRecipients,

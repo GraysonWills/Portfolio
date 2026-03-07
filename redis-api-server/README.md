@@ -59,6 +59,7 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `POST /api/notifications/send-now` (auth)
 - `POST /api/notifications/schedule` (auth)
 - `DELETE /api/notifications/schedule/:scheduleName` (auth)
+- `POST /api/notifications/unpublish` (auth)
 
 ### Subscriptions
 - `POST /api/subscriptions/request`
