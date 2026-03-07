@@ -14,6 +14,7 @@ Express backend for portfolio reads, authoring writes, notifications, subscripti
 
 - Public read APIs + authenticated write APIs.
 - Additive `v2` paged/metadata-first endpoints for progressive frontend hydration.
+- Additive `v3` route-shaped endpoints for no-cache page rendering and authoring feeds.
 - Preview sessions for draft overlays (`previewToken` model).
 - Queue-backed blog notification delivery (SQS -> Lambda worker -> SES).
 - Scheduler hardening for publish flow:
@@ -54,6 +55,14 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `GET /api/content/v2/blog/cards`
 - `GET /api/content/v2/blog/cards/media`
 - `POST /api/content/v2/list-items/batch`
+- `GET /api/content/v3/bootstrap`
+- `GET /api/content/v3/landing`
+- `GET /api/content/v3/work`
+- `GET /api/content/v3/projects/categories`
+- `POST /api/content/v3/projects/items`
+- `GET /api/content/v3/blog/:listItemId`
+- `GET /api/content/v3/admin/dashboard` (auth)
+- `GET /api/content/v3/admin/content` (auth)
 
 ### Notifications
 - `POST /api/notifications/worker/publish` (scheduler secret)
@@ -98,8 +107,22 @@ Unpublish behavior:
   - separate analytics limiter.
 - write auth middleware via Cognito JWT validation.
 - request body size limits (configurable via `REQUEST_BODY_LIMIT`, default `6mb`).
-- in-process GET response cache with write invalidation.
-- browser cache-control headers for GET responses.
+- dynamic API GET responses are marked `Cache-Control: no-store, max-age=0`.
+- in-flight request reuse happens in the frontend only for the current SPA session.
+
+## Performance Architecture
+
+- Public route reads are metadata-first and route-specific.
+- Normal authoring reads no longer depend on `/api/health`.
+- `v3/admin/content` avoids full-table scans in the normal path by using:
+  - page+content targeted queries
+  - page-scoped queries
+  - bounded fanout across known pages for “all pages”
+- New writes stamp derived read-model fields:
+  - `PagePK`, `PageSK`
+  - `UpdatedPK`, `UpdatedSK`
+  - `FeedPK`, `FeedSK`
+- These fields prepare the table for future GSI-backed render feeds without changing content payload shape again.
 
 ## Environment Variables (Core)
 
@@ -110,11 +133,7 @@ Unpublish behavior:
 | `PORT` | local server port |
 | `NODE_ENV` | runtime mode |
 | `ALLOWED_ORIGINS` | CORS allowlist |
-| `CACHE_TTL_MS` | server in-memory GET cache TTL |
-| `CACHE_MAX_ENTRIES` | server in-memory cache max entries |
 | `REQUEST_BODY_LIMIT` | JSON/urlencoded max request payload (default `6mb`) |
-| `BROWSER_CACHE_MAX_AGE_SECONDS` | browser `max-age` for GET responses |
-| `BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS` | browser stale-while-revalidate seconds |
 
 ### Auth
 
@@ -220,6 +239,16 @@ npm test
 Includes node test runner coverage for:
 - pagination token behavior
 - `v2` content route logic.
+
+## AWS Runtime Notes
+
+Production Lambda configuration for the low-latency read path:
+- architecture: `arm64`
+- memory: `1024 MB`
+- published alias: `live`
+- provisioned concurrency on `live`: `2`
+
+API Gateway integration should point to the alias ARN rather than `$LATEST`.
 
 ## Deployment Automation
 

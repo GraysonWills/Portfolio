@@ -81,6 +81,63 @@ export type BlogCardMediaItem = {
   imageUrl: string;
 };
 
+export type SiteChromeV3Response = {
+  header: { items: RedisContent[] };
+  footer: { items: RedisContent[] };
+};
+
+export type LandingV3Response = {
+  summary: string;
+  heroSlides: Array<{ photo: string; alt: string; order: number }>;
+};
+
+export type WorkV3Response = {
+  metrics: RedisContent[];
+  timeline: {
+    items: RedisContent[];
+    nextToken: string | null;
+    hasMore: boolean;
+  };
+};
+
+export type ProjectsCategoryV3 = {
+  listItemID: string;
+  name: string;
+  description?: string;
+  categoryPhoto?: string | null;
+  order: number;
+};
+
+export type ProjectsCategoriesV3Response = {
+  items: ProjectsCategoryV3[];
+  nextToken: string | null;
+  page: {
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+  };
+};
+
+export type ProjectsItemsV3Response = {
+  itemsByCategoryId: Record<string, RedisContent[]>;
+};
+
+export type BlogPostDetailV3Response = {
+  listItemID: string;
+  title: string;
+  summary: string;
+  coverImage: string;
+  coverAlt: string;
+  publishDate: string | null;
+  status: string;
+  tags: string[];
+  privateSeoTags: string[];
+  category: string;
+  readTimeMinutes: number;
+  signature: any | null;
+  bodyBlocks: any[];
+};
+
 export type RouteCacheOptions = {
   cacheScope?: string;
 };
@@ -111,6 +168,14 @@ export class RedisService {
   private blogCardsV2Cache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardsV2Response> }>();
   private blogMediaBatchCache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardMediaItem[]> }>();
   private listItemsBatchV2Cache = new Map<string, { cachedAt: number; stream$: Observable<Record<string, RedisContent[]>> }>();
+  private siteChromeV3$?: Observable<SiteChromeV3Response>;
+  private siteChromeV3CachedAt = 0;
+  private landingV3$?: Observable<LandingV3Response>;
+  private landingV3CachedAt = 0;
+  private workV3Cache = new Map<string, { cachedAt: number; stream$: Observable<WorkV3Response> }>();
+  private projectsCategoriesV3Cache = new Map<string, { cachedAt: number; stream$: Observable<ProjectsCategoriesV3Response> }>();
+  private projectItemsV3Cache = new Map<string, { cachedAt: number; stream$: Observable<Record<string, RedisContent[]>> }>();
+  private blogDetailV3Cache = new Map<string, { cachedAt: number; stream$: Observable<BlogPostDetailV3Response> }>();
   private mediaItemsCache = new Map<string, { cachedAt: number; imageUrl: string }>();
   private previewToken: string | null = null;
   private previewSession$: Observable<PreviewSessionPayload | null> | null = null;
@@ -174,6 +239,14 @@ export class RedisService {
     this.blogCardsV2Cache.clear();
     this.blogMediaBatchCache.clear();
     this.listItemsBatchV2Cache.clear();
+    this.siteChromeV3$ = undefined;
+    this.siteChromeV3CachedAt = 0;
+    this.landingV3$ = undefined;
+    this.landingV3CachedAt = 0;
+    this.workV3Cache.clear();
+    this.projectsCategoriesV3Cache.clear();
+    this.projectItemsV3Cache.clear();
+    this.blogDetailV3Cache.clear();
     this.mediaItemsCache.clear();
     this.clearRouteCacheSnapshots();
   }
@@ -910,17 +983,144 @@ export class RedisService {
     return this.getContentByPageID(PageID.Projects);
   }
 
+  getSiteChromeV3(): Observable<SiteChromeV3Response> {
+    const now = Date.now();
+    const stale = !this.siteChromeV3$ || (now - this.siteChromeV3CachedAt) > this.v2ReadCacheTtlMs;
+    if (stale) {
+      this.siteChromeV3CachedAt = now;
+      this.siteChromeV3$ = this.readRequest(
+        this.http.get<SiteChromeV3Response>(`${this.apiUrl}/content/v3/bootstrap`, { headers: this.headers })
+      ).pipe(
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.siteChromeV3$!;
+  }
+
+  getLandingPayloadV3(): Observable<LandingV3Response> {
+    const now = Date.now();
+    const stale = !this.landingV3$ || (now - this.landingV3CachedAt) > this.v2ReadCacheTtlMs;
+    if (stale) {
+      this.landingV3CachedAt = now;
+      this.landingV3$ = this.readRequest(
+        this.http.get<LandingV3Response>(`${this.apiUrl}/content/v3/landing`, { headers: this.headers })
+      ).pipe(
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.landingV3$!;
+  }
+
+  getWorkPayloadV3(request: { limit?: number; nextToken?: string | null; cacheScope?: string } = {}): Observable<WorkV3Response> {
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, 'work');
+    const cacheKey = this.buildCacheKey('v3-work', cacheScope, {
+      limit: request.limit,
+      nextToken: request.nextToken || null
+    });
+    const cached = this.workV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+
+    const stream$ = this.readRequest(
+      this.http.get<WorkV3Response>(`${this.apiUrl}/content/v3/work${params.toString() ? `?${params.toString()}` : ''}`, { headers: this.headers })
+    ).pipe(
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.workV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getProjectsCategoriesV3(request: { limit?: number; nextToken?: string | null; cacheScope?: string } = {}): Observable<ProjectsCategoriesV3Response> {
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, 'projects-categories');
+    const cacheKey = this.buildCacheKey('v3-projects-categories', cacheScope, {
+      limit: request.limit,
+      nextToken: request.nextToken || null
+    });
+    const cached = this.projectsCategoriesV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+
+    const stream$ = this.readRequest(
+      this.http.get<ProjectsCategoriesV3Response>(
+        `${this.apiUrl}/content/v3/projects/categories${params.toString() ? `?${params.toString()}` : ''}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.projectsCategoriesV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getProjectItemsV3(categoryIds: string[], options: RouteCacheOptions = {}): Observable<Record<string, RedisContent[]>> {
+    const ids = Array.from(new Set((categoryIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+    if (!ids.length) return of({});
+
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(options.cacheScope, 'projects-items');
+    const cacheKey = this.buildCacheKey('v3-project-items', cacheScope, { ids });
+    const cached = this.projectItemsV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const stream$ = this.readRequest(
+      this.http.post<ProjectsItemsV3Response>(
+        `${this.apiUrl}/content/v3/projects/items`,
+        { categoryIds: ids },
+        { headers: this.headers }
+      )
+    ).pipe(
+      map((response) => response?.itemsByCategoryId || {}),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.projectItemsV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getBlogPostDetailV3(listItemId: string): Observable<BlogPostDetailV3Response> {
+    const safeListItemId = String(listItemId || '').trim();
+    if (!safeListItemId) {
+      return throwError(() => new Error('Missing listItemID'));
+    }
+
+    const now = Date.now();
+    const cacheKey = `blog-detail:${safeListItemId}`;
+    const cached = this.blogDetailV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const stream$ = this.readRequest(
+      this.http.get<BlogPostDetailV3Response>(
+        `${this.apiUrl}/content/v3/blog/${encodeURIComponent(safeListItemId)}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.blogDetailV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
   /**
    * Get header content
    */
   getHeaderContent(): Observable<RedisContent[]> {
-    return this.getContentByPageID(PageID.Landing).pipe(
-      map((content: RedisContent[]) => 
-        content.filter(item => 
-          item.PageContentID === PageContentID.HeaderText || 
-          item.PageContentID === PageContentID.HeaderIcon
-        )
-      )
+    return this.getSiteChromeV3().pipe(
+      map((payload) => Array.isArray(payload?.header?.items) ? payload.header.items : [])
     );
   }
 
@@ -928,10 +1128,8 @@ export class RedisService {
    * Get footer content
    */
   getFooterContent(): Observable<RedisContent[]> {
-    return this.getContentByPageID(PageID.Landing).pipe(
-      map((content: RedisContent[]) => 
-        content.filter(item => item.PageContentID === PageContentID.FooterIcon)
-      )
+    return this.getSiteChromeV3().pipe(
+      map((payload) => Array.isArray(payload?.footer?.items) ? payload.footer.items : [])
     );
   }
 
@@ -1089,109 +1287,36 @@ export class RedisService {
   }
 
   private persistContentSnapshot(content: RedisContent[]): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const payload = {
-        ts: Date.now(),
-        data: content
-      };
-      localStorage.setItem(this.snapshotStorageKey, JSON.stringify(payload));
-    } catch {
-      // ignore storage failures (private mode / quota)
-    }
+    void content;
   }
 
   private readContentSnapshot(): RedisContent[] | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem(this.snapshotStorageKey);
-      if (!raw) return null;
-
-      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
-      const ageMs = Date.now() - Number(parsed?.ts || 0);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.snapshotMaxAgeMs) {
-        return null;
-      }
-
-      return Array.isArray(parsed?.data) ? parsed.data as RedisContent[] : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   private persistPageSnapshot(pageID: PageID, content: RedisContent[]): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const payload = {
-        ts: Date.now(),
-        data: content
-      };
-      localStorage.setItem(`${this.pageSnapshotStorageKeyPrefix}${pageID}`, JSON.stringify(payload));
-    } catch {
-      // ignore storage failures (private mode / quota)
-    }
+    void pageID;
+    void content;
   }
 
   private readPageSnapshot(pageID: PageID): RedisContent[] | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem(`${this.pageSnapshotStorageKeyPrefix}${pageID}`);
-      if (!raw) return null;
-
-      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
-      const ageMs = Date.now() - Number(parsed?.ts || 0);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.snapshotMaxAgeMs) {
-        return null;
-      }
-
-      return Array.isArray(parsed?.data) ? parsed.data as RedisContent[] : null;
-    } catch {
-      return null;
-    }
+    void pageID;
+    return null;
   }
 
   private writeRouteCache(cacheKey: string, data: unknown): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
-      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
-    } catch {
-      // ignore storage failures
-    }
+    void cacheKey;
+    void data;
   }
 
   private readRouteCache<T>(cacheKey: string, validator: (value: unknown) => value is T): T | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
-      const raw = sessionStorage.getItem(key);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
-      const ageMs = Date.now() - Number(parsed?.ts || 0);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.v2ReadCacheTtlMs) return null;
-      return validator(parsed?.data) ? parsed.data : null;
-    } catch {
-      return null;
-    }
+    void cacheKey;
+    void validator;
+    return null;
   }
 
   private clearRouteCacheSnapshots(): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const keys: string[] = [];
-      for (let i = 0; i < sessionStorage.length; i += 1) {
-        const key = sessionStorage.key(i);
-        if (!key) continue;
-        if (key.startsWith(this.routeCacheStorageKeyPrefix)) {
-          keys.push(key);
-        }
-      }
-      for (const key of keys) {
-        sessionStorage.removeItem(key);
-      }
-    } catch {
-      // ignore storage failures
-    }
+    return;
   }
 
   private isContentPageV2Response(value: unknown): value is ContentV2PageResponse {

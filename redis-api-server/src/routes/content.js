@@ -62,6 +62,20 @@ const {
   encodeOffsetToken,
   decodeOffsetToken
 } = require('../utils/pagination-token');
+const {
+  CONTENT_IDS,
+  LANDING_PAGE_ID,
+  WORK_PAGE_ID,
+  PROJECTS_PAGE_ID,
+  buildBootstrapPayload,
+  buildLandingPayload,
+  buildWorkPayload,
+  buildProjectCategoriesPayload,
+  buildProjectItemsPayload,
+  buildBlogDetailPayload,
+  buildAdminDashboardPayload,
+  buildAdminContentPayload
+} = require('../services/content-v3');
 
 const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCase();
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
@@ -105,6 +119,60 @@ async function readContentByPage(pageId) {
   }
 }
 
+async function readAllContent() {
+  if (useDdbAsPrimary) {
+    return ddbScanAllContent();
+  }
+
+  try {
+    return await getAllContent();
+  } catch (err) {
+    if (!isContentDdbEnabled()) throw err;
+    return ddbScanAllContent();
+  }
+}
+
+async function readContentAcrossPages(pageIds) {
+  const ids = Array.isArray(pageIds)
+    ? [...new Set(pageIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id >= 0))]
+    : [];
+
+  if (!ids.length) return [];
+
+  if (useDdbAsPrimary) {
+    const groups = await Promise.all(ids.map((pageId) => ddbGetContentByPageId(pageId)));
+    return groups.flat();
+  }
+
+  try {
+    const pageSet = new Set(ids);
+    return await getContentWhere((item) => pageSet.has(Number(item.PageID)));
+  } catch (err) {
+    if (!isContentDdbEnabled()) throw err;
+    const groups = await Promise.all(ids.map((pageId) => ddbGetContentByPageId(pageId)));
+    return groups.flat();
+  }
+}
+
+async function readContentByPageAndContent(pageId, contentId) {
+  const safePageId = Number(pageId);
+  const safeContentId = Number(contentId);
+  if (!Number.isFinite(safePageId) || !Number.isFinite(safeContentId)) return [];
+
+  if (useDdbAsPrimary) {
+    return ddbGetContentByPageAndContentId(safePageId, safeContentId);
+  }
+
+  try {
+    return await getContentWhere(
+      (item) => Number(item.PageID) === safePageId && Number(item.PageContentID) === safeContentId
+    );
+  } catch (err) {
+    if (!isContentDdbEnabled()) throw err;
+    return ddbGetContentByPageAndContentId(safePageId, safeContentId);
+  }
+}
+
 async function readContentByListItemIds(listItemIds) {
   const requested = Array.isArray(listItemIds) ? listItemIds : [];
   if (!requested.length) return [];
@@ -127,6 +195,9 @@ async function readContentByListItemIds(listItemIds) {
 // Public reads; authenticated writes.
 router.use((req, res, next) => {
   if (req.method === 'POST' && req.path === '/v2/list-items/batch') {
+    return next();
+  }
+  if (req.method === 'POST' && req.path === '/v3/projects/items') {
     return next();
   }
   if (req.method === 'GET') return next();
@@ -270,6 +341,353 @@ router.get('/preview/:token', async (req, res) => {
 
     res.set('Cache-Control', 'no-store');
     return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/bootstrap
+ * Shared site chrome metadata used across routes.
+ */
+router.get('/v3/bootstrap', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const items = await readContentByPage(LANDING_PAGE_ID);
+    const payload = buildBootstrapPayload(items);
+    logV2Metric('/v3/bootstrap', startedAt, {
+      headerItems: payload.header.items.length,
+      footerItems: payload.footer.items.length
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/landing
+ * Landing route metadata-first payload.
+ */
+router.get('/v3/landing', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const items = await readContentByPage(LANDING_PAGE_ID);
+    const payload = buildLandingPayload(items);
+    logV2Metric('/v3/landing', startedAt, {
+      slides: payload.heroSlides.length,
+      hasSummary: !!payload.summary
+    });
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/work
+ * Work route payload with metrics + paged timeline rows.
+ */
+router.get('/v3/work', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const limit = clampLimit(req.query.limit, { defaultValue: 8, min: 1, max: 20 });
+    const filterContext = {
+      route: 'v3/work',
+      limit
+    };
+    const filterHash = computeFilterHash(filterContext);
+    let nextOffset = 0;
+
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch (tokenErr) {
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+      if (decodedToken.filterHash !== filterHash) {
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      nextOffset = decodedToken.offset;
+    }
+
+    const items = await readContentByPage(WORK_PAGE_ID);
+    const payload = buildWorkPayload(items, { limit, nextOffset });
+    const nextToken = payload.timeline.hasMore
+      ? encodeOffsetToken({
+          offset: payload.timeline.nextOffset,
+          sort: 'order_asc',
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v3/work', startedAt, {
+      metrics: payload.metrics.length,
+      returnedTimeline: payload.timeline.items.length,
+      hasMore: payload.timeline.hasMore
+    });
+
+    return res.json({
+      metrics: normalizeContentArray(payload.metrics, req),
+      timeline: {
+        items: normalizeContentArray(payload.timeline.items, req),
+        nextToken,
+        hasMore: payload.timeline.hasMore
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/projects/categories
+ * Paged project category metadata feed.
+ */
+router.get('/v3/projects/categories', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const limit = clampLimit(req.query.limit, { defaultValue: 12, min: 1, max: 50 });
+    const filterHash = computeFilterHash({ route: 'v3/projects/categories', limit });
+    let nextOffset = 0;
+
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch {
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+      if (decodedToken.filterHash !== filterHash) {
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      nextOffset = decodedToken.offset;
+    }
+
+    const items = await readContentByPage(PROJECTS_PAGE_ID);
+    const payload = buildProjectCategoriesPayload(items, { limit, nextOffset });
+    const nextToken = payload.hasMore
+      ? encodeOffsetToken({
+          offset: payload.nextOffset,
+          sort: 'order_asc',
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v3/projects/categories', startedAt, {
+      returned: payload.items.length,
+      hasMore: payload.hasMore
+    });
+
+    return res.json({
+      items: payload.items,
+      nextToken,
+      page: {
+        limit,
+        returned: payload.items.length,
+        hasMore: payload.hasMore
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/content/v3/projects/items
+ * Batch hydrate project entries for selected categories.
+ */
+router.post('/v3/projects/items', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const categoryIds = Array.isArray(body.categoryIds)
+      ? body.categoryIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 50)
+      : [];
+
+    if (!categoryIds.length) {
+      return res.status(400).json({ error: 'categoryIds is required (1-50 IDs)' });
+    }
+
+    const items = await readContentByListItemIds(categoryIds);
+    const payload = buildProjectItemsPayload(items, categoryIds);
+
+    logV2Metric('/v3/projects/items', startedAt, {
+      requested: categoryIds.length,
+      returnedGroups: Object.keys(payload.itemsByCategoryId).length
+    });
+
+    const normalized = {};
+    for (const [key, rows] of Object.entries(payload.itemsByCategoryId)) {
+      normalized[key] = normalizeContentArray(rows, req);
+    }
+    return res.json({ itemsByCategoryId: normalized });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/blog/:listItemId
+ * Single blog post detail payload.
+ */
+router.get('/v3/blog/:listItemId', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const listItemId = String(req.params.listItemId || '').trim();
+    if (!listItemId) {
+      return res.status(400).json({ error: 'Invalid listItemId' });
+    }
+
+    const items = await readContentByListItemIds([listItemId]);
+    const payload = buildBlogDetailPayload(items);
+    if (!payload.listItemID) {
+      return res.status(404).json({ error: 'Blog post not found' });
+    }
+
+    const publishTs = payload.publishDate ? new Date(payload.publishDate).getTime() : 0;
+    const isVisible = payload.status === 'published' && !(publishTs && publishTs > Date.now());
+    if (!isVisible) {
+      return res.status(404).json({ error: 'Blog post not found' });
+    }
+
+    logV2Metric('/v3/blog/:listItemId', startedAt, {
+      listItemId,
+      blocks: Array.isArray(payload.bodyBlocks) ? payload.bodyBlocks.length : 0
+    });
+
+    if (payload.coverImage) {
+      payload.coverImage = normalizeContentRecord({ Photo: payload.coverImage }, req)?.Photo || payload.coverImage;
+    }
+
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/admin/dashboard
+ * Dashboard cards + status counts in a single request.
+ */
+router.get('/v3/admin/dashboard', requireAuth, async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const limit = clampLimit(req.query.limit, { defaultValue: 20, min: 1, max: 50 });
+    const q = String(req.query.q || '').trim();
+    const category = String(req.query.category || '').trim();
+    const filterHash = computeFilterHash({ route: 'v3/admin/dashboard', limit, q: q.toLowerCase(), category: category.toLowerCase() });
+    let nextOffset = 0;
+
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch {
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+      if (decodedToken.filterHash !== filterHash) {
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      nextOffset = decodedToken.offset;
+    }
+
+    const items = await readContentByPage(BLOG_PAGE_ID);
+    const payload = buildAdminDashboardPayload(items, { limit, nextOffset, q, category });
+    const nextToken = payload.hasMore
+      ? encodeOffsetToken({
+          offset: payload.nextOffset,
+          sort: 'publish_desc',
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v3/admin/dashboard', startedAt, {
+      returned: payload.items.length,
+      hasMore: payload.hasMore
+    });
+
+    return res.json({
+      items: payload.items,
+      counts: payload.counts,
+      nextToken,
+      page: {
+        limit,
+        returned: payload.items.length,
+        hasMore: payload.hasMore
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/admin/content
+ * Server-filtered content studio feed.
+ */
+router.get('/v3/admin/content', requireAuth, async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const pageId = Number.parseInt(String(req.query.pageId ?? '-1'), 10);
+    const contentId = Number.parseInt(String(req.query.contentId ?? '-1'), 10);
+    const q = String(req.query.q || '').trim();
+    const limit = clampLimit(req.query.limit, { defaultValue: 50, min: 1, max: 100 });
+    const filterHash = computeFilterHash({
+      route: 'v3/admin/content',
+      pageId: Number.isFinite(pageId) ? pageId : -1,
+      contentId: Number.isFinite(contentId) ? contentId : -1,
+      q: q.toLowerCase(),
+      limit
+    });
+    let nextOffset = 0;
+
+    if (req.query.nextToken) {
+      let decodedToken;
+      try {
+        decodedToken = decodeOffsetToken(req.query.nextToken);
+      } catch {
+        return res.status(400).json({ error: 'Invalid nextToken' });
+      }
+      if (decodedToken.filterHash !== filterHash) {
+        return res.status(400).json({ error: 'nextToken does not match the current filters' });
+      }
+      nextOffset = decodedToken.offset;
+    }
+
+    const items = Number.isFinite(pageId) && pageId >= 0 && Number.isFinite(contentId) && contentId >= 0
+      ? await readContentByPageAndContent(pageId, contentId)
+      : Number.isFinite(pageId) && pageId >= 0
+        ? await readContentByPage(pageId)
+        : await readContentAcrossPages([LANDING_PAGE_ID, WORK_PAGE_ID, PROJECTS_PAGE_ID, BLOG_PAGE_ID, 4]);
+    const payload = buildAdminContentPayload(items, { pageId, contentId, q, limit, nextOffset });
+    const nextToken = payload.hasMore
+      ? encodeOffsetToken({
+          offset: payload.nextOffset,
+          sort: 'updated_desc',
+          filterHash
+        })
+      : null;
+
+    logV2Metric('/v3/admin/content', startedAt, {
+      pageId,
+      contentId,
+      returned: payload.items.length,
+      hasMore: payload.hasMore
+    });
+
+    return res.json({
+      items: normalizeContentArray(payload.items, req),
+      nextToken,
+      page: {
+        pageId: Number.isFinite(pageId) ? pageId : -1,
+        contentId: Number.isFinite(contentId) ? contentId : -1,
+        limit,
+        returned: payload.items.length,
+        hasMore: payload.hasMore
+      }
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }

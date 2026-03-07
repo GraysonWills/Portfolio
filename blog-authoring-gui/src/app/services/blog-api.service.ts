@@ -141,6 +141,29 @@ export type BlogCardMediaItem = {
   imageUrl: string;
 };
 
+export type AdminDashboardResponse = {
+  items: BlogCardV2[];
+  counts: Record<string, number>;
+  nextToken: string | null;
+  page: {
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+  };
+};
+
+export type AdminContentResponse = {
+  items: RedisContent[];
+  nextToken: string | null;
+  page: {
+    pageId: number;
+    contentId: number;
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+  };
+};
+
 export type RouteCacheOptions = {
   cacheScope?: string;
 };
@@ -204,6 +227,8 @@ export class BlogApiService {
   private blogCardsV2Cache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardsV2Response> }>();
   private blogMediaBatchCache = new Map<string, { cachedAt: number; stream$: Observable<BlogCardMediaItem[]> }>();
   private listItemsBatchV2Cache = new Map<string, { cachedAt: number; stream$: Observable<Record<string, RedisContent[]>> }>();
+  private adminDashboardV3Cache = new Map<string, { cachedAt: number; stream$: Observable<AdminDashboardResponse> }>();
+  private adminContentV3Cache = new Map<string, { cachedAt: number; stream$: Observable<AdminContentResponse> }>();
   private mediaItemsCache = new Map<string, { cachedAt: number; imageUrl: string }>();
 
   constructor(private http: HttpClient) {
@@ -668,6 +693,89 @@ export class BlogApiService {
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.blogCardsV2Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getAdminDashboardV3(request: {
+    limit?: number;
+    nextToken?: string | null;
+    q?: string;
+    category?: string;
+    cacheScope?: string;
+  } = {}): Observable<AdminDashboardResponse> {
+    const now = Date.now();
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, 'admin-dashboard');
+    const cacheKey = this.buildCacheKey('v3-admin-dashboard', cacheScope, {
+      limit: request.limit,
+      nextToken: request.nextToken || null,
+      q: request.q || '',
+      category: request.category || ''
+    });
+    const cached = this.adminDashboardV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+    if (request.q) params.set('q', request.q);
+    if (request.category) params.set('category', request.category);
+
+    const stream$ = this.readRequest(
+      this.http.get<AdminDashboardResponse>(
+        `${this.apiUrl}/content/v3/admin/dashboard${params.toString() ? `?${params.toString()}` : ''}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+
+    this.adminDashboardV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+    return stream$;
+  }
+
+  getAdminContentV3(request: {
+    pageId: number;
+    contentId?: number;
+    q?: string;
+    limit?: number;
+    nextToken?: string | null;
+    cacheScope?: string;
+  }): Observable<AdminContentResponse> {
+    const now = Date.now();
+    const safePageId = Number.isFinite(Number(request?.pageId)) ? Number(request.pageId) : -1;
+    const safeContentId = Number.isFinite(Number(request?.contentId)) ? Number(request.contentId) : -1;
+    const cacheScope = this.normalizeCacheScope(request.cacheScope, `admin-content:${safePageId}`);
+    const cacheKey = this.buildCacheKey('v3-admin-content', cacheScope, {
+      pageId: safePageId,
+      contentId: safeContentId,
+      q: request.q || '',
+      limit: request.limit,
+      nextToken: request.nextToken || null
+    });
+    const cached = this.adminContentV3Cache.get(cacheKey);
+    if (cached && (now - cached.cachedAt) <= this.v2ReadCacheTtlMs) {
+      return cached.stream$;
+    }
+
+    const params = new URLSearchParams();
+    params.set('pageId', String(safePageId));
+    params.set('contentId', String(safeContentId));
+    if (request.q) params.set('q', request.q);
+    if (request.limit) params.set('limit', String(request.limit));
+    if (request.nextToken) params.set('nextToken', request.nextToken);
+
+    const stream$ = this.readRequest(
+      this.http.get<AdminContentResponse>(
+        `${this.apiUrl}/content/v3/admin/content?${params.toString()}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+
+    this.adminContentV3Cache.set(cacheKey, { cachedAt: now, stream$ });
     return stream$;
   }
 
@@ -1517,6 +1625,8 @@ export class BlogApiService {
     this.blogCardsV2Cache.clear();
     this.blogMediaBatchCache.clear();
     this.listItemsBatchV2Cache.clear();
+    this.adminDashboardV3Cache.clear();
+    this.adminContentV3Cache.clear();
     this.mediaItemsCache.clear();
     this.clearRouteCacheSnapshots();
   }
@@ -1594,126 +1704,71 @@ export class BlogApiService {
   }
 
   private persistAllContentSnapshot(items: RedisContent[]): void {
-    this.writeSnapshot(this.allContentSnapshotStorageKey, items);
+    void items;
   }
 
   private readAllContentSnapshot(): RedisContent[] | null {
-    return this.readSnapshot<RedisContent[]>(this.allContentSnapshotStorageKey, this.isRedisContentArray);
+    return null;
   }
 
   private persistPageSnapshot(pageId: number, items: RedisContent[]): void {
-    this.writeSnapshot(`${this.pageSnapshotStorageKeyPrefix}${pageId}`, items);
+    void pageId;
+    void items;
   }
 
   private readPageSnapshot(pageId: number): RedisContent[] | null {
-    return this.readSnapshot<RedisContent[]>(
-      `${this.pageSnapshotStorageKeyPrefix}${pageId}`,
-      this.isRedisContentArray
-    );
+    void pageId;
+    return null;
   }
 
   private persistListItemSnapshot(listItemID: string, items: RedisContent[]): void {
-    this.writeSnapshot(`${this.listItemSnapshotStorageKeyPrefix}${encodeURIComponent(listItemID)}`, items);
+    void listItemID;
+    void items;
   }
 
   private readListItemSnapshot(listItemID: string): RedisContent[] | null {
-    return this.readSnapshot<RedisContent[]>(
-      `${this.listItemSnapshotStorageKeyPrefix}${encodeURIComponent(listItemID)}`,
-      this.isRedisContentArray
-    );
+    void listItemID;
+    return null;
   }
 
   private persistSubscribersSnapshot(cacheKey: string, payload: NotificationSubscribersResponse): void {
-    this.writeSnapshot(`${this.subscribersSnapshotStorageKeyPrefix}${cacheKey}`, payload);
+    void cacheKey;
+    void payload;
   }
 
   private readSubscribersSnapshot(cacheKey: string): NotificationSubscribersResponse | null {
-    return this.readSnapshot<NotificationSubscribersResponse>(
-      `${this.subscribersSnapshotStorageKeyPrefix}${cacheKey}`,
-      this.isNotificationSubscriberResponse
-    );
+    void cacheKey;
+    return null;
   }
 
   private writeRouteCache(cacheKey: string, data: unknown): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
-      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
-    } catch {
-      // ignore storage failures
-    }
+    void cacheKey;
+    void data;
   }
 
   private readRouteCache<T>(cacheKey: string, validator: (value: unknown) => value is T): T | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const key = `${this.routeCacheStorageKeyPrefix}${encodeURIComponent(cacheKey)}`;
-      const raw = sessionStorage.getItem(key);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
-      const ageMs = Date.now() - Number(parsed?.ts || 0);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.v2ReadCacheTtlMs) return null;
-      const data = parsed?.data;
-      return validator(data) ? data : null;
-    } catch {
-      return null;
-    }
+    void cacheKey;
+    void validator;
+    return null;
   }
 
   private clearRouteCacheSnapshots(): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const keys: string[] = [];
-      for (let i = 0; i < sessionStorage.length; i += 1) {
-        const key = sessionStorage.key(i);
-        if (!key) continue;
-        if (key.startsWith(this.routeCacheStorageKeyPrefix)) {
-          keys.push(key);
-        }
-      }
-      for (const key of keys) {
-        sessionStorage.removeItem(key);
-      }
-    } catch {
-      // ignore storage failures
-    }
+    return;
   }
 
   private persistPageSnapshotsFromAll(items: RedisContent[]): void {
-    const grouped = new Map<number, RedisContent[]>();
-    for (const item of items || []) {
-      const pageId = Number(item?.PageID);
-      if (!Number.isFinite(pageId)) continue;
-      const bucket = grouped.get(pageId) || [];
-      bucket.push(item);
-      grouped.set(pageId, bucket);
-    }
-
-    grouped.forEach((pageItems, pageId) => this.persistPageSnapshot(pageId, pageItems));
+    void items;
   }
 
   private writeSnapshot(key: string, data: unknown): void {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
-    } catch {
-      // ignore quota/privacy errors
-    }
+    void key;
+    void data;
   }
 
   private readSnapshot<T>(key: string, validator: (value: unknown) => value is T): T | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { ts?: number; data?: unknown };
-      const ageMs = Date.now() - Number(parsed?.ts || 0);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > this.snapshotMaxAgeMs) return null;
-      const data = parsed?.data;
-      return validator(data) ? data : null;
-    } catch {
-      return null;
-    }
+    void key;
+    void validator;
+    return null;
   }
 
   private isRedisContentArray(value: unknown): value is RedisContent[] {

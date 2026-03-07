@@ -1,9 +1,8 @@
 import { Component, OnInit, HostListener } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
-import { RedisContent, PageContentID, PageID } from '../../models/redis-content.model';
+import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
-import { forkJoin } from 'rxjs';
 
 interface WorkTimelineEvent {
   id: string;
@@ -56,6 +55,8 @@ export class WorkComponent implements OnInit {
   timelineAlign: 'alternate' | 'left' = 'alternate';
   private loadCount = 0;
   private timelineNextToken: string | null = null;
+  private isFetchingTimeline = false;
+  private readonly scrollLoadBufferPx = 500;
 
   constructor(
     private redisService: RedisService,
@@ -74,6 +75,19 @@ export class WorkComponent implements OnInit {
     this.updateTimelineAlign();
   }
 
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (!this.timelineNextToken || this.isFetchingTimeline || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
+      this.loadNextTimelineChunk();
+    }
+  }
+
   private updateTimelineAlign(): void {
     this.timelineAlign = window.innerWidth <= 768 ? 'left' : 'alternate';
   }
@@ -82,31 +96,16 @@ export class WorkComponent implements OnInit {
    * Load work page content from Redis
    */
   private loadWorkContent(): void {
-    forkJoin({
-      metrics: this.redisService.getContentPageV2(PageID.Work, {
-        limit: 20,
-        fields: 'standard',
-        contentIds: [PageContentID.WorkSkillMetric],
-        sort: 'id_asc',
-        cacheScope: 'route:/work:metrics'
-      }),
-      timeline: this.redisService.getContentPageV2(PageID.Work, {
-        limit: 8,
-        fields: 'standard',
-        contentIds: [PageContentID.WorkText],
-        sort: 'id_asc',
-        cacheScope: 'route:/work:timeline'
-      })
+    this.redisService.getWorkPayloadV3({
+      limit: 8,
+      cacheScope: 'route:/work'
     }).subscribe({
-      next: ({ metrics, timeline }) => {
-        const metricItems = this.extractItems(metrics);
-        const timelineItems = this.extractItems(timeline);
+      next: (payload) => {
+        const metricItems = Array.isArray(payload?.metrics) ? payload.metrics : [];
+        const timelineItems = Array.isArray(payload?.timeline?.items) ? payload.timeline.items : [];
         this.workContent = this.mergeById([...metricItems, ...timelineItems]);
         this.processWorkContent();
-        this.timelineNextToken = (timeline as any)?.nextToken || null;
-        if (this.timelineNextToken) {
-          this.loadNextTimelineChunk(this.timelineNextToken);
-        }
+        this.timelineNextToken = payload?.timeline?.nextToken || null;
         this.checkLoaded();
       },
       error: (error) => {
@@ -121,42 +120,30 @@ export class WorkComponent implements OnInit {
     });
   }
 
-  private loadNextTimelineChunk(nextToken: string): void {
-    const token = String(nextToken || '').trim();
+  private loadNextTimelineChunk(): void {
+    const token = String(this.timelineNextToken || '').trim();
     if (!token) return;
 
-    this.redisService.getContentPageV2(PageID.Work, {
+    this.isFetchingTimeline = true;
+    this.redisService.getWorkPayloadV3({
       limit: 8,
-      fields: 'standard',
-      contentIds: [PageContentID.WorkText],
-      sort: 'id_asc',
       nextToken: token,
-      cacheScope: 'route:/work:timeline'
+      cacheScope: 'route:/work'
     }).subscribe({
-      next: (response) => {
-        const rows = this.extractItems(response);
+      next: (payload) => {
+        this.isFetchingTimeline = false;
+        const rows = Array.isArray(payload?.timeline?.items) ? payload.timeline.items : [];
         if (rows.length) {
           this.workContent = this.mergeById([...this.workContent, ...rows]);
           this.processWorkContent();
         }
-        const next = (response as any)?.nextToken || null;
-        if (next) {
-          this.timelineNextToken = next;
-          this.loadNextTimelineChunk(next);
-        } else {
-          this.timelineNextToken = null;
-        }
+        this.timelineNextToken = payload?.timeline?.nextToken || null;
       },
       error: () => {
+        this.isFetchingTimeline = false;
         this.timelineNextToken = null;
       }
     });
-  }
-
-  private extractItems(response: any): RedisContent[] {
-    if (Array.isArray(response?.items)) return response.items as RedisContent[];
-    if (Array.isArray(response)) return response as RedisContent[];
-    return [];
   }
 
   private mergeById(items: RedisContent[]): RedisContent[] {

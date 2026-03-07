@@ -17,6 +17,7 @@ const {
 } = require('@aws-sdk/lib-dynamodb');
 
 const { getDdbDoc } = require('./aws/clients');
+const { decorateContentItemForReadModels } = require('./content-read-model');
 
 function getContentTableName() {
   return process.env.CONTENT_TABLE_NAME || '';
@@ -68,15 +69,16 @@ async function batchWriteAll(tableName, writeRequests) {
 
 async function ddbPutContent(item) {
   const tableName = requireTableName();
-  await getDdbDoc().send(new PutCommand({ TableName: tableName, Item: item }));
-  return item;
+  const decorated = decorateContentItemForReadModels(item);
+  await getDdbDoc().send(new PutCommand({ TableName: tableName, Item: decorated }));
+  return decorated;
 }
 
 async function ddbBatchPutContent(items) {
   const tableName = requireTableName();
-  const requests = items.map(Item => ({ PutRequest: { Item } }));
+  const requests = items.map((Item) => ({ PutRequest: { Item: decorateContentItemForReadModels(Item) } }));
   await batchWriteAll(tableName, requests);
-  return items;
+  return requests.map((request) => request.PutRequest.Item);
 }
 
 async function ddbGetContentById(id) {

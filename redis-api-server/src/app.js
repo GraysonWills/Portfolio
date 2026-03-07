@@ -159,97 +159,21 @@ function createApp() {
   app.use(express.json({ limit: requestBodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: requestBodyLimit, parameterLimit: 1000 }));
 
-  // ─── In-Memory Response Cache (for GET endpoints) ────────────
-  const cache = new Map();
-  const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS, 10) || 60_000;
-  const MAX_CACHE_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES, 10) || 500;
-  const BROWSER_CACHE_MAX_AGE_SECONDS = Math.max(
-    0,
-    parseInt(process.env.BROWSER_CACHE_MAX_AGE_SECONDS || '120', 10) || 120
-  );
-  const BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS = Math.max(
-    0,
-    parseInt(process.env.BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS || '300', 10) || 300
-  );
-  let lastSweepAt = 0;
-
-  function evictExpired(now = Date.now()) {
-    // Sweep at most once per TTL window to avoid per-request full scans.
-    if (now - lastSweepAt < CACHE_TTL) return;
-    lastSweepAt = now;
-    for (const [cacheKey, entry] of cache.entries()) {
-      if (now - entry.timestamp >= CACHE_TTL) {
-        cache.delete(cacheKey);
-      }
-    }
-  }
-
-  function enforceCacheBounds() {
-    while (cache.size > MAX_CACHE_ENTRIES) {
-      // Map keeps insertion order; first key is oldest entry.
-      const oldestKey = cache.keys().next().value;
-      if (!oldestKey) break;
-      cache.delete(oldestKey);
-    }
-  }
-
-  function setBrowserCacheHeaders(res) {
-    const directives = [
-      `public`,
-      `max-age=${BROWSER_CACHE_MAX_AGE_SECONDS}`,
-      `stale-while-revalidate=${BROWSER_CACHE_STALE_WHILE_REVALIDATE_SECONDS}`
-    ];
-    res.set('Cache-Control', directives.join(', '));
-  }
-
-  function cacheMiddleware(req, res, next) {
-    if (req.method !== 'GET') return next();
-    if ((req.originalUrl || '').includes('/preview/')) {
-      // Preview payloads can contain unpublished content and should never be cached.
-      res.set('Cache-Control', 'no-store');
-      return next();
-    }
-
-    const now = Date.now();
-    evictExpired(now);
-
-    const key = `${String(req.headers.host || '').toLowerCase()}|${req.originalUrl}`;
-    const cached = cache.get(key);
-
-    if (cached && now - cached.timestamp < CACHE_TTL) {
-      res.set('X-Cache', 'HIT');
-      setBrowserCacheHeaders(res);
-      return res.json(cached.data);
-    }
-
-    if (cached) {
-      cache.delete(key);
-    }
-
-    const originalJson = res.json.bind(res);
-    res.json = (data) => {
-      cache.set(key, { data, timestamp: Date.now() });
-      enforceCacheBounds();
-      res.set('X-Cache', 'MISS');
-      setBrowserCacheHeaders(res);
-      return originalJson(data);
-    };
-
-    next();
-  }
-
-  function invalidateCache(req, res, next) {
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-      cache.clear();
+  // ─── Dynamic API Cache Policy ────────────────────────────────
+  // Mutable content should always be fetched fresh from origin. Static build
+  // assets and media variants remain separately cacheable via CloudFront/S3.
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET') {
+      res.set('Cache-Control', 'no-store, max-age=0');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
     }
     next();
-  }
-
-  app.use(invalidateCache);
+  });
 
   // ─── Routes ──────────────────────────────────────────────────
   app.use('/api/health', healthRoutes);
-  app.use('/api/content', cacheMiddleware, contentRoutes);
+  app.use('/api/content', contentRoutes);
   app.use('/api/upload', writeLimiter, uploadRoutes);
   app.use('/api/admin', writeLimiter, adminRoutes);
   app.use('/api/subscriptions', writeLimiter, subscriptionsRoutes);

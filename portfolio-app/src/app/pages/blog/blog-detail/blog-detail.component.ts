@@ -94,44 +94,35 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     this.notFound = false;
     this.bodyBlocks = [];
     if (this.redisService.isContentV2StreamingEnabled()) {
-      this.loadPostMetadataFirst(listItemId);
+      this.loadPostV3(listItemId);
       return;
     }
     this.loadPostLegacy(listItemId);
   }
 
-  private loadPostMetadataFirst(listItemId: string): void {
+  private loadPostV3(listItemId: string): void {
     this.isLoading = true;
-    this.redisService.getListItemsBatchV2(
-      [listItemId],
-      [PageContentID.BlogItem],
-      { cacheScope: `route:/blog/${listItemId}:metadata` }
-    ).subscribe({
-      next: (grouped) => {
-        const items = Array.isArray(grouped?.[listItemId]) ? grouped[listItemId] : [];
-        const metaItem = items.find((i) => i.PageContentID === PageContentID.BlogItem) || items.find((i) => !!i.Metadata);
-        if (!metaItem) {
-          this.loadPostLegacy(listItemId);
-          return;
-        }
-
-        const meta = (metaItem.Metadata as any) || {};
-        if (!this.isPostVisible(meta, listItemId)) {
+    this.redisService.getBlogPostDetailV3(listItemId).subscribe({
+      next: (payload) => {
+        if (!payload?.listItemID) {
           this.notFound = true;
           this.isLoading = false;
           return;
         }
 
-        this.applyMetadata(meta);
-        this.coverImage = '';
-        this.coverAlt = this.title;
-        this.bodyBlocks = this.summary ? [{ type: 'paragraph', content: this.summary }] : [];
-        this.readTime = this.resolveReadTimeMinutes(meta as BlogPostMetadata, this.summary || this.title);
+        this.title = payload.title || 'Untitled';
+        this.summary = payload.summary || '';
+        this.coverImage = payload.coverImage || '';
+        this.coverAlt = payload.coverAlt || this.title;
+        this.publishDate = payload.publishDate ? new Date(payload.publishDate) : null;
+        this.tags = Array.isArray(payload.tags) ? payload.tags : [];
+        this.privateSeoTags = Array.isArray(payload.privateSeoTags) ? payload.privateSeoTags : [];
+        this.category = payload.category || 'General';
+        this.signature = payload.signature || null;
+        this.bodyBlocks = Array.isArray(payload.bodyBlocks) ? payload.bodyBlocks : [];
+        this.readTime = Math.max(1, Number(payload.readTimeMinutes) || 1);
         this.updateSeo(listItemId);
         this.isLoading = false;
-
-        // Hydrate full body/media in the background.
-        this.loadPostLegacy(listItemId, true);
       },
       error: () => {
         this.loadPostLegacy(listItemId);

@@ -75,7 +75,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
     this.apiEndpoint = this.blogApi.getApiEndpoint();
     this.appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    this.testConnection();
+    this.connectionStatus = 'connected';
     this.loadBlogPosts();
     this.registerHotkeys();
   }
@@ -209,17 +209,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private loadBlogPostsV2(nextToken?: string | null): void {
     this.isFetchingNextPage = true;
-    this.blogApi.getBlogCardsV2({
-      status: 'all',
-      includeFuture: true,
+    this.blogApi.getAdminDashboardV3({
       limit: 20,
       nextToken: nextToken || null,
-      cacheScope: 'route:/dashboard:cards'
+      cacheScope: 'route:/dashboard'
     }).subscribe({
       next: (response) => {
         this.isFetchingNextPage = false;
         this.nextToken = response?.nextToken || null;
         const incoming = (response?.items || []).map((card) => this.toPostViewFromCard(card));
+        this.statusCounts = { ...(response?.counts || { draft: 0, scheduled: 0, published: 0 }) };
 
         if (!nextToken) {
           this.postViews = incoming;
@@ -233,7 +232,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
 
         this.postViews.sort((a, b) => b.publishDate.getTime() - a.publishDate.getTime());
-        this.recalculateStatusCounts();
+        if (!response?.counts) {
+          this.recalculateStatusCounts();
+        }
         if (!nextToken) {
           this.resetVisiblePosts();
         } else {

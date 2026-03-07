@@ -27,7 +27,7 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - detects embedded `data:image/*` tags before save
   - uploads those assets via API and rewrites post HTML to URL-based images
   - avoids API `413 request entity too large` failures on large posts
-- Route-scoped `v2` reading with browser caching and fallback to legacy reads.
+- Route-scoped `v2`/`v3` reading with in-memory request reuse and fallback to legacy reads.
 - Keyboard shortcuts with global + page-scoped contexts.
 
 ## Auth and Session Behavior
@@ -55,12 +55,30 @@ portfolioPreviewUrl: 'https://www.grayson-wills.com'
 
 Main consumed APIs:
 - `/api/content/*` and `/api/content/v2/*`
+- `/api/content/v3/bootstrap`
+- `/api/content/v3/admin/dashboard`
+- `/api/content/v3/admin/content`
 - `/api/notifications/*`
 - includes `/api/notifications/unpublish`
 - `/api/subscriptions/*`
 - `/api/photo-assets/*`
 - `/api/upload/image`
 - `/api/health`
+
+Normal route entry no longer calls `/api/health`; connectivity checks are now settings/diagnostics actions only.
+
+## Loading Strategy
+
+- Dashboard:
+  - reads metadata/status counts from `GET /api/content/v3/admin/dashboard`
+  - hydrates visible cover images lazily
+  - paginates additional cards instead of preloading all posts
+- Content Studio:
+  - reads server-filtered rows from `GET /api/content/v3/admin/content`
+  - uses page/content targeted queries behind the API
+  - loads additional rows incrementally
+- Dynamic content snapshots are no longer persisted in browser storage.
+- Reuse is limited to current-session in-memory streams keyed by route/query shape.
 
 Scheduling dependency note:
 - Blog scheduling in dashboard requires API Lambda env vars:
@@ -131,3 +149,6 @@ Operational note:
 - Admin route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/admin/admin-routing.module.ts`
 - Auth route module: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/features/auth/auth-routing.module.ts`
 - API client: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/blog-api.service.ts`
+
+Further rollout notes:
+- `/Users/grayson/Desktop/Portfolio/docs/no-cache-performance-rollout.md`

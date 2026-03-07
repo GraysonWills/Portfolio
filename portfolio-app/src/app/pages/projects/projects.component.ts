@@ -35,6 +35,7 @@ export class ProjectsComponent implements OnInit {
   private readonly scrollLoadBufferPx = 500;
   private loadingCategoryIds = new Set<string>();
   private categoriesNextToken: string | null = null;
+  private isFetchingCategoryPage = false;
 
   constructor(
     private redisService: RedisService,
@@ -61,22 +62,16 @@ export class ProjectsComponent implements OnInit {
    * Load projects page content from Redis
    */
   private loadProjectsContent(): void {
-    this.redisService.getContentPageV2(PageID.Projects, {
-      limit: 40,
-      fields: 'full',
-      contentIds: [PageContentID.ProjectsCategoryPhoto, PageContentID.ProjectsCategoryText],
-      sort: 'id_asc',
+    this.redisService.getProjectsCategoriesV3({
+      limit: 12,
       cacheScope: 'route:/projects:categories'
     }).subscribe({
-      next: (response: any) => {
-        const content = this.extractItems(response);
+      next: (response) => {
+        const content = this.mapCategoriesToContent(response?.items || []);
         this.categoriesNextToken = response?.nextToken || null;
         this.projectsContent = content;
         this.processProjectsContent();
         this.isLoading = false;
-        if (this.categoriesNextToken) {
-          this.loadNextCategoryChunk(this.categoriesNextToken);
-        }
       },
       error: (error) => {
         console.error('Error loading projects content:', error);
@@ -90,33 +85,27 @@ export class ProjectsComponent implements OnInit {
     });
   }
 
-  private loadNextCategoryChunk(nextToken: string): void {
-    const token = String(nextToken || '').trim();
-    if (!token) return;
+  private loadNextCategoryChunk(): void {
+    const token = String(this.categoriesNextToken || '').trim();
+    if (!token || this.isFetchingCategoryPage) return;
 
-    this.redisService.getContentPageV2(PageID.Projects, {
-      limit: 40,
-      fields: 'full',
-      contentIds: [PageContentID.ProjectsCategoryPhoto, PageContentID.ProjectsCategoryText],
-      sort: 'id_asc',
+    this.isFetchingCategoryPage = true;
+    this.redisService.getProjectsCategoriesV3({
+      limit: 12,
       nextToken: token,
       cacheScope: 'route:/projects:categories'
     }).subscribe({
-      next: (response: any) => {
-        const rows = this.extractItems(response);
+      next: (response) => {
+        this.isFetchingCategoryPage = false;
+        const rows = this.mapCategoriesToContent(response?.items || []);
         if (rows.length) {
           this.projectsContent = this.mergeById([...this.projectsContent, ...rows]);
-          this.processProjectsContent();
+          this.processProjectsContent(false);
         }
-        const next = response?.nextToken || null;
-        if (next) {
-          this.categoriesNextToken = next;
-          this.loadNextCategoryChunk(next);
-        } else {
-          this.categoriesNextToken = null;
-        }
+        this.categoriesNextToken = response?.nextToken || null;
       },
       error: () => {
+        this.isFetchingCategoryPage = false;
         this.categoriesNextToken = null;
       }
     });
@@ -126,7 +115,7 @@ export class ProjectsComponent implements OnInit {
    * Process projects content into category groups.
    * Each category may contain multiple projects (text + photo pairs).
    */
-  private processProjectsContent(): void {
+  private processProjectsContent(resetVisible: boolean = true): void {
     this.projectsByCategory.clear();
 
     const categories = this.projectsContent
@@ -172,7 +161,18 @@ export class ProjectsComponent implements OnInit {
       this.expandedCategories[cat.listItemID] = true;
     });
 
-    this.resetVisibleCategories();
+    if (resetVisible) {
+      this.resetVisibleCategories();
+      return;
+    }
+
+    const retainCount = Math.max(this.visibleCategoryCount, this.visibleCategories.length, this.categoryPageSize);
+    this.visibleCategoryCount = retainCount;
+    this.visibleCategories = this.categoryGroups.slice(0, this.visibleCategoryCount);
+    const needsHydration = this.visibleCategories
+      .filter((category) => this.expandedCategories[category.listItemID] && !this.projectsByCategory.has(category.listItemID))
+      .map((category) => category.listItemID);
+    this.hydrateProjectsForCategories(needsHydration);
   }
 
   /**
@@ -290,11 +290,7 @@ export class ProjectsComponent implements OnInit {
     if (!keys.length) return;
 
     keys.forEach((key) => this.loadingCategoryIds.add(key));
-    this.redisService.getListItemsBatchV2(
-      keys,
-      [PageContentID.ProjectsPhoto, PageContentID.ProjectsText],
-      { cacheScope: 'route:/projects:category-items' }
-    ).subscribe({
+    this.redisService.getProjectItemsV3(keys, { cacheScope: 'route:/projects:category-items' }).subscribe({
       next: (response) => {
         for (const key of keys) {
           const rows = Array.isArray(response?.[key]) ? response[key] : [];
@@ -312,12 +308,6 @@ export class ProjectsComponent implements OnInit {
     });
   }
 
-  private extractItems(response: any): RedisContent[] {
-    if (Array.isArray(response?.items)) return response.items as RedisContent[];
-    if (Array.isArray(response)) return response as RedisContent[];
-    return [];
-  }
-
   private mergeById(items: RedisContent[]): RedisContent[] {
     const map = new Map<string, RedisContent>();
     for (const item of items || []) {
@@ -329,17 +319,21 @@ export class ProjectsComponent implements OnInit {
   }
 
   get hasMoreCategories(): boolean {
-    return this.visibleCategories.length < this.categoryGroups.length;
+    return this.visibleCategories.length < this.categoryGroups.length || !!this.categoriesNextToken;
   }
 
   loadMoreCategories(): void {
-    if (!this.hasMoreCategories) return;
-    this.visibleCategoryCount += this.categoryPageSize;
-    this.visibleCategories = this.categoryGroups.slice(0, this.visibleCategoryCount);
+    if (this.visibleCategories.length < this.categoryGroups.length) {
+      this.visibleCategoryCount += this.categoryPageSize;
+      this.visibleCategories = this.categoryGroups.slice(0, this.visibleCategoryCount);
+    }
     const needsHydration = this.visibleCategories
       .filter((category) => this.expandedCategories[category.listItemID] && !this.projectsByCategory.has(category.listItemID))
       .map((category) => category.listItemID);
     this.hydrateProjectsForCategories(needsHydration);
+    if (this.categoriesNextToken && this.visibleCategories.length >= (this.categoryGroups.length - 2)) {
+      this.loadNextCategoryChunk();
+    }
   }
 
   private resetVisibleCategories(): void {
@@ -361,5 +355,43 @@ export class ProjectsComponent implements OnInit {
 
   trackByTech(index: number, tech: string): string {
     return `${tech}-${index}`;
+  }
+
+  private mapCategoriesToContent(items: Array<any>): RedisContent[] {
+    return (Array.isArray(items) ? items : []).flatMap((item, index) => {
+      const listItemID = String(item?.listItemID || '').trim();
+      if (!listItemID) return [];
+
+      const rows: RedisContent[] = [
+        {
+          ID: `projects-category-text-${listItemID}`,
+          PageID: PageID.Projects,
+          PageContentID: PageContentID.ProjectsCategoryText,
+          ListItemID: listItemID,
+          Text: JSON.stringify({
+            name: item?.name || 'Uncategorized',
+            description: item?.description || ''
+          }),
+          Metadata: {
+            order: Number(item?.order || index + 1)
+          }
+        }
+      ];
+
+      if (item?.categoryPhoto) {
+        rows.push({
+          ID: `projects-category-photo-${listItemID}`,
+          PageID: PageID.Projects,
+          PageContentID: PageContentID.ProjectsCategoryPhoto,
+          ListItemID: listItemID,
+          Photo: item.categoryPhoto,
+          Metadata: {
+            order: Number(item?.order || index + 1)
+          }
+        });
+      }
+
+      return rows;
+    });
   }
 }

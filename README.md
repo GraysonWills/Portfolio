@@ -5,6 +5,7 @@ Full-stack portfolio platform with:
 - Authenticated Angular authoring console (`blog-authoring-gui`)
 - Node.js/Express API (`redis-api-server`)
 - AWS static hosting + API + notifications infrastructure
+- No-cache, metadata-first route loading with AWS Lambda provisioned origin reads
 
 ## Production Endpoints
 
@@ -65,7 +66,7 @@ flowchart LR
 
 - Multi-page experience: Landing, Work, Projects, Blog, Notifications
 - Blog list + full blog detail pages with rich body blocks
-- Metadata-first loading with progressive image/body hydration and route-scoped browser cache
+- Metadata-first loading with progressive image/body hydration and route-scoped in-memory request reuse
 - SEO basics (`robots.txt`, `sitemap.xml`, meta tags)
 - Email subscription UX:
   - Blog subscribe form
@@ -79,7 +80,7 @@ flowchart LR
 
 - Cognito-authenticated access (`/login`, `/forgot-password`, guarded routes)
 - Dashboard + content studio for editing portfolio/blog content
-- Metadata-first dashboard/content loading with route-scoped cache + batched hydration
+- Metadata-first dashboard/content loading with route-scoped in-memory request reuse + batched hydration
 - Keyboard shortcut system for global navigation + page-level actions
 - Collections studio for non-blog writing assets (`/collections`):
   - category tab registry (create/archive/restore tabs)
@@ -133,8 +134,19 @@ When adding any new authoring page/route, include hotkeys by default:
   - token-based pagination with filter-hash validation
   - frontend fallback to legacy `v1` reads if any `v2` call fails
   - feed telemetry events: `cards_rendered_initial`, `cards_images_hydrated`, `cards_next_page_loaded`
+- Route-shaped `v3` read APIs for no-cache rendering:
+  - `GET /api/content/v3/bootstrap`
+  - `GET /api/content/v3/landing`
+  - `GET /api/content/v3/work`
+  - `GET /api/content/v3/projects/categories`
+  - `POST /api/content/v3/projects/items`
+  - `GET /api/content/v3/blog/:listItemId`
+  - `GET /api/content/v3/admin/dashboard`
+  - `GET /api/content/v3/admin/content`
+- Dynamic API reads now return `Cache-Control: no-store`; old in-process GET response caching was removed
 - Full API details:
   - `/Users/grayson/Desktop/Portfolio/docs/content-v2-streaming.md`
+  - `/Users/grayson/Desktop/Portfolio/docs/no-cache-performance-rollout.md`
 - Subscription lifecycle:
   - request/confirm/unsubscribe/preferences
   - duplicate prevention (`ALREADY_SUBSCRIBED`, `ALREADY_PENDING`)
@@ -161,6 +173,35 @@ When adding any new authoring page/route, include hotkeys by default:
 | `Metadata` | object? | status/tags/order/etc |
 | `CreatedAt` | ISO date? | optional |
 | `UpdatedAt` | ISO date? | optional |
+
+Additional derived read-model attributes may also be present on persisted records:
+- `PagePK`, `PageSK`
+- `UpdatedPK`, `UpdatedSK`
+- `FeedPK`, `FeedSK`
+
+These support future GSI-backed read models and are already stamped on new writes.
+
+## Performance Architecture (Current)
+
+- Dynamic content is not API-cached and is not persisted in browser snapshot storage.
+- Frontends reuse only in-flight and route-scoped in-memory requests during the active SPA session.
+- Public route loading is additive:
+  - header/footer from `v3/bootstrap`
+  - landing hero/summary from `v3/landing`
+  - work metrics + paged timeline from `v3/work`
+  - project categories first, project card hydration second
+  - blog detail metadata/body blocks from `v3/blog/:listItemId`
+- Authoring route loading is additive:
+  - dashboard from `v3/admin/dashboard`
+  - Content Studio from `v3/admin/content`
+  - no health-check call on normal route entry
+- The API Lambda now runs on:
+  - `arm64`
+  - `1024 MB`
+  - alias `live`
+  - provisioned concurrency `2`
+
+This keeps dynamic reads fast without relying on stale cache layers.
 
 ### `PageContentID` Values
 

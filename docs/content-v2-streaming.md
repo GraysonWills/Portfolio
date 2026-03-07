@@ -1,8 +1,8 @@
 # Content `v2` Streaming APIs
 
-Last updated: 2026-03-04
+Last updated: 2026-03-07
 
-Additive read APIs used by `portfolio-app` and `blog-authoring-gui` for metadata-first rendering, batched hydration, and route-scoped browser caching.
+Additive read APIs used by `portfolio-app` and `blog-authoring-gui` for metadata-first rendering, batched hydration, and route-scoped in-memory request reuse.
 
 ## Goals
 
@@ -10,6 +10,7 @@ Additive read APIs used by `portfolio-app` and `blog-authoring-gui` for metadata
 2. Avoid full dataset pulls on route changes.
 3. Preserve backward compatibility (`v1` endpoints remain available).
 4. Keep writes unchanged while reads migrate to paged `v2`.
+5. Hand off route-specific reads to `v3` where the API can shape responses directly.
 
 ## Endpoints
 
@@ -105,7 +106,7 @@ Behavior:
 `cacheScope` usage:
 - clients pass route-specific scope labels in service requests.
 - service-layer caches are keyed by route + query shape.
-- this keeps cached snapshots route-local and avoids cross-page data thrash.
+- this keeps in-memory reuse route-local and avoids cross-page data thrash.
 
 ## Route Coverage (Current)
 
@@ -121,13 +122,20 @@ Blog authoring:
 - `/content` page/content listing
 - list-item hydration flows in edit paths.
 
+`v3` now owns these routes in production:
+- portfolio `/`, `/work`, `/projects`, `/blog/:id`
+- authoring `/dashboard`, `/content`
+
 ## Performance Strategy
 
 1. Fetch cards/metadata first.
 2. Render visible text cards immediately.
 3. Hydrate images with `v2/blog/cards/media` for visible IDs only.
 4. Fetch additional pages with `nextToken` when user scrolls/loads more.
-5. Cache read responses in-browser (service cache + snapshot fallback).
+5. Reuse only in-flight/session-memory requests; do not persist dynamic snapshots to browser storage.
+
+For the current no-cache rollout and `v3` route models, see:
+- `/Users/grayson/Desktop/Portfolio/docs/no-cache-performance-rollout.md`
 
 ## Observability
 
@@ -141,4 +149,3 @@ Frontend analytics events:
 - `cards_rendered_initial`
 - `cards_images_hydrated`
 - `cards_next_page_loaded`
-

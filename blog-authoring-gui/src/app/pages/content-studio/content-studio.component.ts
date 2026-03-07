@@ -1,9 +1,8 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MessageService, ConfirmationService } from 'primeng/api';
-import { firstValueFrom } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
-import { ApiHealth, BlogApiService, ContentV2PageResponse } from '../../services/blog-api.service';
+import { ApiHealth, BlogApiService } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
@@ -132,7 +131,7 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     this.pageOptionsEditable = this.pageOptions.filter((o) => o.value !== -1);
     this.contentOptionsEditable = this.contentOptions.filter((o) => o.value !== -1);
     this.coerceFilterSelections();
-    this.testConnection();
+    this.connectionStatus = 'connected';
     this.loadContent();
     this.registerHotkeys();
   }
@@ -261,16 +260,12 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
   }
 
   onFilterChanged(): void {
-    this.applyFilters();
+    this.loadContent();
   }
 
   onContentTypeChanged(): void {
     this.coerceFilterSelections();
-    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1) {
-      this.loadContent();
-      return;
-    }
-    this.applyFilters();
+    this.loadContent();
   }
 
   loadContent(): void {
@@ -278,88 +273,16 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.contentNextToken = null;
     this.isFetchingNextPage = false;
-
-    if (this.selectedPageId === -1) {
-      if (this.blogApi.isContentV2StreamingEnabled()) {
-        void this.loadAllPagesContentV2();
-        return;
-      }
-
-      this.blogApi.getAllContent().subscribe({
-        next: (items) => {
-          this.content = Array.isArray(items) ? items : [];
-          this.buildCardPreviewMaps(this.content);
-          this.applyFilters();
-          this.isLoading = false;
-        },
-        error: () => {
-          this.isLoading = false;
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load content from API'
-          });
-        }
-      });
-      return;
-    }
-
-    if (!this.blogApi.isContentV2StreamingEnabled()) {
-      this.blogApi.getContentByPage(this.selectedPageId).subscribe({
-        next: (items) => {
-          this.content = Array.isArray(items) ? items : [];
-          this.buildCardPreviewMaps(this.content);
-          this.applyFilters();
-          this.isLoading = false;
-        },
-        error: () => {
-          this.isLoading = false;
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: 'Failed to load content from API'
-          });
-        }
-      });
-      return;
-    }
-
-    this.blogApi.getContentPageV2(this.selectedPageId, {
+    this.blogApi.getAdminContentV3({
+      pageId: this.selectedPageId,
+      contentId: this.selectedContentId,
+      q: this.searchQuery.trim(),
       limit: 50,
-      fields: 'full',
-      sort: 'updated_desc',
-      contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
-      cacheScope: `route:/content:page-${this.selectedPageId}`
+      cacheScope: `route:/content:${this.selectedPageId}:${this.selectedContentId}`
     }).subscribe({
       next: (response) => {
         const rows = Array.isArray(response?.items) ? response.items : [];
         const nextToken = response?.nextToken || null;
-
-        // Safety fallback: if v2 returns nothing for a known page, pull legacy page data
-        // so content studio never appears blank due transient pagination/cache issues.
-        if (!rows.length && !nextToken) {
-          this.blogApi.getContentByPage(this.selectedPageId).subscribe({
-            next: (legacyRows) => {
-              this.content = Array.isArray(legacyRows) ? legacyRows : [];
-              this.contentNextToken = null;
-              this.buildCardPreviewMaps(this.content);
-              this.applyFilters();
-              this.isLoading = false;
-            },
-            error: () => {
-              this.content = [];
-              this.contentNextToken = null;
-              this.applyFilters();
-              this.isLoading = false;
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'Failed to load content from API'
-              });
-            }
-          });
-          return;
-        }
 
         this.content = rows;
         this.contentNextToken = nextToken;
@@ -378,93 +301,9 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     });
   }
 
-  private async loadAllPagesContentV2(): Promise<void> {
-    const pageIds = [
-      PageID.Landing,
-      PageID.Work,
-      PageID.Projects,
-      PageID.Blog,
-      PageID.Collections
-    ];
-
-    try {
-      const merged: RedisContent[] = [];
-      for (const pageId of pageIds) {
-        const rows = await this.fetchAllPageRowsV2(pageId);
-        merged.push(...rows);
-      }
-
-      const deduped = this.mergeById(merged);
-      if (!deduped.length) {
-        const legacyAll = await firstValueFrom(this.blogApi.getAllContent());
-        this.content = Array.isArray(legacyAll) ? legacyAll : [];
-      } else {
-        this.content = deduped;
-      }
-      this.contentNextToken = null;
-      this.buildCardPreviewMaps(this.content);
-      this.applyFilters();
-    } catch {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Error',
-        detail: 'Failed to load content from API'
-      });
-    } finally {
-      this.isLoading = false;
-    }
-  }
-
-  private async fetchAllPageRowsV2(pageId: number): Promise<RedisContent[]> {
-    const rows: RedisContent[] = [];
-    let nextToken: string | null = null;
-    let guard = 0;
-
-    try {
-      do {
-        const response: ContentV2PageResponse = await firstValueFrom(
-          this.blogApi.getContentPageV2(pageId, {
-            limit: 100,
-            fields: 'full',
-            sort: 'updated_desc',
-            contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
-            nextToken,
-            cacheScope: `route:/content:all-pages:p${pageId}`
-          })
-        );
-
-        const pageRows = Array.isArray(response?.items) ? response.items : [];
-        rows.push(...pageRows);
-        nextToken = response?.nextToken || null;
-        guard += 1;
-      } while (nextToken && guard < 50);
-    } catch (error) {
-      console.error(`Failed loading page ${pageId} in content studio:`, error);
-    }
-
-    return rows;
-  }
-
   private applyFilters(): void {
     this.coerceFilterSelections();
-    const query = this.searchQuery.trim().toLowerCase();
-
     let items = [...this.content];
-
-    if (this.selectedContentId !== -1) {
-      items = items.filter((item) => Number(item.PageContentID) === Number(this.selectedContentId));
-    }
-
-    if (query) {
-      items = items.filter((item) => {
-        const id = (item.ID || '').toLowerCase();
-        const listItem = (item.ListItemID || '').toLowerCase();
-        const text = (item.Text || '').toLowerCase();
-        const photo = (item.Photo || '').toLowerCase();
-        const meta = item.Metadata ? JSON.stringify(item.Metadata).toLowerCase() : '';
-        return id.includes(query) || listItem.includes(query) || text.includes(query) || photo.includes(query) || meta.includes(query);
-      });
-    }
 
     items.sort((a, b) => {
       const aUpdated = (a.UpdatedAt ? new Date(a.UpdatedAt as any).getTime() : 0);
@@ -504,10 +343,7 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
 
   get hasMoreFilteredRows(): boolean {
     this.coerceFilterSelections();
-    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1 && !this.searchQuery.trim()) {
-      return this.visibleFilteredContent.length < this.filteredContent.length || !!this.contentNextToken;
-    }
-    return this.visibleFilteredContent.length < this.filteredContent.length;
+    return this.visibleFilteredContent.length < this.filteredContent.length || !!this.contentNextToken;
   }
 
   loadMoreVisibleRows(): void {
@@ -518,11 +354,9 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
       this.visibleFilteredContent = this.filteredContent.slice(0, this.visibleCount);
     }
 
-    if (this.blogApi.isContentV2StreamingEnabled() && this.selectedPageId !== -1) {
-      const nearLoadedEnd = this.visibleFilteredContent.length >= (this.filteredContent.length - 3);
-      if (nearLoadedEnd) {
-        this.fetchNextContentPage();
-      }
+    const nearLoadedEnd = this.visibleFilteredContent.length >= (this.filteredContent.length - 3);
+    if (nearLoadedEnd) {
+      this.fetchNextContentPage();
     }
   }
 
@@ -564,16 +398,16 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
 
   private fetchNextContentPage(): void {
     this.coerceFilterSelections();
-    if (this.isFetchingNextPage || !this.contentNextToken || this.selectedPageId === -1) return;
+    if (this.isFetchingNextPage || !this.contentNextToken) return;
 
     this.isFetchingNextPage = true;
-    this.blogApi.getContentPageV2(this.selectedPageId, {
+    this.blogApi.getAdminContentV3({
+      pageId: this.selectedPageId,
+      contentId: this.selectedContentId,
+      q: this.searchQuery.trim(),
       limit: 50,
-      fields: 'full',
-      sort: 'updated_desc',
-      contentIds: this.selectedContentId !== -1 ? [this.selectedContentId] : undefined,
       nextToken: this.contentNextToken,
-      cacheScope: `route:/content:page-${this.selectedPageId}`
+      cacheScope: `route:/content:${this.selectedPageId}:${this.selectedContentId}`
     }).subscribe({
       next: (response) => {
         this.isFetchingNextPage = false;

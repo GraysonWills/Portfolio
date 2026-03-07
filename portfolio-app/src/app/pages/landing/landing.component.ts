@@ -65,31 +65,25 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   private loadLandingContent(): void {
-    this.redisService.getContentPageV2(PageID.Landing, {
-      limit: 40,
-      fields: 'standard',
-      sort: 'id_asc',
-      cacheScope: 'route:/landing:metadata'
-    }).subscribe({
-      next: (response: any) => {
-        const items = Array.isArray(response?.items)
-          ? (response.items as RedisContent[])
-          : (Array.isArray(response) ? (response as RedisContent[]) : []);
-        this.landingPhotos = items.filter(
-          (item) => item.PageContentID === PageContentID.LandingPhoto
-        );
-        this.landingText = items.filter(
-          item => item.PageContentID === PageContentID.LandingText
-        );
+    this.redisService.getLandingPayloadV3().subscribe({
+      next: (payload) => {
+        this.summary = String(payload?.summary || '').trim();
+        this.landingPhotos = Array.isArray(payload?.heroSlides)
+          ? payload.heroSlides
+              .filter((slide) => !!slide?.photo)
+              .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+              .map((slide, index) => ({
+                ID: `landing-hero-${index + 1}`,
+                PageID: PageID.Landing,
+                PageContentID: PageContentID.LandingPhoto,
+                Photo: slide.photo,
+                Metadata: {
+                  alt: slide.alt || 'Portfolio hero image',
+                  order: slide.order || index + 1
+                }
+              } as RedisContent))
+          : [];
         this.refreshHeroSlides();
-        this.hydrateLandingMedia();
-
-        const summaryContent = this.landingText.find(
-          item => item.Metadata?.['type'] === 'summary'
-        );
-        if (summaryContent?.Text) {
-          this.summary = summaryContent.Text;
-        }
       },
       error: (error) => {
         console.error('Error loading landing content:', error);
@@ -98,28 +92,6 @@ export class LandingComponent implements OnInit, OnDestroy {
           summary: 'Error',
           detail: 'Failed to load landing page content'
         });
-      }
-    });
-  }
-
-  private hydrateLandingMedia(): void {
-    this.redisService.getContentPageV2(PageID.Landing, {
-      limit: 20,
-      fields: 'full',
-      contentIds: [PageContentID.LandingPhoto],
-      sort: 'id_asc',
-      cacheScope: 'route:/landing:media'
-    }).subscribe({
-      next: (response) => {
-        const mediaItems = Array.isArray((response as any)?.items)
-          ? ((response as any).items as RedisContent[])
-          : (response as unknown as RedisContent[]);
-        if (!mediaItems.length) return;
-        this.landingPhotos = mediaItems.filter((item) => item.PageContentID === PageContentID.LandingPhoto);
-        this.refreshHeroSlides();
-      },
-      error: () => {
-        // Keep default/fallback hero images if media hydration fails.
       }
     });
   }
