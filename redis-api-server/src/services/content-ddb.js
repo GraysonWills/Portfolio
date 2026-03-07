@@ -84,7 +84,8 @@ async function ddbGetContentById(id) {
   const resp = await getDdbDoc().send(
     new GetCommand({
       TableName: tableName,
-      Key: { ID: id }
+      Key: { ID: id },
+      ConsistentRead: true
     })
   );
   return resp?.Item || null;

@@ -1171,85 +1171,67 @@ export class BlogApiService {
       ...(signatureSnapshot ? { signatureSnapshot } : {})
     };
 
-    return new Observable<RedisContent[]>((observer) => {
-      this.getBlogPost(listItemID).subscribe({
-        next: (items) => {
-          const writes: Array<Observable<any>> = [];
+    return this.getBlogPost(listItemID).pipe(
+      switchMap((items) => {
+        const blogText = items.find((item) => item.PageContentID === PageContentID.BlogText);
+        const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
+        const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
 
-          const blogText = items.find((item) => item.PageContentID === PageContentID.BlogText);
-          const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
-          const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
+        const upserts: RedisContent[] = [
+          {
+            ...(blogText || {}),
+            ID: blogText?.ID || `blog-text-${listItemID}`,
+            Text: content,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogText,
+            ListItemID: listItemID,
+            Metadata: metadata as any,
+            ...(blogText?.CreatedAt ? { CreatedAt: blogText.CreatedAt } : {})
+          } as RedisContent,
+          {
+            ...(blogItem || {}),
+            ID: blogItem?.ID || `blog-item-${listItemID}`,
+            Text: title,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogItem,
+            ListItemID: listItemID,
+            Metadata: metadata as any,
+            ...(blogItem?.CreatedAt ? { CreatedAt: blogItem.CreatedAt } : {})
+          } as RedisContent
+        ];
 
-          // Update blog text (always)
-          if (blogText?.ID) {
-            writes.push(this.updateContent(blogText.ID, { Text: content, Metadata: metadata as any }));
-          }
+        if (image && image.trim()) {
+          upserts.push({
+            ...(blogImage || {}),
+            ID: blogImage?.ID || `blog-image-${listItemID}`,
+            Photo: image,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogImage,
+            ListItemID: listItemID,
+            ...(blogImage?.CreatedAt ? { CreatedAt: blogImage.CreatedAt } : {})
+          } as RedisContent);
+        }
 
-          // Update blog metadata record (if present)
-          if (blogItem?.ID) {
-            writes.push(this.updateContent(blogItem.ID, { Metadata: metadata as any }));
-          } else {
-            // Create the BlogItem record if missing (required for portfolio display)
-            writes.push(this.createContent({
-              ID: `blog-item-${listItemID}`,
-              Text: title,
-              PageID: PageID.Blog,
-              PageContentID: PageContentID.BlogItem,
-              ListItemID: listItemID,
-              Metadata: metadata as any
-            } as any));
-          }
+        const batch$ = this.http.post<RedisContent[]>(
+          `${this.apiUrl}/content/batch`,
+          upserts,
+          { headers: this.headers }
+        ).pipe(
+          tap(() => this.invalidateReadCaches()),
+          catchError(this.handleError)
+        );
 
-          // Update/remove/create image record
-          if (image && image.trim()) {
-            if (blogImage?.ID) {
-              writes.push(this.updateContent(blogImage.ID, { Photo: image }));
-            } else {
-              writes.push(this.createContent({
-                Photo: image,
-                PageID: PageID.Blog,
-                PageContentID: PageContentID.BlogImage,
-                ListItemID: listItemID
-              } as any));
-            }
-          } else if (blogImage?.ID) {
-            writes.push(this.deleteContent(blogImage.ID));
-          }
+        if ((!image || !image.trim()) && blogImage?.ID) {
+          return batch$.pipe(
+            switchMap(() => this.deleteContent(blogImage.ID)),
+            map(() => upserts)
+          );
+        }
 
-          if (writes.length === 0) {
-            observer.next(items);
-            observer.complete();
-            return;
-          }
-
-          // Execute writes sequentially to keep behavior predictable
-          let completed = 0;
-          const results: any[] = [];
-          writes.forEach((op) => {
-            op.subscribe({
-              next: (res) => { results.push(res); },
-              error: (err) => {
-                observer.error(err);
-              },
-              complete: () => {
-                completed++;
-                if (completed === writes.length) {
-                  // Return refreshed post group
-                  this.getBlogPost(listItemID).subscribe({
-                    next: (refreshed) => {
-                      observer.next(refreshed);
-                      observer.complete();
-                    },
-                    error: (err) => observer.error(err)
-                  });
-                }
-              }
-            });
-          });
-        },
-        error: (err) => observer.error(err)
-      });
-    }).pipe(catchError(this.handleError));
+        return batch$.pipe(map(() => upserts));
+      }),
+      catchError(this.handleError)
+    );
   }
 
   /**

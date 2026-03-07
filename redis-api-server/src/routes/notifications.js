@@ -34,10 +34,11 @@ function requireSchedulerSecret(req, res, next) {
 // Internal worker endpoint (invoked by scheduler Lambda).
 router.post('/worker/publish', requireSchedulerSecret, async (req, res) => {
   try {
-    const { listItemID, sendEmail, topic } = req.body || {};
+    const { listItemID, scheduleName, sendEmail, topic } = req.body || {};
     if (!listItemID) return res.status(400).json({ error: 'Missing listItemID' });
     const result = await publishBlogPostNow({
       listItemID,
+      scheduleName: scheduleName || null,
       sendEmail: sendEmail !== false,
       topic: topic || 'blog_posts'
     });

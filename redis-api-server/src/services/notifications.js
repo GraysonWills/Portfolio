@@ -1,10 +1,15 @@
 const { ScanCommand, PutCommand, GetCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
-const { CreateScheduleCommand, DeleteScheduleCommand } = require('@aws-sdk/client-scheduler');
+const {
+  CreateScheduleCommand,
+  DeleteScheduleCommand,
+  ListSchedulesCommand,
+  GetScheduleCommand
+} = require('@aws-sdk/client-scheduler');
 const { SendMessageBatchCommand } = require('@aws-sdk/client-sqs');
 
 const { getDdbDoc, getSes, getScheduler, getSqs, getAwsRegion } = require('./aws/clients');
-const { isContentDdbEnabled, ddbGetContentByListItemId, ddbPutContent } = require('./content-ddb');
+const { isContentDdbEnabled, ddbGetContentById, ddbGetContentByListItemId, ddbPutContent } = require('./content-ddb');
 const { sha256Hex, randomToken, maskEmail } = require('../utils/crypto');
 const { buildNewPostEmail } = require('./email/templates');
 
@@ -68,6 +73,17 @@ function safeScheduleName(listItemID) {
   const hash = sha256Hex(String(listItemID || '')).slice(0, 12);
   const ts = Date.now();
   return `blog-${hash}-${ts}`.slice(0, 64);
+}
+
+function parseScheduleTargetInput(input) {
+  if (!input) return null;
+  try {
+    const parsed = JSON.parse(String(input));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function sleep(ms) {
@@ -195,6 +211,98 @@ async function assertBlogPostExists(listItemID) {
     throw err;
   }
   return items;
+}
+
+async function listAllSchedulesForGroup(groupName) {
+  const scheduler = getScheduler();
+  const out = [];
+  let NextToken;
+
+  do {
+    const resp = await scheduler.send(new ListSchedulesCommand({
+      GroupName: groupName,
+      MaxResults: 100,
+      NextToken
+    }));
+    if (Array.isArray(resp?.Schedules)) out.push(...resp.Schedules);
+    NextToken = resp?.NextToken;
+  } while (NextToken);
+
+  return out;
+}
+
+async function cleanupSchedulesForListItem({ groupName, listItemID, exceptName = null }) {
+  const normalizedListItemID = String(listItemID || '').trim();
+  if (!normalizedListItemID) return { deleted: 0, scanned: 0 };
+
+  const scheduler = getScheduler();
+  const summaries = await listAllSchedulesForGroup(groupName);
+  let scanned = 0;
+  let deleted = 0;
+
+  for (const scheduleSummary of summaries) {
+    const scheduleName = String(scheduleSummary?.Name || '').trim();
+    if (!scheduleName) continue;
+    if (exceptName && scheduleName === exceptName) continue;
+
+    scanned += 1;
+
+    let details;
+    try {
+      details = await scheduler.send(new GetScheduleCommand({
+        GroupName: groupName,
+        Name: scheduleName
+      }));
+    } catch (err) {
+      if (err?.name === 'ResourceNotFoundException') continue;
+      throw err;
+    }
+
+    const input = parseScheduleTargetInput(details?.Target?.Input);
+    if (!input || String(input?.kind || '') !== 'publish_blog_post') continue;
+    if (String(input?.listItemID || '') !== normalizedListItemID) continue;
+
+    await scheduler.send(new DeleteScheduleCommand({
+      GroupName: groupName,
+      Name: scheduleName
+    }));
+    deleted += 1;
+  }
+
+  return { deleted, scanned };
+}
+
+async function getBlogMetadataForSchedule(listItemID) {
+  const normalizedListItemID = String(listItemID || '').trim();
+  if (!normalizedListItemID) {
+    const err = new Error('Blog post not found');
+    err.status = 404;
+    throw err;
+  }
+
+  // Use a deterministic + strongly consistent lookup first to avoid
+  // eventual-consistency stalls on the ListItemIndex right after save.
+  if (useDdbAsPrimary) {
+    const deterministicId = `blog-item-${normalizedListItemID}`;
+    const direct = await ddbGetContentById(deterministicId);
+    if (direct && Number(direct.PageID) === 3) {
+      const meta = (direct.Metadata && typeof direct.Metadata === 'object') ? direct.Metadata : {};
+      return { item: direct, meta };
+    }
+  }
+
+  // Single fallback query for legacy records that may not use deterministic IDs.
+  // Do not retry here; schedule endpoints should fail fast on invalid IDs.
+  const items = await getBlogGroup(normalizedListItemID);
+  const metaItem = items.find(i => Number(i.PageContentID) === 3) || items.find(i => i?.Metadata);
+  if (metaItem) {
+    const meta = (metaItem.Metadata && typeof metaItem.Metadata === 'object') ? metaItem.Metadata : {};
+    return { item: metaItem, meta };
+  }
+
+  const err = new Error('Blog post not found');
+  err.status = 404;
+  throw err;
 }
 
 async function ensureBlogItemMetadataRecord(listItemID, fallbackMeta = {}) {
@@ -887,17 +995,20 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     throw err;
   }
 
-  const existingItems = await assertBlogPostExists(listItemID);
+  const { meta: existingMeta } = await getBlogMetadataForSchedule(listItemID);
 
   // Best-effort cleanup for reschedules.
   try {
-    const existingMeta = extractBlogMetadata(existingItems);
-    if (existingMeta.scheduleName) {
+    if (existingMeta?.scheduleName) {
       const scheduler = getScheduler();
       await scheduler.send(new DeleteScheduleCommand({
-        Name: existingMeta.scheduleName,
+        Name: String(existingMeta.scheduleName),
         GroupName: cfg.schedulerGroupName
       }));
+      console.info('[notifications] Removed previous schedule before reschedule', {
+        listItemID,
+        previousScheduleName: String(existingMeta.scheduleName)
+      });
     }
   } catch {
     // ignore
@@ -907,6 +1018,7 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
   const input = {
     kind: 'publish_blog_post',
     listItemID,
+    scheduleName: name,
     sendEmail: !!sendEmail,
     topic
   };
@@ -931,8 +1043,41 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     status: 'scheduled',
     publishDate: runAt.toISOString(),
     scheduleName: name,
+    scheduledAt: runAt.toISOString(),
     notifyTopic: topic,
     notifyEmail: !!sendEmail
+  });
+
+  // Cleanup legacy duplicate schedules for this list item so only the newest remains.
+  try {
+    const cleanup = await cleanupSchedulesForListItem({
+      groupName: cfg.schedulerGroupName,
+      listItemID,
+      exceptName: name
+    });
+    if (cleanup.deleted > 0) {
+      console.info('[notifications] Removed stale schedules for list item', {
+        listItemID,
+        keptScheduleName: name,
+        deletedSchedules: cleanup.deleted,
+        scannedSchedules: cleanup.scanned
+      });
+    }
+  } catch (err) {
+    console.warn('[notifications] Failed stale schedule cleanup', {
+      listItemID,
+      keptScheduleName: name,
+      message: String(err?.message || err)
+    });
+  }
+
+  console.info('[notifications] Schedule created', {
+    listItemID,
+    scheduleName: name,
+    publishAtInput: String(publishAt),
+    scheduledForIsoUtc: runAt.toISOString(),
+    topic: String(topic || 'blog_posts'),
+    sendEmail: !!sendEmail
   });
 
   return { ok: true, scheduleName: name, scheduledFor: runAt.toISOString(), region: getAwsRegion() };
@@ -955,13 +1100,59 @@ async function cancelSchedule({ scheduleName }) {
   return { ok: true };
 }
 
-async function publishBlogPostNow({ listItemID, sendEmail = true, topic = 'blog_posts' }) {
+async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail = true, topic = 'blog_posts' }) {
+  const incomingScheduleName = String(scheduleName || '').trim();
+  console.info('[notifications] Scheduler publish trigger received', {
+    listItemID,
+    scheduleName: incomingScheduleName || null,
+    sendEmail: !!sendEmail,
+    topic: String(topic || 'blog_posts'),
+    triggeredAtUtc: new Date().toISOString()
+  });
+
   // When scheduler fires, we mark as published and optionally send notifications.
-  await assertBlogPostExists(listItemID);
+  const existingItems = await assertBlogPostExists(listItemID);
+  const { meta: existingMeta } = extractBlogMetadata(existingItems);
+  const currentScheduleName = String(existingMeta?.scheduleName || '').trim();
+  const lastExecutedScheduleName = String(existingMeta?.lastExecutedScheduleName || '').trim();
+  const existingStatus = String(existingMeta?.status || '').trim().toLowerCase();
+  const scheduledFor = existingMeta?.publishDate ? new Date(existingMeta.publishDate) : null;
+  const now = new Date();
+
+  const legacyWindowMinutes = 30;
+  const isLegacyWindowMatch = Boolean(
+    scheduledFor
+    && !Number.isNaN(scheduledFor.getTime())
+    && Math.abs(now.getTime() - scheduledFor.getTime()) <= legacyWindowMinutes * 60 * 1000
+  );
+
+  if (incomingScheduleName) {
+    // New scheduling flow: require an active exact schedule-name match.
+    if (!currentScheduleName) {
+      return { ok: true, ignored: true, reason: 'NO_ACTIVE_SCHEDULE' };
+    }
+    if (incomingScheduleName !== currentScheduleName) {
+      return { ok: true, ignored: true, reason: 'STALE_SCHEDULE_IGNORED' };
+    }
+
+    if (lastExecutedScheduleName && lastExecutedScheduleName === incomingScheduleName) {
+      return { ok: true, ignored: true, reason: 'SCHEDULE_ALREADY_EXECUTED' };
+    }
+  } else {
+    // Legacy schedules (created before scheduleName was injected in payload):
+    // only allow execution near the currently stored publishDate window.
+    if (existingStatus !== 'scheduled' || !isLegacyWindowMatch) {
+      return { ok: true, ignored: true, reason: 'LEGACY_SCHEDULE_WINDOW_MISMATCH' };
+    }
+  }
+
+  const nowIso = new Date().toISOString();
   await updateBlogMetadata(listItemID, {
     status: 'published',
-    publishDate: new Date().toISOString(),
-    scheduleName: null
+    publishDate: nowIso,
+    scheduleName: null,
+    lastExecutedScheduleName: incomingScheduleName || null,
+    lastExecutedScheduleAt: nowIso
   });
 
   if (sendEmail) {

@@ -267,7 +267,7 @@ async function handleInternalEvent(rawEvent) {
   }
 
   if (event.kind === 'publish_blog_post') {
-    const { listItemID, sendEmail, topic } = event;
+    const { listItemID, scheduleName, sendEmail, topic } = event;
     if (!listItemID) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing listItemID' }) };
     }
@@ -286,6 +286,7 @@ async function handleInternalEvent(rawEvent) {
       },
       body: JSON.stringify({
         listItemID,
+        scheduleName: scheduleName || null,
         sendEmail: sendEmail !== false,
         topic: topic || 'blog_posts'
       })
