@@ -1229,6 +1229,16 @@ export class BlogApiService {
       Metadata: metadata as any
     });
 
+    // Blog body content (preferred by the public site detail route)
+    postItems.push({
+      ID: `blog-body-${itemId}`,
+      Text: content,
+      PageID: PageID.Blog,
+      PageContentID: PageContentID.BlogBody,
+      ListItemID: itemId,
+      Metadata: metadata as any
+    });
+
     // Blog image content (if provided)
     if (image) {
       postItems.push({
@@ -1283,6 +1293,7 @@ export class BlogApiService {
       switchMap((items) => {
         const blogText = items.find((item) => item.PageContentID === PageContentID.BlogText);
         const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
+        const blogBody = items.find((item) => item.PageContentID === PageContentID.BlogBody);
         const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
 
         const upserts: RedisContent[] = [
@@ -1295,6 +1306,16 @@ export class BlogApiService {
             ListItemID: listItemID,
             Metadata: metadata as any,
             ...(blogText?.CreatedAt ? { CreatedAt: blogText.CreatedAt } : {})
+          } as RedisContent,
+          {
+            ...(blogBody || {}),
+            ID: blogBody?.ID || `blog-body-${listItemID}`,
+            Text: content,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogBody,
+            ListItemID: listItemID,
+            Metadata: metadata as any,
+            ...(blogBody?.CreatedAt ? { CreatedAt: blogBody.CreatedAt } : {})
           } as RedisContent,
           {
             ...(blogItem || {}),

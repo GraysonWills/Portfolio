@@ -298,7 +298,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           listItemID: post.listItemID,
           title: metadata?.title || '',
           summary: metadata?.summary || textRecord?.Text?.substring(0, 150) || '',
-          content: textRecord?.Text || '',
+          content: this.getEditableContent(post),
           image: imageItem?.Photo || null,
           tags: metadata?.tags || [],
           privateSeoTags: metadata?.privateSeoTags || [],
@@ -323,6 +323,53 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  private getEditableContent(post: ContentGroup): string {
+    const bodyRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogBody && !!item.Text);
+    const textRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text)
+      || post.items.find((item) => !!item.Text);
+
+    const rawBody = String(bodyRecord?.Text || '').trim();
+    if (!rawBody) {
+      return String(textRecord?.Text || '');
+    }
+
+    try {
+      const parsed = JSON.parse(rawBody);
+      if (!Array.isArray(parsed)) return rawBody;
+
+      return parsed.map((block: any) => {
+        const type = String(block?.type || '').toLowerCase();
+        if (type === 'heading') {
+          const level = [2, 3, 4].includes(Number(block?.level)) ? Number(block.level) : 2;
+          return `<h${level}>${String(block?.content || '')}</h${level}>`;
+        }
+        if (type === 'quote') {
+          return `<blockquote>${String(block?.content || '')}</blockquote>`;
+        }
+        if (type === 'image') {
+          const url = String(block?.url || '').trim();
+          if (!url) return '';
+          const alt = String(block?.alt || '').trim();
+          return `<p class="post-media-row"><img class="post-inline-image" src="${url}" alt="${alt}"></p>`;
+        }
+        if (type === 'carousel') {
+          const images = Array.isArray(block?.images) ? block.images : [];
+          if (!images.length) return '';
+          const inner = images.map((img: any) => {
+            const url = String(img?.url || '').trim();
+            if (!url) return '';
+            const alt = String(img?.alt || '').trim();
+            return `<img class="post-inline-image post-carousel-image" src="${url}" alt="${alt}">`;
+          }).join('');
+          return `<div class="post-carousel" data-post-carousel="true">${inner}</div>`;
+        }
+        return String(block?.content || '');
+      }).join('\n');
+    } catch {
+      return rawBody;
+    }
   }
 
   /**

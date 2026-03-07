@@ -953,9 +953,7 @@ export class BlogEditorComponent implements OnInit {
         PageID: PageID.Blog,
         PageContentID: PageContentID.BlogBody,
         ListItemID: listItemID,
-        Text: JSON.stringify([
-          { type: 'paragraph', content: contentValue || this.getPreviewSummary() }
-        ]),
+        Text: contentValue || this.getPreviewSummary(),
         Metadata: { previewBypassVisibility: true },
         UpdatedAt: nowIso as any
       }
