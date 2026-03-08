@@ -105,10 +105,42 @@
         <p>No blog posts found. Check back soon!</p>
       </div>
 
-      <div *ngIf="hasMorePosts" class="blog-load-more" appScrollReveal>
-        <button type="button" class="load-more-btn" (click)="loadMorePosts()">
-          Load More Posts
-        </button>
+      <div *ngIf="shouldShowPagination && filteredPosts.length > 0" class="blog-pagination" appScrollReveal>
+        <div class="pagination-summary">{{ paginationRangeLabel }}</div>
+        <div class="pagination-controls" aria-label="Blog pagination">
+          <button
+            type="button"
+            class="pagination-btn pagination-nav"
+            (click)="goToPreviousPage()"
+            [disabled]="!canGoToPreviousPage"
+            aria-label="Go to previous page">
+            <i class="pi pi-arrow-left"></i>
+            <span>Previous</span>
+          </button>
+
+          <div class="pagination-pages" role="navigation" aria-label="Blog pages">
+            <button
+              *ngFor="let pageNumber of pageNumbers"
+              type="button"
+              class="pagination-btn pagination-page"
+              [class.active]="pageNumber === currentPage"
+              (click)="goToPage(pageNumber)"
+              [disabled]="isPageTransitioning && pageNumber !== currentPage"
+              [attr.aria-current]="pageNumber === currentPage ? 'page' : null">
+              {{ pageNumber }}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="pagination-btn pagination-nav"
+            (click)="goToNextPage()"
+            [disabled]="!canGoToNextPage"
+            aria-label="Go to next page">
+            <span>Next</span>
+            <i class="pi pi-arrow-right"></i>
+          </button>
+        </div>
       </div>
     </section>
 

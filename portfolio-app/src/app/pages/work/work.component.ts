@@ -1,8 +1,10 @@
-import { Component, OnInit, HostListener } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
+import { firstValueFrom } from 'rxjs';
+import { RouteViewStateService } from '../../services/route-view-state.service';
 
 interface WorkTimelineEvent {
   id: string;
@@ -37,13 +39,19 @@ interface CommunityRole {
   order: number;
 }
 
+interface WorkViewState extends Record<string, unknown> {
+  timelineItemCount?: number;
+  scrollY?: number;
+  updatedAt?: number;
+}
+
 @Component({
   selector: 'app-work',
   standalone: false,
   templateUrl: './work.component.html',
   styleUrl: './work.component.scss'
 })
-export class WorkComponent implements OnInit {
+export class WorkComponent implements OnInit, OnDestroy {
   workContent: RedisContent[] = [];
   timelineEvents: WorkTimelineEvent[] = [];
   careerMetrics: CareerMetric[] = [];
@@ -53,21 +61,30 @@ export class WorkComponent implements OnInit {
   communityRoles: CommunityRole[] = [];
   isLoading: boolean = true;
   timelineAlign: 'alternate' | 'left' = 'alternate';
+  isCompactTimeline: boolean = false;
   private loadCount = 0;
   private timelineNextToken: string | null = null;
   private isFetchingTimeline = false;
   private readonly scrollLoadBufferPx = 500;
+  private readonly routeKey = '/work';
+  private viewStateRestored = false;
+  private lastScrollY = 0;
 
   constructor(
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private routeViewState: RouteViewStateService
   ) {}
 
   ngOnInit(): void {
     this.updateTimelineAlign();
     this.loadWorkContent();
     this.loadLinkedInData();
+  }
+
+  ngOnDestroy(): void {
+    this.persistViewState();
   }
 
   @HostListener('window:resize')
@@ -77,6 +94,9 @@ export class WorkComponent implements OnInit {
 
   @HostListener('window:scroll')
   onWindowScroll(): void {
+    if (typeof window !== 'undefined') {
+      this.lastScrollY = window.scrollY;
+    }
     if (!this.timelineNextToken || this.isFetchingTimeline || typeof window === 'undefined' || typeof document === 'undefined') {
       return;
     }
@@ -84,12 +104,14 @@ export class WorkComponent implements OnInit {
     const viewportBottom = window.scrollY + window.innerHeight;
     const documentHeight = document.documentElement.scrollHeight;
     if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
-      this.loadNextTimelineChunk();
+      void this.loadNextTimelineChunk();
     }
   }
 
   private updateTimelineAlign(): void {
-    this.timelineAlign = window.innerWidth <= 768 ? 'left' : 'alternate';
+    if (typeof window === 'undefined') return;
+    this.isCompactTimeline = window.innerWidth <= 768;
+    this.timelineAlign = this.isCompactTimeline ? 'left' : 'alternate';
   }
 
   /**
@@ -120,30 +142,30 @@ export class WorkComponent implements OnInit {
     });
   }
 
-  private loadNextTimelineChunk(): void {
+  private async loadNextTimelineChunk(): Promise<boolean> {
     const token = String(this.timelineNextToken || '').trim();
-    if (!token) return;
+    if (!token || this.isFetchingTimeline) return false;
 
     this.isFetchingTimeline = true;
-    this.redisService.getWorkPayloadV3({
-      limit: 8,
-      nextToken: token,
-      cacheScope: 'route:/work'
-    }).subscribe({
-      next: (payload) => {
-        this.isFetchingTimeline = false;
-        const rows = Array.isArray(payload?.timeline?.items) ? payload.timeline.items : [];
-        if (rows.length) {
-          this.workContent = this.mergeById([...this.workContent, ...rows]);
-          this.processWorkContent();
-        }
-        this.timelineNextToken = payload?.timeline?.nextToken || null;
-      },
-      error: () => {
-        this.isFetchingTimeline = false;
-        this.timelineNextToken = null;
+    try {
+      const payload = await firstValueFrom(this.redisService.getWorkPayloadV3({
+        limit: 8,
+        nextToken: token,
+        cacheScope: 'route:/work'
+      }));
+      const rows = Array.isArray(payload?.timeline?.items) ? payload.timeline.items : [];
+      if (rows.length) {
+        this.workContent = this.mergeById([...this.workContent, ...rows]);
+        this.processWorkContent();
       }
-    });
+      this.timelineNextToken = payload?.timeline?.nextToken || null;
+      return rows.length > 0;
+    } catch {
+      this.timelineNextToken = null;
+      return false;
+    } finally {
+      this.isFetchingTimeline = false;
+    }
   }
 
   private mergeById(items: RedisContent[]): RedisContent[] {
@@ -278,6 +300,7 @@ export class WorkComponent implements OnInit {
     this.loadCount++;
     if (this.loadCount >= 2) {
       this.isLoading = false;
+      void this.restoreViewState();
     }
   }
 
@@ -358,5 +381,31 @@ export class WorkComponent implements OnInit {
     } catch (error) {
       return null;
     }
+  }
+
+  private async restoreViewState(): Promise<void> {
+    if (this.viewStateRestored) return;
+
+    const state = this.routeViewState.getState<WorkViewState>(this.routeKey);
+    if (!state) {
+      this.viewStateRestored = true;
+      return;
+    }
+
+    const desiredCount = Math.max(this.timelineEvents.length, Number(state.timelineItemCount) || this.timelineEvents.length);
+    while (this.timelineEvents.length < desiredCount && !!this.timelineNextToken) {
+      const loaded = await this.loadNextTimelineChunk();
+      if (!loaded) break;
+    }
+
+    this.viewStateRestored = true;
+    await this.routeViewState.restoreScroll(this.routeKey);
+  }
+
+  private persistViewState(): void {
+    this.routeViewState.setState<WorkViewState>(this.routeKey, {
+      timelineItemCount: this.timelineEvents.length,
+      scrollY: typeof window !== 'undefined' ? this.lastScrollY || window.scrollY : 0
+    });
   }
 }

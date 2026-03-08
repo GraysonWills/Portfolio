@@ -1,7 +1,9 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID, ContentGroup, PageID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
+import { RouteViewStateService } from '../../services/route-view-state.service';
+import { firstValueFrom } from 'rxjs';
 
 interface ProjectItem {
   title: string;
@@ -15,13 +17,20 @@ interface ProjectItem {
   listItemID: string;
 }
 
+interface ProjectsViewState extends Record<string, unknown> {
+  expandedCategories?: Record<string, boolean>;
+  visibleCategoryCount?: number;
+  scrollY?: number;
+  updatedAt?: number;
+}
+
 @Component({
   selector: 'app-projects',
   standalone: false,
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.scss'
 })
-export class ProjectsComponent implements OnInit {
+export class ProjectsComponent implements OnInit, OnDestroy {
   projectsContent: RedisContent[] = [];
   categoryGroups: ContentGroup[] = [];
   visibleCategories: ContentGroup[] = [];
@@ -36,18 +45,29 @@ export class ProjectsComponent implements OnInit {
   private loadingCategoryIds = new Set<string>();
   private categoriesNextToken: string | null = null;
   private isFetchingCategoryPage = false;
+  private readonly routeKey = '/projects';
+  private viewStateRestored = false;
+  private lastScrollY = 0;
 
   constructor(
     private redisService: RedisService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private routeViewState: RouteViewStateService
   ) {}
 
   ngOnInit(): void {
     this.loadProjectsContent();
   }
 
+  ngOnDestroy(): void {
+    this.persistViewState();
+  }
+
   @HostListener('window:scroll')
   onWindowScroll(): void {
+    if (typeof window !== 'undefined') {
+      this.lastScrollY = window.scrollY;
+    }
     if (this.isLoading || !this.hasMoreCategories) return;
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -72,6 +92,7 @@ export class ProjectsComponent implements OnInit {
         this.projectsContent = content;
         this.processProjectsContent();
         this.isLoading = false;
+        void this.restoreViewState();
       },
       error: (error) => {
         console.error('Error loading projects content:', error);
@@ -85,30 +106,30 @@ export class ProjectsComponent implements OnInit {
     });
   }
 
-  private loadNextCategoryChunk(): void {
+  private async loadNextCategoryChunk(): Promise<boolean> {
     const token = String(this.categoriesNextToken || '').trim();
-    if (!token || this.isFetchingCategoryPage) return;
+    if (!token || this.isFetchingCategoryPage) return false;
 
     this.isFetchingCategoryPage = true;
-    this.redisService.getProjectsCategoriesV3({
-      limit: 12,
-      nextToken: token,
-      cacheScope: 'route:/projects:categories'
-    }).subscribe({
-      next: (response) => {
-        this.isFetchingCategoryPage = false;
-        const rows = this.mapCategoriesToContent(response?.items || []);
-        if (rows.length) {
-          this.projectsContent = this.mergeById([...this.projectsContent, ...rows]);
-          this.processProjectsContent(false);
-        }
-        this.categoriesNextToken = response?.nextToken || null;
-      },
-      error: () => {
-        this.isFetchingCategoryPage = false;
-        this.categoriesNextToken = null;
+    try {
+      const response = await firstValueFrom(this.redisService.getProjectsCategoriesV3({
+        limit: 12,
+        nextToken: token,
+        cacheScope: 'route:/projects:categories'
+      }));
+      const rows = this.mapCategoriesToContent(response?.items || []);
+      if (rows.length) {
+        this.projectsContent = this.mergeById([...this.projectsContent, ...rows]);
+        this.processProjectsContent(false);
       }
-    });
+      this.categoriesNextToken = response?.nextToken || null;
+      return rows.length > 0;
+    } catch {
+      this.categoriesNextToken = null;
+      return false;
+    } finally {
+      this.isFetchingCategoryPage = false;
+    }
   }
 
   /**
@@ -156,10 +177,11 @@ export class ProjectsComponent implements OnInit {
       return group;
     });
 
-    // Expand all categories by default
-    this.categoryGroups.forEach(cat => {
-      this.expandedCategories[cat.listItemID] = true;
+    const nextExpanded: Record<string, boolean> = {};
+    this.categoryGroups.forEach((cat) => {
+      nextExpanded[cat.listItemID] = this.expandedCategories[cat.listItemID] ?? true;
     });
+    this.expandedCategories = nextExpanded;
 
     if (resetVisible) {
       this.resetVisibleCategories();
@@ -232,6 +254,7 @@ export class ProjectsComponent implements OnInit {
     if (next && !this.projectsByCategory.has(listItemID)) {
       this.hydrateProjectsForCategories([listItemID]);
     }
+    this.persistViewState();
   }
 
   /**
@@ -332,8 +355,9 @@ export class ProjectsComponent implements OnInit {
       .map((category) => category.listItemID);
     this.hydrateProjectsForCategories(needsHydration);
     if (this.categoriesNextToken && this.visibleCategories.length >= (this.categoryGroups.length - 2)) {
-      this.loadNextCategoryChunk();
+      void this.loadNextCategoryChunk();
     }
+    this.persistViewState();
   }
 
   private resetVisibleCategories(): void {
@@ -392,6 +416,55 @@ export class ProjectsComponent implements OnInit {
       }
 
       return rows;
+    });
+  }
+
+  private async restoreViewState(): Promise<void> {
+    if (this.viewStateRestored) return;
+
+    const state = this.routeViewState.getState<ProjectsViewState>(this.routeKey);
+    if (!state) {
+      this.viewStateRestored = true;
+      return;
+    }
+
+    const desiredVisibleCount = Math.max(
+      this.categoryPageSize,
+      Number(state.visibleCategoryCount) || this.categoryPageSize
+    );
+
+    while (this.categoryGroups.length < desiredVisibleCount && !!this.categoriesNextToken) {
+      const loaded = await this.loadNextCategoryChunk();
+      if (!loaded) break;
+    }
+
+    if (state.expandedCategories) {
+      this.expandedCategories = {
+        ...this.expandedCategories,
+        ...state.expandedCategories
+      };
+    }
+
+    this.visibleCategoryCount = Math.min(
+      Math.max(this.categoryPageSize, desiredVisibleCount),
+      Math.max(this.categoryGroups.length, this.categoryPageSize)
+    );
+    this.visibleCategories = this.categoryGroups.slice(0, this.visibleCategoryCount);
+
+    const needsHydration = this.visibleCategories
+      .filter((category) => this.expandedCategories[category.listItemID] && !this.projectsByCategory.has(category.listItemID))
+      .map((category) => category.listItemID);
+    this.hydrateProjectsForCategories(needsHydration);
+
+    this.viewStateRestored = true;
+    await this.routeViewState.restoreScroll(this.routeKey);
+  }
+
+  private persistViewState(): void {
+    this.routeViewState.setState<ProjectsViewState>(this.routeKey, {
+      expandedCategories: { ...this.expandedCategories },
+      visibleCategoryCount: this.visibleCategoryCount || this.categoryPageSize,
+      scrollY: typeof window !== 'undefined' ? this.lastScrollY || window.scrollY : 0
     });
   }
 }

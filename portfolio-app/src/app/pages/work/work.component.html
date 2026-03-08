@@ -49,35 +49,37 @@
              aria-label="Professional timeline" 
              appScrollReveal>
       <h2 class="section-title">Professional Timeline</h2>
-      <p-timeline [value]="timelineEvents" [align]="timelineAlign" styleClass="custom-timeline">
-        <ng-template let-event pTemplate="opposite">
-          <div class="timeline-opposite">
-            <span class="timeline-period">{{ event.period }}</span>
-            <span class="timeline-location">{{ event.location }}</span>
-          </div>
-        </ng-template>
-        <ng-template let-event pTemplate="marker">
-          <span class="timeline-marker" [style.background]="event.markerColor"></span>
-        </ng-template>
-        <ng-template let-event pTemplate="content">
-          <article class="timeline-content-card">
-            <header class="timeline-card-header">
-              <h3>{{ event.title }}</h3>
-              <span class="current-pill" *ngIf="event.isCurrent">Current</span>
-            </header>
-            <p class="timeline-company">{{ event.company }} • {{ event.location }}</p>
-            <ul class="timeline-description" *ngIf="event.description.length > 0">
-              <li *ngFor="let detail of event.description">{{ detail }}</li>
-            </ul>
-            <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
-              <h4>Key Wins</h4>
-              <ul>
-                <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
-              </ul>
+      <ng-container *ngIf="!isCompactTimeline; else mobileTimeline">
+        <p-timeline [value]="timelineEvents" [align]="timelineAlign" styleClass="custom-timeline">
+          <ng-template let-event pTemplate="opposite">
+            <div class="timeline-opposite">
+              <span class="timeline-period">{{ event.period }}</span>
+              <span class="timeline-location">{{ event.location }}</span>
             </div>
-          </article>
-        </ng-template>
-      </p-timeline>
+          </ng-template>
+          <ng-template let-event pTemplate="marker">
+            <span class="timeline-marker" [style.background]="event.markerColor"></span>
+          </ng-template>
+          <ng-template let-event pTemplate="content">
+            <article class="timeline-content-card">
+              <header class="timeline-card-header">
+                <h3>{{ event.title }}</h3>
+                <span class="current-pill" *ngIf="event.isCurrent">Current</span>
+              </header>
+              <p class="timeline-company">{{ event.company }} • {{ event.location }}</p>
+              <ul class="timeline-description" *ngIf="event.description.length > 0">
+                <li *ngFor="let detail of event.description">{{ detail }}</li>
+              </ul>
+              <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
+                <h4>Key Wins</h4>
+                <ul>
+                  <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
+                </ul>
+              </div>
+            </article>
+          </ng-template>
+        </p-timeline>
+      </ng-container>
     </section>
 
     <!-- Community Leadership & Service -->
@@ -139,3 +141,32 @@
     </section>
   </div>
 </div>
+
+<ng-template #mobileTimeline>
+  <div class="timeline-mobile-list" role="list">
+    <div class="timeline-mobile-item" *ngFor="let event of timelineEvents" role="listitem">
+      <span class="timeline-mobile-marker" [style.background]="event.markerColor" aria-hidden="true"></span>
+      <div class="timeline-mobile-rail" aria-hidden="true"></div>
+      <article class="timeline-content-card timeline-content-card-mobile">
+        <header class="timeline-card-header timeline-card-header-mobile">
+          <div class="timeline-mobile-meta">
+            <span class="timeline-period">{{ event.period }}</span>
+            <span class="timeline-location">{{ event.location }}</span>
+          </div>
+          <span class="current-pill" *ngIf="event.isCurrent">Current</span>
+        </header>
+        <h3 class="timeline-mobile-title">{{ event.title }}</h3>
+        <p class="timeline-company">{{ event.company }}</p>
+        <ul class="timeline-description" *ngIf="event.description.length > 0">
+          <li *ngFor="let detail of event.description">{{ detail }}</li>
+        </ul>
+        <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
+          <h4>Key Wins</h4>
+          <ul>
+            <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </div>
+</ng-template>

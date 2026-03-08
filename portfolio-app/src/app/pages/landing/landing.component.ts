@@ -1,9 +1,16 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { RedisContent, PageContentID, PageID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from '../../services/analytics.service';
+import { RouteViewStateService } from '../../services/route-view-state.service';
+
+interface LandingViewState extends Record<string, unknown> {
+  scrollY?: number;
+  activeHeroIndex?: number;
+  updatedAt?: number;
+}
 
 @Component({
   selector: 'app-landing',
@@ -23,6 +30,9 @@ export class LandingComponent implements OnInit, OnDestroy {
   activeHeroIndex: number = 0;
   private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
   private readonly heroAutoplayMs = 5000;
+  private readonly routeKey = '/';
+  private viewStateRestored = false;
+  private lastScrollY = 0;
   private readonly defaultHeroSlides: Array<{ photo: string; alt: string; order: number }> = [
     {
       photo: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?auto=format&fit=crop&fm=webp&w=1920&q=80',
@@ -50,7 +60,8 @@ export class LandingComponent implements OnInit, OnDestroy {
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
     private messageService: MessageService,
-    private analytics: AnalyticsService
+    private analytics: AnalyticsService,
+    private routeViewState: RouteViewStateService
   ) {}
 
   ngOnInit(): void {
@@ -61,7 +72,15 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.persistViewState();
     this.stopHeroAutoplay();
+  }
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (typeof window !== 'undefined') {
+      this.lastScrollY = window.scrollY;
+    }
   }
 
   private loadLandingContent(): void {
@@ -84,6 +103,7 @@ export class LandingComponent implements OnInit, OnDestroy {
               } as RedisContent))
           : [];
         this.refreshHeroSlides();
+        this.tryRestoreViewState();
       },
       error: (error) => {
         console.error('Error loading landing content:', error);
@@ -105,6 +125,7 @@ export class LandingComponent implements OnInit, OnDestroy {
         this.contactInfo = profile.contact;
         this.topSkills = profile.topSkills;
         this.certifications = profile.certifications;
+        this.tryRestoreViewState();
       },
       error: (error) => {
         console.error('Error loading LinkedIn data:', error);
@@ -142,6 +163,7 @@ export class LandingComponent implements OnInit, OnDestroy {
   goToHeroSlide(index: number): void {
     if (!this.heroSlides.length) return;
     this.activeHeroIndex = ((index % this.heroSlides.length) + this.heroSlides.length) % this.heroSlides.length;
+    this.persistViewState();
     this.startHeroAutoplay();
   }
 
@@ -190,5 +212,25 @@ export class LandingComponent implements OnInit, OnDestroy {
     if (!img || img.dataset['fallbackApplied'] === '1') return;
     img.dataset['fallbackApplied'] = '1';
     img.src = '/og-image.png';
+  }
+
+  private tryRestoreViewState(): void {
+    if (this.viewStateRestored) return;
+
+    const state = this.routeViewState.getState<LandingViewState>(this.routeKey);
+    if (state && Number.isFinite(Number(state.activeHeroIndex)) && this.heroSlides.length > 0) {
+      const requestedIndex = Number(state.activeHeroIndex);
+      this.activeHeroIndex = Math.min(Math.max(0, requestedIndex), this.heroSlides.length - 1);
+    }
+
+    this.viewStateRestored = true;
+    void this.routeViewState.restoreScroll(this.routeKey);
+  }
+
+  private persistViewState(): void {
+    this.routeViewState.setState<LandingViewState>(this.routeKey, {
+      activeHeroIndex: this.activeHeroIndex,
+      scrollY: typeof window !== 'undefined' ? this.lastScrollY || window.scrollY : 0
+    });
   }
 }

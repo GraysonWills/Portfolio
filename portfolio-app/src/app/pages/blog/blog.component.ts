@@ -1,9 +1,12 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BlogCardV2, RedisService } from '../../services/redis.service';
 import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { SubscriptionService } from '../../services/subscription.service';
 import { AnalyticsService } from '../../services/analytics.service';
+import { firstValueFrom, Subscription } from 'rxjs';
+import { RouteViewStateService } from '../../services/route-view-state.service';
 
 interface BlogPostCard {
   source: ContentGroup;
@@ -21,13 +24,22 @@ interface BlogPostCard {
   searchBlob: string;
 }
 
+interface BlogViewState extends Record<string, unknown> {
+  layout?: 'list' | 'grid';
+  layoutPreference?: 'auto' | 'manual';
+  searchQuery?: string;
+  currentPage?: number;
+  scrollY?: number;
+  updatedAt?: number;
+}
+
 @Component({
   selector: 'app-blog',
   standalone: false,
   templateUrl: './blog.component.html',
   styleUrl: './blog.component.scss'
 })
-export class BlogComponent implements OnInit {
+export class BlogComponent implements OnInit, OnDestroy {
   blogPosts: ContentGroup[] = [];
   blogCards: BlogPostCard[] = [];
   filteredPosts: BlogPostCard[] = [];
@@ -37,12 +49,23 @@ export class BlogComponent implements OnInit {
   isLoading: boolean = true;
   subscribeEmail: string = '';
   isSubscribing: boolean = false;
-  private visibleCount = 0;
-  private readonly pageSize = 8;
-  private readonly scrollLoadBufferPx = 500;
+  currentPage: number = 1;
+  isPageTransitioning: boolean = false;
+  private readonly pageSize = 10;
   private nextToken: string | null = null;
   private isFetchingNextPage = false;
   private hydratedImages = new Set<string>();
+  private readonly initialFetchLimit = 10;
+  private readonly cardsCacheScope = 'route:/blog:cards';
+  private readonly mediaCacheScope = 'route:/blog:media';
+  private routePage = 1;
+  private queryParamSub?: Subscription;
+  private fetchNextPagePromise: Promise<boolean> | null = null;
+  private readonly routeKey = '/blog';
+  private layoutPreference: 'auto' | 'manual' = 'auto';
+  private viewStateRestored = false;
+  private initialSavedViewState: BlogViewState | null = null;
+  private lastScrollY = 0;
 
   /**
    * ╔══════════════════════════════════════════════════════════════╗
@@ -64,22 +87,43 @@ export class BlogComponent implements OnInit {
     private redisService: RedisService,
     private messageService: MessageService,
     private subscriptions: SubscriptionService,
-    private analytics: AnalyticsService
+    private analytics: AnalyticsService,
+    private route: ActivatedRoute,
+    private router: Router,
+    private routeViewState: RouteViewStateService
   ) {}
 
   ngOnInit(): void {
+    this.initialSavedViewState = this.routeViewState.getState<BlogViewState>(this.routeKey);
+    this.applySavedViewPreferences(this.initialSavedViewState);
+    this.syncResponsiveLayout();
+    this.queryParamSub = this.route.queryParamMap.subscribe((params) => {
+      const pageParam = params.get('page');
+      this.routePage = pageParam
+        ? this.parsePageParam(pageParam)
+        : this.parsePageParam(String(this.initialSavedViewState?.currentPage || 1));
+      void this.syncPageFromRoute();
+    });
     this.loadBlogPosts();
+  }
+
+  ngOnDestroy(): void {
+    this.persistViewState();
+    this.queryParamSub?.unsubscribe();
+  }
+
+  @HostListener('window:resize')
+  onResize(): void {
+    this.syncResponsiveLayout();
+    if (this.layoutPreference === 'auto') {
+      this.persistViewState();
+    }
   }
 
   @HostListener('window:scroll')
   onWindowScroll(): void {
-    if (this.isLoading || !this.hasMorePosts) return;
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-    const viewportBottom = window.scrollY + window.innerHeight;
-    const documentHeight = document.documentElement.scrollHeight;
-    if ((documentHeight - viewportBottom) <= this.scrollLoadBufferPx) {
-      this.loadMorePosts();
+    if (typeof window !== 'undefined') {
+      this.lastScrollY = window.scrollY;
     }
   }
 
@@ -97,17 +141,16 @@ export class BlogComponent implements OnInit {
     }
 
     this.redisService.getBlogCardsV2({
-      limit: 12,
+      limit: this.initialFetchLimit,
       status: 'published',
       includeFuture: false,
-      cacheScope: 'route:/blog:cards'
+      cacheScope: this.cardsCacheScope
     }).subscribe({
       next: (response) => {
         const cards = Array.isArray(response?.items) ? response.items : [];
         this.blogCards = cards.map((item) => this.toPostCardFromV2(item));
         this.nextToken = response?.nextToken || null;
-        this.filteredPosts = [...this.blogCards];
-        this.resetVisiblePosts();
+        this.rebuildVisibleState();
         this.analytics.track('cards_rendered_initial', {
           route: '/blog',
           page: 'blog',
@@ -119,6 +162,7 @@ export class BlogComponent implements OnInit {
         });
         this.hydrateVisibleImages();
         this.isLoading = false;
+        void this.syncPageFromRoute();
       },
       error: (error) => {
         console.error('Error loading v2 blog cards:', error);
@@ -134,9 +178,9 @@ export class BlogComponent implements OnInit {
         this.blogCards = posts
           .map((post) => this.toPostCard(post))
           .sort((a, b) => b.publishTimestamp - a.publishTimestamp);
-        this.filteredPosts = [...this.blogCards];
-        this.resetVisiblePosts();
+        this.rebuildVisibleState();
         this.isLoading = false;
+        void this.syncPageFromRoute();
       },
       error: (error) => {
         console.error('Error loading blog posts:', error);
@@ -171,17 +215,15 @@ export class BlogComponent implements OnInit {
    * Filter blog posts by search query
    */
   filterPosts(): void {
-    if (!this.searchQuery) {
-      this.filteredPosts = [...this.blogCards];
-      this.resetVisiblePosts();
-      this.hydrateVisibleImages();
-      return;
+    const query = this.searchQuery.trim().toLowerCase();
+    if (query && this.redisService.isBlogV2CardsEnabled() && !!this.nextToken) {
+      void this.fetchRemainingBlogPages();
     }
 
-    const query = this.searchQuery.toLowerCase();
-    this.filteredPosts = this.blogCards.filter((post) => post.searchBlob.includes(query));
-    this.resetVisiblePosts();
+    this.rebuildVisibleState(1);
+    void this.syncRouteToPage(1, true);
     this.hydrateVisibleImages();
+    this.persistViewState();
   }
 
   private toPostCard(post: ContentGroup): BlogPostCard {
@@ -261,84 +303,60 @@ export class BlogComponent implements OnInit {
   }
 
   get hasMorePosts(): boolean {
-    if (this.redisService.isBlogV2CardsEnabled() && !this.searchQuery.trim()) {
-      return this.visiblePosts.length < this.filteredPosts.length || !!this.nextToken;
-    }
-    return this.visiblePosts.length < this.filteredPosts.length;
+    return this.canGoToNextPage;
   }
 
   loadMorePosts(): void {
-    if (!this.hasMorePosts) return;
-    if (this.visiblePosts.length < this.filteredPosts.length) {
-      this.visibleCount += this.pageSize;
-      this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
-    }
-    this.hydrateVisibleImages();
-
-    if (this.redisService.isBlogV2CardsEnabled()) {
-      const nearingEnd = this.visiblePosts.length >= (this.blogCards.length - 2);
-      if (nearingEnd) {
-        this.fetchNextBlogPage();
-      }
-    }
+    this.goToNextPage();
   }
 
-  private resetVisiblePosts(): void {
-    this.visibleCount = this.pageSize;
-    this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
+  get shouldShowPagination(): boolean {
+    return this.filteredPosts.length > this.pageSize || (!this.searchQuery.trim() && !!this.nextToken);
   }
 
-  private fetchNextBlogPage(): void {
-    if (!this.nextToken || this.isFetchingNextPage) return;
-    if (this.searchQuery.trim()) return;
+  get totalLoadedPages(): number {
+    return Math.max(1, Math.ceil(this.filteredPosts.length / this.pageSize));
+  }
 
-    this.isFetchingNextPage = true;
-    this.redisService.getBlogCardsV2({
-      limit: 12,
-      status: 'published',
-      includeFuture: false,
-      nextToken: this.nextToken,
-      cacheScope: 'route:/blog:cards'
-    }).subscribe({
-      next: (response) => {
-        this.isFetchingNextPage = false;
-        this.nextToken = response?.nextToken || null;
-        const incoming = (response?.items || []).map((item) => this.toPostCardFromV2(item));
-        if (!incoming.length) return;
+  get totalDisplayPages(): number {
+    return this.totalLoadedPages + ((!this.searchQuery.trim() && this.nextToken) ? 1 : 0);
+  }
 
-        const seen = new Set(this.blogCards.map((card) => card.listItemID));
-        for (const card of incoming) {
-          if (seen.has(card.listItemID)) continue;
-          seen.add(card.listItemID);
-          this.blogCards.push(card);
-        }
+  get pageNumbers(): number[] {
+    return Array.from({ length: this.totalDisplayPages }, (_, index) => index + 1);
+  }
 
-        this.blogCards.sort((a, b) => b.publishTimestamp - a.publishTimestamp);
-        if (this.searchQuery.trim()) {
-          this.filterPosts();
-        } else {
-          const retainCount = Math.max(this.visibleCount, this.visiblePosts.length, this.pageSize);
-          this.filteredPosts = [...this.blogCards];
-          this.visibleCount = retainCount;
-          this.visiblePosts = this.filteredPosts.slice(0, this.visibleCount);
-          this.hydrateVisibleImages();
-        }
+  get canGoToPreviousPage(): boolean {
+    return this.currentPage > 1;
+  }
 
-        this.analytics.track('cards_next_page_loaded', {
-          route: '/blog',
-          page: 'blog',
-          metadata: {
-            appended: incoming.length,
-            total: this.blogCards.length,
-            visible: this.visiblePosts.length,
-            hasMore: !!this.nextToken
-          }
-        });
-      },
-      error: () => {
-        this.isFetchingNextPage = false;
-      }
-    });
+  get canGoToNextPage(): boolean {
+    if (this.isLoading || this.isPageTransitioning) return false;
+    if (this.currentPage < this.totalLoadedPages) return true;
+    return !this.searchQuery.trim() && !!this.nextToken;
+  }
+
+  get paginationRangeLabel(): string {
+    if (!this.filteredPosts.length) return '0 posts';
+    const start = ((this.currentPage - 1) * this.pageSize) + 1;
+    const end = Math.min(this.currentPage * this.pageSize, this.filteredPosts.length);
+    const suffix = (!this.searchQuery.trim() && this.nextToken) ? '+' : '';
+    return `Showing ${start}-${end} of ${this.filteredPosts.length}${suffix} posts`;
+  }
+
+  async goToPage(page: number): Promise<void> {
+    const safePage = Math.max(1, Math.floor(page || 1));
+    await this.syncRouteToPage(safePage);
+  }
+
+  async goToPreviousPage(): Promise<void> {
+    if (!this.canGoToPreviousPage) return;
+    await this.goToPage(this.currentPage - 1);
+  }
+
+  async goToNextPage(): Promise<void> {
+    if (!this.canGoToNextPage) return;
+    await this.goToPage(this.currentPage + 1);
   }
 
   private hydrateVisibleImages(): void {
@@ -349,7 +367,7 @@ export class BlogComponent implements OnInit {
     if (!idsToHydrate.length) return;
 
     this.redisService.getBlogCardsMedia(idsToHydrate, {
-      cacheScope: 'route:/blog:media'
+      cacheScope: this.mediaCacheScope
     }).subscribe({
       next: (mediaItems) => {
         if (!Array.isArray(mediaItems) || !mediaItems.length) return;
@@ -394,11 +412,159 @@ export class BlogComponent implements OnInit {
     });
   }
 
+  private parsePageParam(raw: string | null): number {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.max(1, Math.floor(parsed));
+  }
+
+  private async syncRouteToPage(page: number, replaceUrl: boolean = false): Promise<void> {
+    const currentParam = this.parsePageParam(this.route.snapshot.queryParamMap.get('page'));
+    if (currentParam === page || (page === 1 && currentParam === 1 && !this.route.snapshot.queryParamMap.has('page'))) {
+      this.routePage = page;
+      await this.syncPageFromRoute();
+      return;
+    }
+
+    await this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { page: page > 1 ? page : null },
+      queryParamsHandling: 'merge',
+      replaceUrl
+    });
+  }
+
+  private async syncPageFromRoute(): Promise<void> {
+    if (this.isLoading) return;
+
+    const targetPage = Math.max(1, this.routePage);
+    if (this.searchQuery.trim() && this.redisService.isBlogV2CardsEnabled() && !!this.nextToken) {
+      await this.fetchRemainingBlogPages();
+    }
+    if (!this.searchQuery.trim() && this.redisService.isBlogV2CardsEnabled()) {
+      this.isPageTransitioning = true;
+      try {
+        await this.ensurePageLoaded(targetPage);
+      } finally {
+        this.isPageTransitioning = false;
+      }
+    }
+
+    const maxPage = this.totalDisplayPages;
+    this.currentPage = Math.min(Math.max(1, targetPage), Math.max(1, maxPage));
+    this.applyVisiblePage();
+    this.hydrateVisibleImages();
+    this.persistViewState();
+
+    if (!this.viewStateRestored) {
+      this.viewStateRestored = true;
+      await this.routeViewState.restoreScroll(this.routeKey);
+    }
+  }
+
+  private rebuildVisibleState(page: number = this.currentPage): void {
+    const query = this.searchQuery.trim().toLowerCase();
+    this.filteredPosts = query
+      ? this.blogCards.filter((post) => post.searchBlob.includes(query))
+      : [...this.blogCards];
+    this.currentPage = Math.max(1, page);
+    this.applyVisiblePage();
+  }
+
+  private applyVisiblePage(): void {
+    const normalizedPage = Math.max(1, Math.min(this.currentPage, Math.max(1, this.totalDisplayPages)));
+    const startIndex = (normalizedPage - 1) * this.pageSize;
+    this.currentPage = normalizedPage;
+    this.visiblePosts = this.filteredPosts.slice(startIndex, startIndex + this.pageSize);
+  }
+
+  private async ensurePageLoaded(page: number): Promise<void> {
+    const requiredCount = page * this.pageSize;
+    while (this.blogCards.length < requiredCount && !!this.nextToken) {
+      const loaded = await this.fetchNextBlogPage();
+      if (!loaded) break;
+    }
+  }
+
+  private async fetchRemainingBlogPages(): Promise<void> {
+    while (!!this.nextToken) {
+      const loaded = await this.fetchNextBlogPage();
+      if (!loaded) break;
+    }
+  }
+
+  private async fetchNextBlogPage(): Promise<boolean> {
+    if (!this.nextToken) return false;
+    if (this.fetchNextPagePromise) {
+      return this.fetchNextPagePromise;
+    }
+
+    this.fetchNextPagePromise = (async () => {
+      this.isFetchingNextPage = true;
+      try {
+        const response = await firstValueFrom(this.redisService.getBlogCardsV2({
+          limit: this.initialFetchLimit,
+          status: 'published',
+          includeFuture: false,
+          nextToken: this.nextToken,
+          cacheScope: this.cardsCacheScope
+        }));
+
+        this.nextToken = response?.nextToken || null;
+        const incoming = (response?.items || []).map((item) => this.toPostCardFromV2(item));
+        const appended = this.appendIncomingCards(incoming);
+        this.rebuildVisibleState(this.currentPage);
+        this.hydrateVisibleImages();
+
+        this.analytics.track('cards_next_page_loaded', {
+          route: '/blog',
+          page: 'blog',
+          metadata: {
+            appended,
+            total: this.blogCards.length,
+            visible: this.visiblePosts.length,
+            hasMore: !!this.nextToken
+          }
+        });
+
+        return appended > 0 || !!this.nextToken;
+      } catch {
+        return false;
+      } finally {
+        this.isFetchingNextPage = false;
+        this.fetchNextPagePromise = null;
+      }
+    })();
+
+    return this.fetchNextPagePromise;
+  }
+
+  private appendIncomingCards(incoming: BlogPostCard[]): number {
+    if (!incoming.length) return 0;
+    const seen = new Set(this.blogCards.map((card) => card.listItemID));
+    let appended = 0;
+
+    for (const card of incoming) {
+      if (seen.has(card.listItemID)) continue;
+      seen.add(card.listItemID);
+      this.blogCards.push(card);
+      appended += 1;
+    }
+
+    if (appended > 0) {
+      this.blogCards.sort((a, b) => b.publishTimestamp - a.publishTimestamp);
+    }
+
+    return appended;
+  }
+
   /**
    * Toggle layout view
    */
   toggleLayout(): void {
     this.layout = this.layout === 'list' ? 'grid' : 'list';
+    this.layoutPreference = 'manual';
+    this.persistViewState();
     this.analytics.track('blog_layout_toggled', {
       route: '/blog',
       page: 'blog',
@@ -508,6 +674,37 @@ export class BlogComponent implements OnInit {
           detail: msg
         });
       }
+    });
+  }
+
+  private applySavedViewPreferences(state: BlogViewState | null): void {
+    if (!state) return;
+
+    const savedLayout = state.layout === 'grid' ? 'grid' : 'list';
+    this.layoutPreference = state.layoutPreference === 'manual' ? 'manual' : 'auto';
+    this.searchQuery = String(state.searchQuery || '');
+
+    if (this.layoutPreference === 'manual') {
+      this.layout = savedLayout;
+    }
+  }
+
+  private syncResponsiveLayout(): void {
+    if (typeof window === 'undefined' || this.layoutPreference === 'manual') return;
+
+    const isLandscape = window.innerWidth > window.innerHeight;
+    this.layout = (window.innerWidth >= 960 || (isLandscape && window.innerWidth >= 768))
+      ? 'grid'
+      : 'list';
+  }
+
+  private persistViewState(): void {
+    this.routeViewState.setState<BlogViewState>(this.routeKey, {
+      layout: this.layout,
+      layoutPreference: this.layoutPreference,
+      searchQuery: this.searchQuery,
+      currentPage: this.currentPage,
+      scrollY: typeof window !== 'undefined' ? this.lastScrollY || window.scrollY : 0
     });
   }
 }

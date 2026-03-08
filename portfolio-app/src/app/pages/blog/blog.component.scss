@@ -386,29 +386,78 @@
   }
 }
 
-.blog-load-more {
-  display: flex;
-  justify-content: center;
-  margin-top: 1rem;
+.blog-pagination {
+  margin-top: 1.5rem;
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
 }
 
-.load-more-btn {
+.pagination-summary {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.85rem;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
   appearance: none;
   border: 1px solid rgba(11, 79, 159, 0.2);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   color: var(--primary);
-  padding: 0.65rem 1.1rem;
-  font-size: 0.8rem;
+  padding: 0.65rem 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
   transition: all var(--transition-fast);
 
-  &:hover {
+  &:hover:not(:disabled) {
     border-color: var(--primary);
     background: rgba(11, 79, 159, 0.05);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.pagination-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pagination-page {
+  min-width: 2.75rem;
+  justify-content: center;
+  padding-inline: 0.85rem;
+
+  &.active {
+    background: linear-gradient(135deg, var(--primary) 0%, rgba(241, 143, 59, 0.95) 100%);
+    border-color: transparent;
+    color: #ffffff;
+    box-shadow: var(--shadow-sm);
   }
 }
 
@@ -496,5 +545,32 @@
   .subscribe-btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .blog-pagination {
+    padding: 0.9rem;
+  }
+
+  .pagination-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-pages {
+    justify-content: center;
+  }
+
+  .pagination-nav {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .posts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .blog-image {
+    height: 180px;
   }
 }

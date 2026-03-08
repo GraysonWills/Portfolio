@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -18,6 +18,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
   menuItems: MenuItem[] = [];
   contactInfo: any = {};
   mobileMenuOpen: boolean = false;
+  isScrolled: boolean = false;
   private routerSub!: Subscription;
 
   constructor(
@@ -31,6 +32,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
     this.loadContactInfo();
     this.setupMenuItems();
     this.trackActiveRoute();
+    this.syncScrolledState();
   }
 
   ngOnDestroy(): void {
@@ -144,6 +146,11 @@ export class HeaderComponent implements OnInit, OnDestroy {
     document.body.style.overflow = '';
   }
 
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    this.syncScrolledState();
+  }
+
   /**
    * Get header text content
    */
@@ -162,5 +169,10 @@ export class HeaderComponent implements OnInit, OnDestroy {
       item => item.PageContentID === PageContentID.HeaderIcon
     );
     return iconContent?.Photo || '';
+  }
+
+  private syncScrolledState(): void {
+    if (typeof window === 'undefined') return;
+    this.isScrolled = window.scrollY > 6;
   }
 }
