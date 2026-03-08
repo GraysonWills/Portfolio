@@ -1,5 +1,6 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 
 import { ButtonModule } from 'primeng/button';
@@ -35,6 +36,7 @@ import { AdminRoutingModule } from './admin-routing.module';
   ],
   imports: [
     CommonModule,
+    DragDropModule,
     FormsModule,
     ReactiveFormsModule,
     ButtonModule,
@@ -54,4 +56,3 @@ import { AdminRoutingModule } from './admin-routing.module';
   ],
 })
 export class AdminModule {}
-

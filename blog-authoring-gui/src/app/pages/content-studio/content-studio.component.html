@@ -1,9 +1,8 @@
 <div class="studio-container">
-  <!-- Header -->
   <div class="studio-header">
     <div class="header-title">
       <h1>Portfolio Content Studio</h1>
-      <p>Edit every portfolio page section (header, landing, work, projects, blog)</p>
+      <p>Visual section editing on top of the same JSON + metadata model</p>
     </div>
     <div class="header-actions">
       <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
@@ -36,7 +35,7 @@
         styleClass="p-button-outlined">
       </p-button>
       <p-button
-        label="New Item"
+        label="New Record"
         icon="pi pi-plus"
         (onClick)="newItem()"
         styleClass="p-button-primary">
@@ -54,13 +53,6 @@
         pTooltip="Settings">
       </p-button>
       <p-button
-        icon="pi pi-list"
-        (onClick)="routerRef.navigate(['/dashboard'])"
-        styleClass="p-button-outlined p-button-rounded"
-        pTooltip="Transaction Log"
-        [badge]="txLog.getEntries().length > 0 ? txLog.getEntries().length.toString() : ''">
-      </p-button>
-      <p-button
         label="Logout"
         icon="pi pi-sign-out"
         (onClick)="logout()"
@@ -69,7 +61,6 @@
     </div>
   </div>
 
-  <!-- Settings Panel -->
   <p-card *ngIf="showSettings" class="settings-panel">
     <div class="settings-header">
       <h3>API Connection Settings</h3>
@@ -106,7 +97,6 @@
     </div>
   </p-card>
 
-  <!-- Filters -->
   <section class="filters-panel">
     <div class="filters-row">
       <div class="filter">
@@ -146,62 +136,421 @@
     </div>
   </section>
 
-  <!-- Content -->
   <section class="content-panel">
     <div class="loading" *ngIf="isLoading">
       <i class="pi pi-spin pi-spinner"></i> Loading content…
     </div>
 
-    <div class="content-grid" *ngIf="!isLoading">
-      <p-card *ngFor="let item of visibleFilteredContent; trackBy: trackByContentItem" class="content-card">
-        <div class="card-header">
-          <div class="card-id">
-            <h3>{{ item.ID }}</h3>
-            <p class="card-meta">{{ getPageLabel(item.PageID) }} • {{ getContentLabel(item.PageContentID) }}</p>
-            <p class="card-list" *ngIf="item.ListItemID">ListItemID: <code>{{ item.ListItemID }}</code></p>
-          </div>
-          <div class="card-actions">
-            <p-button
-              icon="pi pi-pencil"
-              (onClick)="editItem(item)"
-              styleClass="p-button-text p-button-rounded"
-              pTooltip="Edit">
-            </p-button>
-            <p-button
-              icon="pi pi-copy"
-              (onClick)="duplicateItem(item)"
-              styleClass="p-button-text p-button-rounded"
-              pTooltip="Duplicate">
-            </p-button>
-            <p-button
-              icon="pi pi-trash"
-              (onClick)="deleteItem(item)"
-              styleClass="p-button-text p-button-rounded p-button-danger"
-              pTooltip="Delete">
-            </p-button>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <div class="photo-preview" *ngIf="item.Photo">
-            <img [src]="item.Photo" [alt]="item.ID + ' image'" loading="lazy">
-          </div>
-          <p class="text-preview" *ngIf="item.Text">{{ getContentTextPreview(item) }}</p>
-          <p class="meta-preview" *ngIf="item.Metadata">
-            <span class="meta-pill">Metadata</span>
-            <code>{{ getContentMetadataPreview(item) }}</code>
-          </p>
-        </div>
-      </p-card>
-
-      <div class="empty" *ngIf="filteredContent.length === 0">
-        No content items match your filters.
-      </div>
+    <div class="empty" *ngIf="!isLoading && visibleSections.length === 0">
+      No content sections match your current filters.
     </div>
 
-    <div class="load-more-row" *ngIf="!isLoading && hasMoreFilteredRows">
+    <div class="studio-workspace" *ngIf="!isLoading && visibleSections.length > 0">
+      <aside class="workspace-pane structure-pane">
+        <div class="pane-header">
+          <div>
+            <span class="pane-eyebrow">Structure</span>
+            <h2>Sections</h2>
+          </div>
+          <span class="pane-count">{{ sections.length }} total</span>
+        </div>
+
+        <div class="structure-list">
+          <button
+            type="button"
+            class="structure-card"
+            *ngFor="let section of visibleSections; trackBy: trackBySection"
+            [class.selected]="isSectionSelected(section)"
+            (click)="selectSection(section)">
+            <div class="structure-card__meta">
+              <span>{{ section.pageLabel }}</span>
+              <span>{{ section.entries.length }} items</span>
+            </div>
+            <h3>{{ section.title }}</h3>
+            <p>{{ section.description }}</p>
+            <div class="structure-card__chips">
+              <span *ngFor="let badge of section.badges">{{ badge }}</span>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace-pane canvas-pane">
+        <div class="pane-header">
+          <div>
+            <span class="pane-eyebrow">Canvas</span>
+            <h2>Page Simulation</h2>
+          </div>
+          <span class="pane-count">{{ visibleSections.length }} loaded</span>
+        </div>
+
+        <div class="canvas-stack">
+          <article
+            class="canvas-section"
+            *ngFor="let section of visibleSections; trackBy: trackBySection"
+            [class.selected]="isSectionSelected(section)"
+            (click)="selectSection(section)">
+            <header class="canvas-section__header">
+              <div>
+                <span class="section-eyebrow">{{ section.pageLabel }}</span>
+                <h3>{{ section.title }}</h3>
+                <p>{{ section.description }}</p>
+              </div>
+              <div class="section-badges">
+                <span *ngFor="let badge of section.badges">{{ badge }}</span>
+              </div>
+            </header>
+
+            <div class="section-entry-list pinned-list" *ngIf="getPinnedEntries(section).length > 0">
+              <div
+                class="section-entry section-entry--fixed"
+                *ngFor="let entry of getPinnedEntries(section); trackBy: trackByEntry"
+                [class.selected]="isEntrySelected(entry)"
+                (click)="selectEntry(section, entry, $event)">
+                <div class="entry-copy">
+                  <div class="entry-meta">
+                    <span>{{ entry.eyebrow }}</span>
+                    <span>{{ getEntryOrderLabel(entry) }}</span>
+                  </div>
+                  <h4>{{ entry.title }}</h4>
+                  <p class="entry-subtitle" *ngIf="entry.subtitle">{{ entry.subtitle }}</p>
+                  <p class="entry-summary" *ngIf="entry.summary">{{ entry.summary }}</p>
+                  <div class="entry-chips" *ngIf="entry.chips.length > 0">
+                    <span *ngFor="let chip of entry.chips">{{ chip }}</span>
+                  </div>
+                </div>
+                <div class="entry-photo" *ngIf="entry.photo">
+                  <img [src]="entry.photo" [alt]="entry.title" loading="lazy">
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="section-entry-list"
+              cdkDropList
+              *ngIf="getDraggableEntries(section).length > 0"
+              [cdkDropListData]="getDraggableEntries(section)"
+              (cdkDropListDropped)="onSectionDrop($event, section)">
+              <div
+                class="section-entry"
+                *ngFor="let entry of getDraggableEntries(section); trackBy: trackByEntry"
+                cdkDrag
+                [class.selected]="isEntrySelected(entry)"
+                (click)="selectEntry(section, entry, $event)">
+                <div class="entry-handle" cdkDragHandle *ngIf="canDragEntry(section, entry)">
+                  <i class="pi pi-bars"></i>
+                </div>
+                <div class="entry-copy">
+                  <div class="entry-meta">
+                    <span>{{ entry.eyebrow }}</span>
+                    <span>{{ getEntryOrderLabel(entry) }}</span>
+                  </div>
+                  <h4>{{ entry.title }}</h4>
+                  <p class="entry-subtitle" *ngIf="entry.subtitle">{{ entry.subtitle }}</p>
+                  <p class="entry-summary" *ngIf="entry.summary">{{ entry.summary }}</p>
+                  <p class="entry-preview" *ngIf="entry.previewText">{{ entry.previewText }}</p>
+                  <div class="entry-chips" *ngIf="entry.chips.length > 0">
+                    <span *ngFor="let chip of entry.chips">{{ chip }}</span>
+                  </div>
+                </div>
+                <div class="entry-photo" *ngIf="entry.photo">
+                  <img [src]="entry.photo" [alt]="entry.title" loading="lazy">
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </main>
+
+      <aside class="workspace-pane inspector-pane">
+        <div class="pane-header">
+          <div>
+            <span class="pane-eyebrow">Inspector</span>
+            <h2>Selected Entry</h2>
+          </div>
+        </div>
+
+        <div *ngIf="inspectorDraft as draft; else inspectorPrompt" class="inspector-form">
+          <div class="inspector-summary">
+            <span class="inspector-kind">{{ getEntryKindLabel(draft.kind) }}</span>
+            <h3>{{ draft.title || selectedEntry?.title }}</h3>
+            <p>
+              {{ getPageLabel(draft.pageId) }} • {{ getContentLabel(draft.contentId) }}
+              <span *ngIf="draft.listItemID"> • <code>{{ draft.listItemID }}</code></span>
+            </p>
+          </div>
+
+          <div class="form-group" *ngIf="isHeaderDraft(draft)">
+            <label>Site Title</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Grayson Wills">
+          </div>
+
+          <div class="form-group" *ngIf="isFooterDraft(draft)">
+            <label>Link Label</label>
+            <input pInputText [(ngModel)]="draft.label" placeholder="LinkedIn">
+          </div>
+
+          <div class="form-group" *ngIf="isTimelineDraft(draft)">
+            <label>Role Title</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Data Analyst">
+          </div>
+
+          <div class="form-group" *ngIf="isTimelineDraft(draft)">
+            <label>Company</label>
+            <input pInputText [(ngModel)]="draft.company" placeholder="General Motors">
+          </div>
+
+          <div class="form-row" *ngIf="isTimelineDraft(draft)">
+            <div class="form-group">
+              <label>Location</label>
+              <input pInputText [(ngModel)]="draft.location" placeholder="Warren, Michigan">
+            </div>
+            <div class="form-group">
+              <label>Order</label>
+              <input pInputText type="number" [(ngModel)]="draft.value" [disabled]="true" placeholder="Use drag & drop">
+            </div>
+          </div>
+
+          <div class="form-row" *ngIf="isTimelineDraft(draft)">
+            <div class="form-group">
+              <label>Start Date</label>
+              <input pInputText [(ngModel)]="draft.startDate" placeholder="June 2025">
+            </div>
+            <div class="form-group">
+              <label>End Date</label>
+              <input pInputText [(ngModel)]="draft.endDate" placeholder="Present">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="isMetricDraft(draft)">
+            <label>Metric Label</label>
+            <input pInputText [(ngModel)]="draft.label" placeholder="AI Systems Architecture">
+          </div>
+
+          <div class="form-row" *ngIf="isMetricDraft(draft)">
+            <div class="form-group">
+              <label>Value</label>
+              <input pInputText type="number" [(ngModel)]="draft.value" min="0" max="100">
+            </div>
+            <div class="form-group">
+              <label>Level</label>
+              <input pInputText [(ngModel)]="draft.level" placeholder="Advanced">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="isProjectCategoryDraft(draft)">
+            <label>Category Name</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Web Applications">
+          </div>
+
+          <div class="form-group" *ngIf="isProjectCardDraft(draft)">
+            <label>Project Title</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Portfolio Website">
+          </div>
+
+          <div class="form-group" *ngIf="isProjectCardDraft(draft)">
+            <label>Description</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.description" rows="5" placeholder="Project summary"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isProjectCardDraft(draft)">
+            <label>Tech Stack</label>
+            <input pInputText [(ngModel)]="draft.techStack" placeholder="Angular, TypeScript, Node.js">
+            <small class="help-text">Separate items with commas.</small>
+          </div>
+
+          <div class="form-row" *ngIf="isProjectCardDraft(draft)">
+            <div class="form-group">
+              <label>GitHub URL</label>
+              <input pInputText [(ngModel)]="draft.url" placeholder="https://github.com/...">
+            </div>
+            <div class="form-group">
+              <label>Live URL</label>
+              <input pInputText [(ngModel)]="draft.secondaryUrl" placeholder="https://...">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="isProjectCardDraft(draft)">
+            <label>Date</label>
+            <input pInputText [(ngModel)]="draft.date" placeholder="2025-06">
+          </div>
+
+          <div class="form-group" *ngIf="isLandingCopyDraft(draft)">
+            <label>Label / Type</label>
+            <input pInputText [(ngModel)]="draft.label" placeholder="summary">
+          </div>
+
+          <div class="form-group" *ngIf="isLandingCopyDraft(draft)">
+            <label>Body</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.body" rows="8" placeholder="Section copy"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isTimelineDraft(draft)">
+            <label>Description Bullets</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.body" rows="5" placeholder="One bullet per line"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isTimelineDraft(draft)">
+            <label>Achievements</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.achievementsText" rows="5" placeholder="One bullet per line"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isMetricDraft(draft)">
+            <label>Summary</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.description" rows="4" placeholder="Metric explanation"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isBlogDraft(draft)">
+            <label>Title</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Blog title">
+          </div>
+
+          <div class="form-group" *ngIf="isBlogDraft(draft)">
+            <label>Summary</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.description" rows="4" placeholder="Card summary"></textarea>
+          </div>
+
+          <div class="form-row" *ngIf="isBlogDraft(draft)">
+            <div class="form-group">
+              <label>Status</label>
+              <p-dropdown
+                [options]="blogStatusOptions"
+                [(ngModel)]="draft.status"
+                optionLabel="label"
+                optionValue="value"
+                appendTo="body">
+              </p-dropdown>
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <input pInputText [(ngModel)]="draft.category" placeholder="Automation">
+            </div>
+          </div>
+
+          <div class="form-row" *ngIf="isBlogDraft(draft)">
+            <div class="form-group">
+              <label>Publish Date</label>
+              <input pInputText type="datetime-local" [(ngModel)]="draft.publishDate">
+            </div>
+            <div class="form-group">
+              <label>Read Time (minutes)</label>
+              <input pInputText type="number" [(ngModel)]="draft.readTimeMinutes" min="1">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="isBlogDraft(draft)">
+            <label>Public Tags</label>
+            <input pInputText [(ngModel)]="draft.tags" placeholder="automation, n8n">
+          </div>
+
+          <div class="form-group" *ngIf="isBlogDraft(draft)">
+            <label>Private SEO Tags</label>
+            <input pInputText [(ngModel)]="draft.privateTags" placeholder="internal, seo-only">
+          </div>
+
+          <div class="form-group" *ngIf="isBlogDraft(draft)">
+            <label>Card / Excerpt Copy</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.body" rows="5" placeholder="Short card copy"></textarea>
+            <small class="help-text">Full rich post editing still belongs in Blog Posts.</small>
+          </div>
+
+          <div class="form-group" *ngIf="isCollectionEntryDraft(draft)">
+            <label>Title</label>
+            <input pInputText [(ngModel)]="draft.title" placeholder="Collections entry title">
+          </div>
+
+          <div class="form-group" *ngIf="isCollectionEntryDraft(draft)">
+            <label>Summary</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.description" rows="4" placeholder="Optional summary"></textarea>
+          </div>
+
+          <div class="form-row" *ngIf="isCollectionEntryDraft(draft)">
+            <div class="form-group">
+              <label>Category</label>
+              <input pInputText [(ngModel)]="draft.category" placeholder="poems">
+            </div>
+            <div class="form-group">
+              <label>Entry Type</label>
+              <input pInputText [(ngModel)]="draft.label" placeholder="poem">
+            </div>
+          </div>
+
+          <div class="form-group" *ngIf="isCollectionEntryDraft(draft)">
+            <label>Tags</label>
+            <input pInputText [(ngModel)]="draft.tags" placeholder="memory, poetry">
+          </div>
+
+          <div class="form-group" *ngIf="isCollectionEntryDraft(draft)">
+            <label>Body</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.body" rows="8" placeholder="Collections body"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="!isTimelineDraft(draft) && !isMetricDraft(draft) && !isLandingCopyDraft(draft) && !isProjectCardDraft(draft) && !isBlogDraft(draft) && !isCollectionEntryDraft(draft) && !isProjectCategoryDraft(draft) && !isFooterDraft(draft) && !isHeaderDraft(draft)">
+            <label>Body</label>
+            <textarea class="p-inputtext editor-textarea" [(ngModel)]="draft.body" rows="8" placeholder="Raw text body"></textarea>
+          </div>
+
+          <div class="form-group" *ngIf="isHeaderDraft(draft) || isFooterDraft(draft) || isHeroDraft(draft) || isProjectCategoryDraft(draft) || isProjectCardDraft(draft) || isBlogDraft(draft)">
+            <label>Image</label>
+            <input pInputText [(ngModel)]="draft.imageUrl" placeholder="https://...">
+            <app-image-uploader
+              [currentImage]="draft.imageUrl || null"
+              (imageUploaded)="draft.imageUrl = $event">
+            </app-image-uploader>
+          </div>
+
+          <div class="form-group" *ngIf="isHeaderDraft(draft) || isFooterDraft(draft) || isHeroDraft(draft) || isProjectCategoryDraft(draft) || isProjectCardDraft(draft) || isBlogDraft(draft)">
+            <label>Alt Text</label>
+            <input pInputText [(ngModel)]="draft.altText" placeholder="Describe the image for accessibility">
+          </div>
+
+          <details class="advanced-panel">
+            <summary>Advanced</summary>
+            <p>
+              The new inspector is the human-friendly path. If you need exact record-level JSON, open the primary backing record in the raw editor.
+            </p>
+            <div class="advanced-ids">
+              <code *ngFor="let id of draft.ids">{{ id }}</code>
+            </div>
+            <div class="advanced-actions">
+              <p-button
+                label="Open Primary Record"
+                icon="pi pi-code"
+                (onClick)="openAdvancedEditorForSelected()"
+                styleClass="p-button-outlined">
+              </p-button>
+            </div>
+          </details>
+
+          <div class="inspector-actions">
+            <p-button
+              label="Delete Entry"
+              icon="pi pi-trash"
+              [disabled]="!canDeleteEntry(selectedEntry)"
+              (onClick)="deleteSelectedEntry()"
+              styleClass="p-button-outlined p-button-danger">
+            </p-button>
+            <p-button
+              label="Save Changes"
+              icon="pi pi-save"
+              [loading]="inspectorSaving"
+              (onClick)="saveInspectorDraft()"
+              styleClass="p-button-primary">
+            </p-button>
+          </div>
+        </div>
+
+        <ng-template #inspectorPrompt>
+          <div class="inspector-prompt">
+            Select a section or entry to edit it.
+          </div>
+        </ng-template>
+      </aside>
+    </div>
+
+    <div class="load-more-row" *ngIf="!isLoading && hasMoreVisibleSections">
       <p-button
-        label="Load More Items"
+        label="Load More Sections"
         icon="pi pi-angle-down"
         styleClass="p-button-outlined"
         (onClick)="loadMoreVisibleRows()">
@@ -209,9 +558,8 @@
     </div>
   </section>
 
-  <!-- Editor Dialog -->
   <p-dialog
-    header="{{ draft?.isNew ? 'Create Content Item' : 'Edit Content Item' }}"
+    header="{{ draft?.isNew ? 'Create Content Record' : 'Edit Raw Content Record' }}"
     [(visible)]="editorOpen"
     [modal]="true"
     [dismissableMask]="true"
@@ -223,7 +571,7 @@
         <div class="form-group">
           <label>ID</label>
           <input pInputText [(ngModel)]="d.ID" [readonly]="!d.isNew" placeholder="Leave blank to auto-generate">
-          <small class="help-text" *ngIf="d.isNew">If you want stable IDs (recommended), set one like <code>landing-text-summary</code>.</small>
+          <small class="help-text" *ngIf="d.isNew">Set a stable ID when possible.</small>
         </div>
 
         <div class="form-row">
@@ -252,12 +600,12 @@
 
         <div class="form-group">
           <label>ListItemID</label>
-          <input pInputText [(ngModel)]="d.ListItemID" placeholder="Optional grouping key (e.g., experience-0, category-web)">
+          <input pInputText [(ngModel)]="d.ListItemID" placeholder="Optional grouping key">
         </div>
 
         <div class="form-group">
           <label>Photo</label>
-          <input pInputText [(ngModel)]="d.Photo" placeholder="Image URL or data URL (base64)">
+          <input pInputText [(ngModel)]="d.Photo" placeholder="Image URL">
           <app-image-uploader
             [currentImage]="d.Photo || null"
             (imageUploaded)="onDraftImageUploaded($event)">
@@ -268,7 +616,7 @@
       <div class="editor-col">
         <div class="form-group">
           <label>Text</label>
-          <textarea class="p-inputtext editor-textarea" [(ngModel)]="d.Text" rows="10" placeholder="Text content (string). Many records store JSON here."></textarea>
+          <textarea class="p-inputtext editor-textarea" [(ngModel)]="d.Text" rows="10" placeholder="Text content"></textarea>
           <div class="inline-actions">
             <p-button
               label="Format JSON"

@@ -17,9 +17,16 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - create/edit/delete
   - draft/scheduled/published states
   - explicit unpublish action (moves post to draft + hides from portfolio)
-  - send-now + scheduled email integration.
+  - send-now + scheduled email integration
+  - editable read time override (`readTimeMinutes`)
 - Full-site preview session flow against deployed portfolio routes.
-- Content Studio for direct `PageID`/`PageContentID` editing.
+- Content Studio with a structured editing workspace:
+  - left-side section map
+  - center page simulation canvas
+  - right-side typed inspector
+  - drag/drop ordering for ordered content blocks
+  - typed fields for titles, summaries, dates, locations, links, tags, read time, and visibility where applicable
+  - raw-record modal retained as an advanced fallback
 - Subscriber admin management (list/add/remove).
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
@@ -27,6 +34,7 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - detects embedded `data:image/*` tags before save
   - uploads those assets via API and rewrites post HTML to URL-based images
   - avoids API `413 request entity too large` failures on large posts
+- Blog save path maintains both `BlogText` and canonical `BlogBody` records to keep authoring, preview, and public rendering aligned
 - Route-scoped `v2`/`v3` reading with in-memory request reuse and fallback to legacy reads.
 - Keyboard shortcuts with global + page-scoped contexts.
 
@@ -75,8 +83,13 @@ Normal route entry no longer calls `/api/health`; connectivity checks are now se
   - paginates additional cards instead of preloading all posts
 - Content Studio:
   - reads server-filtered rows from `GET /api/content/v3/admin/content`
-  - uses page/content targeted queries behind the API
+  - groups raw records into human-facing sections (hero slides, timeline entries, project cards, footer links, etc.)
+  - exposes typed editors for common content kinds while preserving the same backend JSON/metadata model
   - loads additional rows incrementally
+- Blog editor:
+  - loads canonical post body from `BlogBody` first, then falls back to `BlogText`
+  - preserves manual read time when supplied
+  - rewrites inline base64 images to uploaded URLs before save
 - Dynamic content snapshots are no longer persisted in browser storage.
 - Reuse is limited to current-session in-memory streams keyed by route/query shape.
 
@@ -99,6 +112,40 @@ Global:
 Page defaults:
 - `Cmd/Ctrl + Alt + R` refresh
 - `Cmd/Ctrl + Alt + N` create new (where applicable)
+
+Dashboard:
+- `Cmd/Ctrl + Alt + S` toggle settings
+- `Cmd/Ctrl + Alt + T` toggle transaction log
+
+Blog editor (inside Dashboard):
+- `Cmd/Ctrl + Shift + S` save post
+- `Cmd/Ctrl + Shift + C` preview blog card
+- `Cmd/Ctrl + Shift + F` preview full post
+- `Cmd/Ctrl + Shift + L` preview on portfolio blog list
+- `Cmd/Ctrl + Shift + P` preview on portfolio post page
+- `Cmd/Ctrl + Shift + I` insert featured image into post body
+- `Cmd/Ctrl + Shift + U` unpublish current post
+- `Esc` close preview or cancel editor
+
+Content Studio:
+- `Cmd/Ctrl + Alt + S` toggle API settings
+- `Cmd/Ctrl + Alt + P` preview selected page in portfolio
+- `Cmd/Ctrl + Shift + H / L` select previous or next section
+- `Cmd/Ctrl + Shift + K / J` select previous or next entry
+- `Cmd/Ctrl + Shift + , / .` move selected entry up or down
+- `Cmd/Ctrl + Shift + S` save selected inspector/raw changes
+- `Cmd/Ctrl + Shift + E` open advanced editor for selected entry
+- `Cmd/Ctrl + Shift + D` delete selected entry
+- `Esc` close active editor/settings
+
+Subscribers:
+- `Cmd/Ctrl + Shift + S` save the active local preference draft
+- `Esc` cancel the active preference edit
+
+Collections:
+- `Cmd/Ctrl + Shift + A` add category tab
+- `Cmd/Ctrl + Shift + S` save current collection entry
+- `Esc` close the collection entry editor
 
 Implementation references:
 - `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/hotkeys.service.ts`
