@@ -426,13 +426,25 @@
 }
 
 .entry-copy {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
+
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
 
   h4,
   p {
     margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   h4 {
@@ -445,6 +457,8 @@
 .entry-subtitle {
   font-weight: 600;
   color: var(--ink-700);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .entry-summary,
