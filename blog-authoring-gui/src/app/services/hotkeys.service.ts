@@ -165,13 +165,8 @@ export class HotkeysService {
   };
 
   private eventToCombo(event: KeyboardEvent): string {
-    let key = String(event.key || '').toLowerCase();
+    let key = this.resolveKey(event);
     if (!key) return '';
-
-    if (key === 'escape') return 'esc';
-    if (key === 'esc') return 'esc';
-    if (key === '?') key = '/';
-    if (key === ' ') key = 'space';
 
     if (key.length > 1 && !['/', 'space'].includes(key)) {
       return '';
@@ -184,6 +179,37 @@ export class HotkeysService {
     parts.push(key);
 
     return this.normalizeCombo(parts.join('+'));
+  }
+
+  private resolveKey(event: KeyboardEvent): string {
+    const code = String(event.code || '');
+    if (code === 'Escape') return 'esc';
+    if (code === 'Space') return 'space';
+    if (code === 'Slash') return '/';
+    if (code === 'Comma') return ',';
+    if (code === 'Period') return '.';
+
+    const keyMatch = code.match(/^Key([A-Z])$/);
+    if (keyMatch) {
+      return keyMatch[1].toLowerCase();
+    }
+
+    const digitMatch = code.match(/^Digit([0-9])$/);
+    if (digitMatch) {
+      return digitMatch[1];
+    }
+
+    const numpadMatch = code.match(/^Numpad([0-9])$/);
+    if (numpadMatch) {
+      return numpadMatch[1];
+    }
+
+    let key = String(event.key || '').toLowerCase();
+    if (!key) return '';
+    if (key === 'escape' || key === 'esc') return 'esc';
+    if (key === '?') return '/';
+    if (key === ' ') return 'space';
+    return key;
   }
 
   private normalizeCombo(combo: string): string {
