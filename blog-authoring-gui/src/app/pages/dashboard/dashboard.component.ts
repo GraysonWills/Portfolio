@@ -595,6 +595,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
         description: 'Toggle transaction log panel',
         action: () => this.toggleTransactionLog(),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+s',
+        description: 'Toggle dashboard settings',
+        action: () => this.toggleSettings(),
+        allowInInputs: true
       }
     ]);
   }

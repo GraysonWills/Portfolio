@@ -1,7 +1,8 @@
-import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+import { Component, OnDestroy, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { BlogApiService } from '../../services/blog-api.service';
+import { HotkeysService } from '../../services/hotkeys.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import {
@@ -19,7 +20,7 @@ import {
   styleUrl: './blog-editor.component.scss',
   standalone: false
 })
-export class BlogEditorComponent implements OnInit {
+export class BlogEditorComponent implements OnInit, OnDestroy {
   @Input() initialData?: any;
   @Output() saved = new EventEmitter<void>();
   @Output() cancelled = new EventEmitter<void>();
@@ -79,10 +80,12 @@ export class BlogEditorComponent implements OnInit {
   };
   private quillEditor: any = null;
   private previewListItemID: string = '';
+  private cleanupHotkeys: (() => void) | null = null;
 
   constructor(
     private fb: FormBuilder,
     private blogApi: BlogApiService,
+    private hotkeys: HotkeysService,
     private txLog: TransactionLogService,
     private messageService: MessageService,
     private confirmationService: ConfirmationService
@@ -107,6 +110,12 @@ export class BlogEditorComponent implements OnInit {
     }
     this.previewListItemID = this.initialData?.listItemID || `blog-preview-${Date.now()}`;
     this.loadSignatureSettings();
+    this.registerHotkeys();
+  }
+
+  ngOnDestroy(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = null;
   }
 
   /**
@@ -222,6 +231,21 @@ export class BlogEditorComponent implements OnInit {
     const rounded = Math.round(parsed);
     if (rounded < 1) return null;
     return Math.min(120, rounded);
+  }
+
+  private getEffectiveStatus(formValue: any): 'draft' | 'scheduled' | 'published' {
+    const rawStatus = String(formValue?.status || 'draft').toLowerCase();
+    if (rawStatus !== 'published') {
+      return (rawStatus === 'scheduled' || rawStatus === 'draft') ? rawStatus : 'draft';
+    }
+
+    const publishDate = formValue?.publishDate ? new Date(formValue.publishDate) : null;
+    const publishTime = publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate.getTime() : 0;
+    if (publishTime && publishTime > Date.now() + 60_000) {
+      return 'scheduled';
+    }
+
+    return 'published';
   }
 
   private normalizeEditorContentHtml(raw: any): string {
@@ -435,6 +459,16 @@ export class BlogEditorComponent implements OnInit {
     this.prepareContentForSave(formValue.content)
       .then((normalizedContent) => {
         this.blogForm.patchValue({ content: normalizedContent }, { emitEvent: false });
+        const effectiveStatus = this.getEffectiveStatus(formValue);
+        if (effectiveStatus !== formValue.status) {
+          formValue = { ...formValue, status: effectiveStatus };
+          this.blogForm.patchValue({ status: effectiveStatus }, { emitEvent: false });
+          this.messageService.add({
+            severity: 'info',
+            summary: 'Status Adjusted',
+            detail: 'Future publish dates are saved as scheduled posts.'
+          });
+        }
 
         const publicTags = [...this.publicTags];
         const privateSeoTags = [...this.privateSeoTags];
@@ -796,6 +830,66 @@ export class BlogEditorComponent implements OnInit {
 
   closePreview(): void {
     this.showPreviewDialog = false;
+  }
+
+  private registerHotkeys(): void {
+    this.cleanupHotkeys?.();
+    this.cleanupHotkeys = this.hotkeys.register('dashboard', [
+      {
+        combo: 'mod+shift+s',
+        description: 'Save current blog post',
+        action: () => this.savePost(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+c',
+        description: 'Preview blog card',
+        action: () => this.openPreview('card'),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+f',
+        description: 'Preview full blog post',
+        action: () => this.openPreview('full'),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+l',
+        description: 'Preview on portfolio blog list',
+        action: () => this.openPortfolioPreview('list'),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+p',
+        description: 'Preview on portfolio post page',
+        action: () => this.openPortfolioPreview('post'),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+i',
+        description: 'Insert featured image into post body',
+        action: () => this.insertFeaturedImageIntoContent(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+u',
+        description: 'Unpublish current post',
+        action: () => this.unpublishPost(),
+        allowInInputs: true
+      },
+      {
+        combo: 'esc',
+        description: 'Close preview or cancel editing',
+        action: () => {
+          if (this.showPreviewDialog) {
+            this.closePreview();
+            return;
+          }
+          this.cancel();
+        },
+        allowInInputs: true
+      }
+    ]);
   }
 
   openPortfolioPreview(target: 'list' | 'post' = 'post'): void {

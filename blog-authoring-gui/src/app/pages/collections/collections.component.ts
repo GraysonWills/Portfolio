@@ -554,8 +554,44 @@ export class CollectionsComponent implements OnInit, OnDestroy {
         description: 'Focus new-category name input',
         action: () => this.focusCategoryInput(),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+a',
+        description: 'Add category tab',
+        action: () => this.addCategory(),
+        allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+s',
+        description: 'Save current collection entry',
+        action: () => this.saveActiveEntryShortcut(),
+        allowInInputs: true
+      },
+      {
+        combo: 'esc',
+        description: 'Close collection entry editor',
+        action: () => this.handleEscapeHotkey(),
+        allowInInputs: true
       }
     ]);
+  }
+
+  private saveActiveEntryShortcut(): void {
+    if (!this.editorOpen) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Editor Closed',
+        detail: 'Open a collection entry before saving with the keyboard.'
+      });
+      return;
+    }
+    this.saveEntry();
+  }
+
+  private handleEscapeHotkey(): void {
+    if (this.editorOpen) {
+      this.closeEditor();
+    }
   }
 
   private focusCategoryInput(): void {

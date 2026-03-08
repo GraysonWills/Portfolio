@@ -343,7 +343,41 @@ export class SubscribersComponent implements OnInit, OnDestroy {
         description: 'Add subscriber',
         action: () => this.addSubscriber(),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+shift+s',
+        description: 'Save active preference draft',
+        action: () => this.saveActivePreferenceDraft(),
+        allowInInputs: true
+      },
+      {
+        combo: 'esc',
+        description: 'Cancel active preference edit',
+        action: () => this.handleEscapeHotkey(),
+        allowInInputs: true
       }
     ]);
+  }
+
+  private saveActivePreferenceDraft(): void {
+    const activeEmailHash = String(this.editingPreferencesFor || '').trim();
+    if (!activeEmailHash) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'No Active Draft',
+        detail: 'Open a subscriber preference editor before saving from the keyboard.'
+      });
+      return;
+    }
+
+    const subscriber = this.subscribers.find((candidate) => String(candidate.emailHash || '').trim() === activeEmailHash);
+    if (!subscriber) return;
+    this.savePreferenceDraft(subscriber);
+  }
+
+  private handleEscapeHotkey(): void {
+    if (this.editingPreferencesFor) {
+      this.cancelPreferenceEdit();
+    }
   }
 }
