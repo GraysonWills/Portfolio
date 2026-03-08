@@ -44,6 +44,7 @@
 
   --container-max: 1200px;
   --container-narrow: 800px;
+  --site-header-offset: 72px;
 }
 
 /* ── Reset and Base ── */
@@ -58,6 +59,7 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  scroll-padding-top: var(--site-header-offset);
 }
 
 body {
@@ -70,6 +72,13 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   overflow-x: hidden;
+  padding-top: var(--site-header-offset);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --site-header-offset: 68px;
+  }
 }
 
 /* ── Typography ── */
