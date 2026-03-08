@@ -219,6 +219,11 @@ function buildBlogDetailPayload(items) {
   const imageItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogImage && !!item.Photo) || null;
   const bodyItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogBody && !!item.Text) || null;
   const metadata = normalizeMetadata(metaItem?.Metadata);
+  const publishDate = metadata.publishDate || null;
+  const publishTs = toMillis(publishDate);
+  const status = String(metadata.status || 'published').trim().toLowerCase() === 'published' && Number.isFinite(publishTs) && publishTs > Date.now()
+    ? 'scheduled'
+    : String(metadata.status || 'published').trim().toLowerCase();
 
   return {
     listItemID: String(metaItem?.ListItemID || textItem?.ListItemID || imageItem?.ListItemID || '').trim(),
@@ -226,8 +231,8 @@ function buildBlogDetailPayload(items) {
     summary: String(metadata.summary || textItem?.Text || ''),
     coverImage: imageItem?.Photo || '',
     coverAlt: String(imageItem?.Metadata?.alt || metadata.title || 'Blog cover image'),
-    publishDate: metadata.publishDate || null,
-    status: String(metadata.status || 'published'),
+    publishDate,
+    status,
     tags: Array.isArray(metadata.tags) ? metadata.tags : [],
     privateSeoTags: Array.isArray(metadata.privateSeoTags) ? metadata.privateSeoTags : [],
     category: String(metadata.category || 'General'),

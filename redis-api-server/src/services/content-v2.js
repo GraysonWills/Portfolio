@@ -161,6 +161,19 @@ function normalizeTagList(value) {
   return out;
 }
 
+function normalizeBlogStatus(status, publishTs) {
+  const normalized = String(status || 'published').trim().toLowerCase() || 'published';
+  if (normalized !== 'published') {
+    return normalized;
+  }
+
+  if (Number.isFinite(publishTs) && publishTs > Date.now()) {
+    return 'scheduled';
+  }
+
+  return 'published';
+}
+
 function toBlogCard(item) {
   const metadata = normalizeMetadata(item?.Metadata);
   const publishDateRaw = metadata.publishDate || item?.UpdatedAt || item?.CreatedAt || null;
@@ -171,7 +184,7 @@ function toBlogCard(item) {
     summary: String(metadata.summary || ''),
     publishDate: publishDateRaw ? new Date(publishDateRaw).toISOString() : null,
     _publishTs: publishTs,
-    status: String(metadata.status || 'published').toLowerCase(),
+    status: normalizeBlogStatus(metadata.status, publishTs),
     tags: normalizeTagList(metadata.tags),
     privateSeoTags: normalizeTagList(metadata.privateSeoTags),
     readTimeMinutes: Math.max(1, Math.round(Number(metadata.readTimeMinutes || 1))),

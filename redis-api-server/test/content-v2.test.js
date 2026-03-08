@@ -37,6 +37,26 @@ test('blog card filters hide future content when includeFuture=false', () => {
   assert.equal(filtered.length, 0);
 });
 
+test('future-dated published cards are normalized to scheduled', () => {
+  const futureIso = new Date(Date.now() + 86_400_000).toISOString();
+  const cards = buildBlogCardsFromPageItems([
+    {
+      ID: 'blog-future',
+      PageID: 3,
+      PageContentID: 3,
+      ListItemID: 'blog-future',
+      UpdatedAt: new Date().toISOString(),
+      Metadata: {
+        title: 'I Value',
+        status: 'published',
+        publishDate: futureIso
+      }
+    }
+  ]);
+
+  assert.equal(cards[0].status, 'scheduled');
+});
+
 test('sortBlogCards orders by publish date desc', () => {
   const older = new Date(Date.now() - 86_400_000).toISOString();
   const newer = new Date().toISOString();
@@ -63,4 +83,3 @@ test('sortBlogCards orders by publish date desc', () => {
   assert.equal(sorted[0].listItemID, 'b');
   assert.equal(sorted[1].listItemID, 'a');
 });
-

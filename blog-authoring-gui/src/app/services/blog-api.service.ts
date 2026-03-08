@@ -1439,14 +1439,20 @@ export class BlogApiService {
       `${this.apiUrl}/notifications/schedule`,
       { listItemID, publishAt, sendEmail, topic },
       { headers: this.headers }
-    ).pipe(catchError(this.handleError));
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
   }
 
   cancelSchedule(scheduleName: string): Observable<any> {
     return this.http.delete<any>(
       `${this.apiUrl}/notifications/schedule/${encodeURIComponent(scheduleName)}`,
       { headers: this.headers }
-    ).pipe(catchError(this.handleError));
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
   }
 
   unpublishPost(listItemID: string): Observable<any> {

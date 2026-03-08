@@ -58,6 +58,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
     published: 0
   };
 
+  private getEffectiveStatus(rawStatus: unknown, publishDate: unknown): string {
+    const normalized = String(rawStatus || 'published').trim().toLowerCase() || 'published';
+    if (normalized !== 'published') {
+      return normalized;
+    }
+
+    const publishTs = publishDate ? new Date(publishDate as any).getTime() : Number.NaN;
+    if (Number.isFinite(publishTs) && publishTs > Date.now()) {
+      return 'scheduled';
+    }
+
+    return 'published';
+  }
+
   constructor(
     private authService: AuthService,
     private blogApi: BlogApiService,
@@ -306,7 +320,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             ? Math.max(1, Math.round(Number(metadata?.readTimeMinutes)))
             : null,
           publishDate: metadata?.publishDate ? new Date(metadata.publishDate) : new Date(),
-          status: metadata?.status || 'published',
+          status: this.getEffectiveStatus(metadata?.status, metadata?.publishDate),
           category: metadata?.category || '',
           signatureId: metadata?.signatureId || metadata?.signatureSnapshot?.id || '',
           signatureSnapshot: metadata?.signatureSnapshot || null,
@@ -625,7 +639,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       title: card.title || 'Untitled Post',
       summary: card.summary || '',
       image: null,
-      status: card.status || 'draft',
+      status: this.getEffectiveStatus(card.status, card.publishDate),
       tags: card.tags || [],
       publishDate: card.publishDate ? new Date(card.publishDate) : new Date()
     };
@@ -777,7 +791,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   getPostStatus(post: ContentGroup): string {
     const metadata = post.metadata as BlogPostMetadata;
-    return metadata?.status || 'published';
+    return this.getEffectiveStatus(metadata?.status, metadata?.publishDate);
   }
 
   getStatusSeverity(status: string): 'success' | 'info' | 'warning' | 'danger' {
