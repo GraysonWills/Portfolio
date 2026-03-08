@@ -266,12 +266,12 @@ function buildProjectRecords() {
       idBase: 'proj-web-beerme',
       listItemID: 'category-web',
       order: 2,
-      title: 'BeerMe',
-      description: 'Created a React web experience for travelers who want to discover local craft breweries, with a focus on approachable UX and useful regional discovery flows.',
+      title: 'BeerMe (Deprecated)',
+      description: 'Deprecated. Created a React web experience for travelers who want to discover local craft breweries, with a focus on approachable UX and useful regional discovery flows. The public beerme.org deployment has been retired, and this screenshot reflects the final project interface.',
       techStack: ['React', 'JavaScript', 'HTML', 'CSS'],
       date: 'Oct 2024 - Dec 2024',
-      photo: 'https://images.unsplash.com/photo-1514361892635-eae31ec8f8c1?w=1200&q=80',
-      alt: 'Craft beer discovery web application concept',
+      photo: '/projects/beerme-home-desktop.jpg',
+      alt: 'BeerMe homepage screenshot',
       githubUrl: 'https://github.com/GraysonWills/BeerBelly'
     }),
     ...projectRecord({
