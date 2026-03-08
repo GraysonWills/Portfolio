@@ -68,7 +68,6 @@ Quick reference for architecture, runtime, and implementation links.
 |---|---|
 | Portfolio/site CI/CD | `/Users/grayson/Desktop/Portfolio/.github/workflows/ci-cd.yml` |
 | API Lambda deploy | `/Users/grayson/Desktop/Portfolio/.github/workflows/api-deploy.yml` |
-| ECS deploy path | `/Users/grayson/Desktop/Portfolio/.github/workflows/ecs-deploy.yml` |
 | Security scans | `/Users/grayson/Desktop/Portfolio/.github/workflows/security.yml` |
 | Senior engineer review automation | `/Users/grayson/Desktop/Portfolio/.github/workflows/senior-review.yml` |
 
@@ -86,6 +85,9 @@ Quick reference for architecture, runtime, and implementation links.
 | Authoring API client | `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/blog-api.service.ts` |
 | Authoring auth/session | `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/auth.service.ts` |
 | Authoring hotkeys | `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/hotkeys.service.ts` |
+| Content Studio workspace | `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/pages/content-studio/content-studio.component.ts` |
+| Public read client | `/Users/grayson/Desktop/Portfolio/portfolio-app/src/app/services/redis.service.ts` |
+| Public analytics client | `/Users/grayson/Desktop/Portfolio/portfolio-app/src/app/services/analytics.service.ts` |
 
 ## 7. Streaming + Cache Flags
 
@@ -93,5 +95,23 @@ Quick reference for architecture, runtime, and implementation links.
 |---|---|---|
 | `useContentV2Stream` | both frontend `environment*.ts` files | `true` |
 | `useBlogV2Cards` | both frontend `environment*.ts` files | `true` |
-| client route-scoped cache | `redis.service.ts`, `blog-api.service.ts` | enabled |
-| server in-memory GET cache | `redis-api-server/src/app.js` | enabled |
+| client route-scoped in-memory reuse | `redis.service.ts`, `blog-api.service.ts` | enabled |
+| browser snapshot cache | frontend apps | disabled |
+| server in-memory GET cache | `redis-api-server/src/app.js` | removed |
+| dynamic GET cache headers | `redis-api-server/src/app.js` | `no-store` |
+
+## 8. Key Route Contracts
+
+| Area | Contract |
+|---|---|
+| Public shell/bootstrap | `GET /api/content/v3/bootstrap` |
+| Landing | `GET /api/content/v3/landing` |
+| Work | `GET /api/content/v3/work` |
+| Projects categories | `GET /api/content/v3/projects/categories` |
+| Projects item hydration | `POST /api/content/v3/projects/items` |
+| Blog feed cards | `GET /api/content/v2/blog/cards` |
+| Blog feed media hydration | `GET /api/content/v2/blog/cards/media` |
+| Blog detail | `GET /api/content/v3/blog/:listItemId` |
+| Authoring dashboard | `GET /api/content/v3/admin/dashboard` |
+| Authoring Content Studio | `GET /api/content/v3/admin/content` |
+| Unpublish action | `POST /api/notifications/unpublish` |

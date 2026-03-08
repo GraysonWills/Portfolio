@@ -67,6 +67,7 @@ flowchart LR
 - Multi-page experience: Landing, Work, Projects, Blog, Notifications
 - Blog list + full blog detail pages with rich body blocks
 - Metadata-first loading with progressive image/body hydration and route-scoped in-memory request reuse
+- Incremental list, category, and timeline loading with explicit or automatic "load more" behavior where appropriate
 - SEO basics (`robots.txt`, `sitemap.xml`, meta tags)
 - Email subscription UX:
   - Blog subscribe form
@@ -80,6 +81,12 @@ flowchart LR
 
 - Cognito-authenticated access (`/login`, `/forgot-password`, guarded routes)
 - Dashboard + content studio for editing portfolio/blog content
+- Content Studio now uses a section-based authoring model:
+  - structure pane for page sections
+  - simulated page canvas for visual scanning
+  - typed inspector for human-friendly editing
+  - drag/drop ordering for timeline, metrics, hero slides, footer links, and project cards
+  - raw record editor retained as the advanced path
 - Metadata-first dashboard/content loading with route-scoped in-memory request reuse + batched hydration
 - Keyboard shortcut system for global navigation + page-level actions
 - Collections studio for non-blog writing assets (`/collections`):
@@ -88,6 +95,8 @@ flowchart LR
   - visibility control (`hidden` vs `public`) without exposing anything on the portfolio yet
   - text-file import (`.txt`, `.md`, `.rtf`, `.csv`, `.json`, `.html`) into entry body
 - Blog editor with preview modes (title card + full post)
+- Blog editor keeps canonical post body in `BlogBody` and keeps fallback `BlogText` synchronized on save
+- Blog editor supports editable read-time override metadata
 - Notification controls integrated into publish workflow
 - Scheduled publish controls + immediate notify actions
 - One-click unpublish action from the editor (published/scheduled -> draft + removed from public portfolio feed)
@@ -149,7 +158,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - `/Users/grayson/Desktop/Portfolio/docs/no-cache-performance-rollout.md`
 - Subscription lifecycle:
   - request/confirm/unsubscribe/preferences
-  - duplicate prevention (`ALREADY_SUBSCRIBED`, `ALREADY_PENDING`)
+  - atomic duplicate prevention (`ALREADY_SUBSCRIBED`, `ALREADY_PENDING`) so concurrent signup retries do not create duplicate subscriber rows or duplicate confirmation sends
 - Notification pipeline:
   - send now (queue-backed when enabled)
   - schedule publish/send
@@ -253,6 +262,20 @@ A blog post is represented by multiple records sharing one `ListItemID`:
 DynamoDB tables:
 - `portfolio-email-subscribers` (status + topics + consent metadata)
 - `portfolio-email-tokens` (hashed action tokens with TTL)
+
+### Public Analytics Consent + Cookies
+
+The public portfolio site now uses first-party cookies for consented analytics only:
+- `gw_consent`: strictly necessary cookie storing the user’s cookie preference
+- `gw_vid`: anonymous persistent visitor identifier/state
+- `gw_sid`: rolling 30-minute session identifier/state
+- `gw_attr`: first-touch attribution (`utm_source`, `utm_medium`, `utm_campaign`, landing route, first referrer domain)
+
+Frontend behavior:
+- analytics identity is no longer stored in `localStorage` / `sessionStorage`
+- analytics events are emitted only when `gw_consent.analytics === true`
+- the public site shows a cookie banner and exposes a footer `Cookie Settings` control to reopen preferences
+- analytics event metadata now includes consent, visitor kind, session index, and attribution fields
 
 ### Photo Asset State
 
@@ -379,7 +402,6 @@ cd blog-author && npm start
 |---|---|
 | `.github/workflows/ci-cd.yml` | Build/test/deploy portfolio + authoring static apps and run smoke tests |
 | `.github/workflows/api-deploy.yml` | Deploy Lambda-based API (`portfolio-redis-api`) |
-| `.github/workflows/ecs-deploy.yml` | Deploy ECS Fargate API variant |
 | `.github/workflows/security.yml` | Gitleaks, CodeQL, npm audit |
 | `.github/workflows/senior-review.yml` | Automated senior engineer review report + PR comment |
 

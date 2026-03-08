@@ -4,7 +4,7 @@ Date: 2026-02-15
 
 ## Executive Summary
 
-The AWS deployment is in a good place from an infrastructure isolation standpoint (private S3 via CloudFront OAC, ECS behind ALB with TLS 1.3/1.2 policy, ElastiCache Redis in private subnets with TLS + AUTH). The primary security risks are now in **frontend code paths**:
+The AWS deployment is in a good place from an infrastructure isolation standpoint (private S3 via CloudFront OAC, API Gateway + Lambda for the public API path, and managed AWS data services). The primary security risks are now in **frontend code paths**:
 
 1. **A Mailchimp API key is designed to be used from the browser**, which would expose a secret and also introduces critically vulnerable dependencies.
 2. **Blog markdown rendering bypasses Angular’s HTML sanitization**, which can enable stored XSS if untrusted content reaches the blog body.
@@ -151,11 +151,10 @@ Fix:
 ## Deployment / Infra Checks (What’s Working)
 
 - `api.grayson-wills.com`:
-  - ALB redirects 80 -> 443; TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`.
-  - ECS service healthy; ElastiCache is private + TLS + AUTH + at-rest encryption.
+  - Regional API Gateway custom domain fronts the active public API path.
+  - Lambda is the active compute target.
 - Static sites:
   - Both S3 buckets are private with PublicAccessBlock enabled and CloudFront OAC read-only access.
   - Direct S3 object access returns 403 (expected).
 - CI/CD:
   - Production smoke tests are now scriptable via `scripts/smoke_prod.sh`.
-

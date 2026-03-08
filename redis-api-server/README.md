@@ -5,7 +5,6 @@ Express backend for portfolio reads, authoring writes, notifications, subscripti
 ## Runtime Model
 
 - Deploy target: AWS Lambda (`portfolio-redis-api`) behind API Gateway custom domain `api.grayson-wills.com`.
-- Same app can also run as containerized ECS task (alternate workflow exists).
 - Content backend:
   - **primary in production:** DynamoDB (`CONTENT_BACKEND=dynamodb`)
   - optional Redis compatibility mode (`CONTENT_BACKEND=redis`) for fallback/migration use.
@@ -22,6 +21,8 @@ Express backend for portfolio reads, authoring writes, notifications, subscripti
   - worker ignores stale/non-active schedule executions
   - stale schedule cleanup is performed during reschedule/unpublish paths
 - Subscription lifecycle (request/confirm/unsubscribe/preferences) in DynamoDB + SES.
+  - subscriber uniqueness is enforced by normalized `emailHash`
+  - subscribe requests use an atomic conditional write so repeated/concurrent requests do not trigger duplicate confirmation emails
 - Analytics event ingestion endpoint with async queue/data-lake flow.
 - Photo asset architecture:
   - S3 object storage
@@ -253,7 +254,6 @@ API Gateway integration should point to the alias ARN rather than `$LATEST`.
 ## Deployment Automation
 
 - Lambda workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/api-deploy.yml`
-- ECS workflow: `/Users/grayson/Desktop/Portfolio/.github/workflows/ecs-deploy.yml`
 
 ## Required Post-Deploy Verification (Lambda <-> SES)
 
