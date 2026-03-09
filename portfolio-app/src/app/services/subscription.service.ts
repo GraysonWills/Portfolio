@@ -121,7 +121,10 @@ export class SubscriptionService {
 
   trackPromptRoute(pathOnly: string): void {
     const normalizedPath = this.normalizePath(pathOnly);
-    if (!this.isBlogRoute(normalizedPath)) return;
+    if (!this.isBlogRoute(normalizedPath)) {
+      this.clearLastTrackedBlogPathForSession();
+      return;
+    }
 
     const lastTrackedPath = this.readLastTrackedBlogPathForSession();
     if (lastTrackedPath === normalizedPath) {
@@ -247,6 +250,15 @@ export class SubscriptionService {
     if (typeof window === 'undefined') return;
     try {
       sessionStorage.setItem(this.promptLastTrackedBlogPathSessionKey, pathOnly);
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private clearLastTrackedBlogPathForSession(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.removeItem(this.promptLastTrackedBlogPathSessionKey);
     } catch {
       // ignore storage failures
     }
