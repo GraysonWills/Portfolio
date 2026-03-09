@@ -123,17 +123,44 @@ jobs:
           aws lambda update-function-code \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
             --zip-file "fileb://redis-api-lambda.zip"
-          aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}"
+          # The GitHub deploy role can update code but does not have the waiter read permissions.
+          # Give Lambda a short head start, then let the publish step retry until the update settles.
+          sleep 5
 
       - name: Publish version and move live alias
         run: |
           set -euo pipefail
 
-          VERSION="$(aws lambda publish-version \
-            --function-name "${LAMBDA_FUNCTION_NAME}" \
-            --description "GitHub Actions deploy ${GITHUB_SHA}" \
-            --query 'Version' \
-            --output text)"
+          VERSION=""
+          for attempt in $(seq 1 24); do
+            set +e
+            VERSION="$(aws lambda publish-version \
+              --function-name "${LAMBDA_FUNCTION_NAME}" \
+              --description "GitHub Actions deploy ${GITHUB_SHA}" \
+              --query 'Version' \
+              --output text 2>/tmp/publish-version.err)"
+            STATUS=$?
+            set -e
+
+            if [ "$STATUS" -eq 0 ] && [ -n "${VERSION}" ] && [ "${VERSION}" != "None" ]; then
+              break
+            fi
+
+            if grep -q "ResourceConflictException" /tmp/publish-version.err; then
+              echo "Lambda update still in progress. Retry ${attempt}/24..."
+              sleep 5
+              continue
+            fi
+
+            cat /tmp/publish-version.err
+            exit "$STATUS"
+          done
+
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "None" ]; then
+            echo "::error::Unable to publish a Lambda version after waiting for the code update to settle."
+            cat /tmp/publish-version.err || true
+            exit 1
+          fi
 
           echo "Published version: ${VERSION}"
 
