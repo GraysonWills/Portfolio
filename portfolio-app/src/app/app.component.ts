@@ -21,16 +21,12 @@ import { RouteViewStateService } from './services/route-view-state.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Grayson Wills - Portfolio';
-  private readonly buyMeCoffeeScriptId = 'bmc-widget-script';
-  private readonly buyMeCoffeeMessage = 'If you’ve found value in my projects, writing, or tools, you can support the work here';
+  readonly supportWidgetUrl = 'https://buymeacoffee.com/calvarygmak';
+  private currentRouteKey = '/';
   private routerSub!: Subscription;
   private navigationStartSub?: Subscription;
   private consentSub?: Subscription;
   private consentReviewSub?: Subscription;
-  private widgetObserver?: MutationObserver;
-  private buyMeCoffeeLoadCleanup?: () => void;
-  private buyMeCoffeeLoadTimer: ReturnType<typeof setTimeout> | null = null;
-  private buyMeCoffeeScriptInjected = false;
   previewModeActive = false;
   showSubscribePrompt = false;
   showCookieBanner = false;
@@ -56,13 +52,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
     this.showCookieBanner = this.consent.needsDecision();
-    this.scheduleBuyMeCoffeeWidgetLoad();
-    this.initializeWidgetObserver();
+    this.currentRouteKey = this.getCurrentPathOnly();
     this.syncOverlayBodyState();
     this.navigationStartSub = this.router.events.pipe(
       filter((event) => event instanceof NavigationStart)
     ).subscribe(() => {
-      this.routeViewState.captureSnapshot(this.getCurrentPathOnly());
+      this.routeViewState.captureSnapshot(this.currentRouteKey);
     });
     this.consentSub = this.consent.consent$.subscribe((state) => {
       this.showCookieBanner = state.analytics === null;
@@ -95,9 +90,11 @@ export class AppComponent implements OnInit, OnDestroy {
       this.analytics.trackPageView(pathOnly, pageTitle);
       this.subscriptions.trackPromptRoute(pathOnly);
       this.maybeShowSubscribePrompt(pathOnly);
+      this.currentRouteKey = pathOnly;
     });
 
     const initialPath = this.getCurrentPathOnly();
+    this.currentRouteKey = initialPath;
     this.subscriptions.trackPromptRoute(initialPath);
     this.maybeShowSubscribePrompt(initialPath);
   }
@@ -107,9 +104,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.navigationStartSub?.unsubscribe();
     this.consentSub?.unsubscribe();
     this.consentReviewSub?.unsubscribe();
-    this.widgetObserver?.disconnect();
     this.clearSubscribePromptTimer();
-    this.clearBuyMeCoffeeLoad();
     this.setBodyClass('cookie-banner-active', false);
     this.setBodyClass('subscribe-prompt-active', false);
     this.setBodyClass('mobile-overlay-active', false);
@@ -376,117 +371,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.subscribePromptTimer = null;
   }
 
-  private scheduleBuyMeCoffeeWidgetLoad(): void {
-    if (typeof window === 'undefined' || typeof document === 'undefined' || this.buyMeCoffeeScriptInjected) {
-      return;
-    }
-
-    const loadWidget = () => {
-      if (this.buyMeCoffeeLoadTimer || this.buyMeCoffeeScriptInjected) return;
-      this.buyMeCoffeeLoadTimer = setTimeout(() => {
-        this.buyMeCoffeeLoadTimer = null;
-        this.injectBuyMeCoffeeWidget();
-      }, 1200);
-    };
-
-    if (document.readyState === 'complete') {
-      loadWidget();
-      return;
-    }
-
-    const onLoad = () => loadWidget();
-    window.addEventListener('load', onLoad, { once: true });
-    this.buyMeCoffeeLoadCleanup = () => window.removeEventListener('load', onLoad);
-  }
-
-  private clearBuyMeCoffeeLoad(): void {
-    this.buyMeCoffeeLoadCleanup?.();
-    this.buyMeCoffeeLoadCleanup = undefined;
-
-    if (this.buyMeCoffeeLoadTimer) {
-      clearTimeout(this.buyMeCoffeeLoadTimer);
-      this.buyMeCoffeeLoadTimer = null;
-    }
-  }
-
-  private injectBuyMeCoffeeWidget(): void {
-    if (typeof document === 'undefined' || this.buyMeCoffeeScriptInjected) return;
-    if (document.getElementById(this.buyMeCoffeeScriptId)) {
-      this.buyMeCoffeeScriptInjected = true;
-      this.tagBuyMeCoffeeElements();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = this.buyMeCoffeeScriptId;
-    script.src = 'https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js';
-    script.async = true;
-    script.setAttribute('data-name', 'BMC-Widget');
-    script.setAttribute('data-cfasync', 'false');
-    script.setAttribute('data-id', 'calvarygmak');
-    script.setAttribute('data-description', 'Support me on Buy me a coffee!');
-    script.setAttribute('data-message', this.buyMeCoffeeMessage);
-    script.setAttribute('data-color', '#FF813F');
-    script.setAttribute('data-position', 'Right');
-    script.setAttribute('data-x_margin', '18');
-    script.setAttribute('data-y_margin', '18');
-    script.addEventListener('load', () => {
-      this.buyMeCoffeeScriptInjected = true;
-      this.tagBuyMeCoffeeElements();
-    }, { once: true });
-    script.addEventListener('error', () => {
-      this.buyMeCoffeeScriptInjected = false;
-    }, { once: true });
-    document.body.appendChild(script);
-  }
-
-  private initializeWidgetObserver(): void {
-    if (typeof document === 'undefined' || this.widgetObserver) return;
-    this.tagBuyMeCoffeeElements();
-    this.widgetObserver = new MutationObserver(() => this.tagBuyMeCoffeeElements());
-    this.widgetObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'class', 'src', 'alt']
-    });
-  }
-
-  private tagBuyMeCoffeeElements(): void {
-    if (typeof document === 'undefined') return;
-
-    document.querySelectorAll('img[alt="Buy Me A Coffee"]').forEach((node) => {
-      node.classList.add('bmc-widget-button');
-    });
-
-    document.querySelectorAll('iframe[src*="buymeacoffee"]').forEach((node) => {
-      node.classList.add('bmc-widget-frame');
-    });
-
-    const scriptMessage = this.buyMeCoffeeMessage;
-
-    Array.from(document.body.querySelectorAll('div')).forEach((node) => {
-      const text = String(node.textContent || '').trim();
-      const style = String(node.getAttribute('style') || '');
-      const looksLikeBmcMessage = (
-        !!scriptMessage
-        && text === scriptMessage
-        && style.includes('position: fixed')
-        && style.includes('z-index: 9999')
-      );
-      if (looksLikeBmcMessage) {
-        node.classList.add('bmc-widget-message');
-      }
-    });
-  }
-
   private syncOverlayBodyState(): void {
     const cookieOpen = this.showCookieBanner;
     const subscribeOpen = this.showSubscribePrompt;
     this.setBodyClass('cookie-banner-active', cookieOpen);
     this.setBodyClass('subscribe-prompt-active', subscribeOpen);
     this.setBodyClass('mobile-overlay-active', cookieOpen || subscribeOpen);
-    this.tagBuyMeCoffeeElements();
   }
 
   private setBodyClass(className: string, enabled: boolean): void {
