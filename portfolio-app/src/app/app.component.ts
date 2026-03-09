@@ -56,8 +56,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.syncOverlayBodyState();
     this.navigationStartSub = this.router.events.pipe(
       filter((event) => event instanceof NavigationStart)
-    ).subscribe(() => {
+    ).subscribe((event) => {
       this.routeViewState.captureSnapshot(this.currentRouteKey);
+      const nextRouteKey = this.getPathOnly((event as NavigationStart).url);
+      if (typeof window !== 'undefined' && !this.routeViewState.hasState(nextRouteKey)) {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
     });
     this.consentSub = this.consent.consent$.subscribe((state) => {
       this.showCookieBanner = state.analytics === null;
@@ -385,6 +389,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private getCurrentPathOnly(): string {
-    return (this.router.url || '/').split('?')[0].split('#')[0];
+    return this.getPathOnly(this.router.url);
+  }
+
+  private getPathOnly(url: string | undefined | null): string {
+    return String(url || '/').split('?')[0].split('#')[0] || '/';
   }
 }

@@ -27,6 +27,10 @@ export class RouteViewStateService {
     }
   }
 
+  hasState(routeKey: string): boolean {
+    return !!this.getState(routeKey);
+  }
+
   setState<T extends StoredRouteViewState>(routeKey: string, state: T): void {
     if (!this.canUseStorage()) return;
 
