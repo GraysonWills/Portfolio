@@ -146,6 +146,8 @@ export type RouteCacheOptions = {
   providedIn: 'root'
 })
 export class RedisService {
+  private readonly mediaCdnBaseUrl = 'https://d10d6kv3med0wp.cloudfront.net';
+  private readonly managedMediaPrefixes = ['uploads/', 'photo-assets/'];
   private readonly readTimeoutMs = 8000;
   private readonly useContentV2Stream = !!environment.useContentV2Stream;
   private readonly useBlogV2Cards = !!environment.useBlogV2Cards;
@@ -991,6 +993,7 @@ export class RedisService {
       this.siteChromeV3$ = this.readRequest(
         this.http.get<SiteChromeV3Response>(`${this.apiUrl}/content/v3/bootstrap`, { headers: this.headers })
       ).pipe(
+        map((payload) => this.normalizeSiteChromePayload(payload)),
         shareReplay({ bufferSize: 1, refCount: false })
       );
     }
@@ -1005,6 +1008,7 @@ export class RedisService {
       this.landingV3$ = this.readRequest(
         this.http.get<LandingV3Response>(`${this.apiUrl}/content/v3/landing`, { headers: this.headers })
       ).pipe(
+        map((payload) => this.normalizeLandingPayload(payload)),
         shareReplay({ bufferSize: 1, refCount: false })
       );
     }
@@ -1058,6 +1062,7 @@ export class RedisService {
         { headers: this.headers }
       )
     ).pipe(
+      map((payload) => this.normalizeProjectsCategoriesPayload(payload)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.projectsCategoriesV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1109,6 +1114,7 @@ export class RedisService {
         { headers: this.headers }
       )
     ).pipe(
+      map((payload) => this.normalizeBlogDetailPayload(payload)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.blogDetailV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1339,5 +1345,90 @@ export class RedisService {
 
   private isListItemsBatchResponse(value: unknown): value is Record<string, RedisContent[]> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private normalizeSiteChromePayload(payload: SiteChromeV3Response): SiteChromeV3Response {
+    return {
+      header: { items: this.normalizeContentItems(payload?.header?.items) },
+      footer: { items: this.normalizeContentItems(payload?.footer?.items) }
+    };
+  }
+
+  private normalizeLandingPayload(payload: LandingV3Response): LandingV3Response {
+    return {
+      ...payload,
+      heroSlides: Array.isArray(payload?.heroSlides)
+        ? payload.heroSlides.map((slide) => ({
+            ...slide,
+            photo: this.normalizeMediaUrl(slide?.photo)
+          }))
+        : []
+    };
+  }
+
+  private normalizeProjectsCategoriesPayload(payload: ProjectsCategoriesV3Response): ProjectsCategoriesV3Response {
+    return {
+      ...payload,
+      items: Array.isArray(payload?.items)
+        ? payload.items.map((item) => ({
+            ...item,
+            categoryPhoto: this.normalizeMediaUrl(item?.categoryPhoto || '')
+          }))
+        : []
+    };
+  }
+
+  private normalizeBlogDetailPayload(payload: BlogPostDetailV3Response): BlogPostDetailV3Response {
+    return {
+      ...payload,
+      coverImage: this.normalizeMediaUrl(payload?.coverImage || '')
+    };
+  }
+
+  private normalizeContentItems(items: RedisContent[] | undefined | null): RedisContent[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item) => ({
+      ...item,
+      Photo: this.normalizeMediaUrl(item?.Photo || '')
+    }));
+  }
+
+  private normalizeMediaUrl(url: string | null | undefined): string {
+    const value = String(url || '').trim();
+    if (!value) return '';
+
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      const pathname = parsed.pathname.replace(/^\/+/, '');
+
+      const maybeVirtualHostedS3 = host.includes('.s3.') || host.endsWith('.amazonaws.com');
+      if (!maybeVirtualHostedS3) return value;
+
+      const managedKey = this.extractManagedMediaKey(host, pathname);
+      if (!managedKey) return value;
+
+      return `${this.mediaCdnBaseUrl}/${managedKey}`;
+    } catch {
+      return value;
+    }
+  }
+
+  private extractManagedMediaKey(hostname: string, pathname: string): string | null {
+    const directKey = this.managedMediaPrefixes.find((prefix) => pathname.startsWith(prefix));
+    if (directKey) return pathname;
+
+    const pathStylePrefix = this.managedMediaPrefixes.find((prefix) => pathname.includes(`/${prefix}`));
+    if (pathStylePrefix) {
+      const index = pathname.indexOf(`/${pathStylePrefix}`);
+      return pathname.slice(index + 1);
+    }
+
+    if (hostname.startsWith('grayson-wills-media-381492289909.') && pathname) {
+      const managedPrefix = this.managedMediaPrefixes.find((prefix) => pathname.startsWith(prefix));
+      if (managedPrefix) return pathname;
+    }
+
+    return null;
   }
 }
