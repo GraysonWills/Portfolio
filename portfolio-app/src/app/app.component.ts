@@ -31,7 +31,6 @@ export class AppComponent implements OnInit, OnDestroy {
   private subscribePromptTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly subscribePromptDelayMs = 1400;
   private readonly previewStorageKey = 'portfolio_preview_token_v1';
-  private readonly buyMeACoffeeScriptId = 'buy-me-a-coffee-widget';
 
   constructor(
     private redisService: RedisService,
@@ -47,7 +46,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
-    this.initializeBuyMeACoffeeWidget();
     this.showCookieBanner = this.consent.needsDecision();
     this.consentSub = this.consent.consent$.subscribe((state) => {
       this.showCookieBanner = state.analytics === null;
@@ -346,31 +344,5 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private getCurrentPathOnly(): string {
     return (this.router.url || '/').split('?')[0].split('#')[0];
-  }
-
-  private initializeBuyMeACoffeeWidget(): void {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-    if (this.previewModeActive) return;
-    if (document.getElementById(this.buyMeACoffeeScriptId)) return;
-
-    const script = document.createElement('script');
-    script.id = this.buyMeACoffeeScriptId;
-    script.async = true;
-    script.defer = true;
-    script.src = 'https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js';
-    script.setAttribute('data-name', 'BMC-Widget');
-    script.setAttribute('data-cfasync', 'false');
-    script.setAttribute('data-id', 'calvarygmak');
-    script.setAttribute('data-description', 'Support me on Buy me a coffee!');
-    script.setAttribute(
-      'data-message',
-      'If you’ve found value in my projects, writing, or tools, you can support the work here'
-    );
-    script.setAttribute('data-color', '#FF813F');
-    script.setAttribute('data-position', 'Right');
-    script.setAttribute('data-x_margin', '18');
-    script.setAttribute('data-y_margin', '18');
-
-    document.body.appendChild(script);
   }
 }
