@@ -25,6 +25,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private navigationStartSub?: Subscription;
   private consentSub?: Subscription;
   private consentReviewSub?: Subscription;
+  private widgetObserver?: MutationObserver;
   previewModeActive = false;
   showSubscribePrompt = false;
   showCookieBanner = false;
@@ -50,6 +51,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
     this.showCookieBanner = this.consent.needsDecision();
+    this.initializeWidgetObserver();
+    this.syncOverlayBodyState();
     this.navigationStartSub = this.router.events.pipe(
       filter((event) => event instanceof NavigationStart)
     ).subscribe(() => {
@@ -60,10 +63,12 @@ export class AppComponent implements OnInit, OnDestroy {
       if (this.showCookieBanner) {
         this.showSubscribePrompt = false;
       }
+      this.syncOverlayBodyState();
     });
     this.consentReviewSub = this.consent.reviewRequests$.subscribe(() => {
       this.showCookieBanner = true;
       this.showSubscribePrompt = false;
+      this.syncOverlayBodyState();
     });
 
     this.routerSub = this.router.events.pipe(
@@ -96,7 +101,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.navigationStartSub?.unsubscribe();
     this.consentSub?.unsubscribe();
     this.consentReviewSub?.unsubscribe();
+    this.widgetObserver?.disconnect();
     this.clearSubscribePromptTimer();
+    this.setBodyClass('cookie-banner-active', false);
+    this.setBodyClass('subscribe-prompt-active', false);
+    this.setBodyClass('mobile-overlay-active', false);
   }
 
   getRouteAnimationData(outlet: RouterOutlet): string {
@@ -126,6 +135,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const currentPath = this.getCurrentPathOnly();
     this.showSubscribePrompt = false;
     this.subscribePromptEmail = '';
+    this.syncOverlayBodyState();
     this.analytics.track('subscribe_prompt_dismissed', {
       route: currentPath,
       page: 'blog',
@@ -167,6 +177,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.isSubscribePromptSubmitting = false;
         this.showSubscribePrompt = false;
         this.subscribePromptEmail = '';
+        this.syncOverlayBodyState();
 
         const status = String(result?.status || '').toUpperCase();
         if (status === 'ALREADY_SUBSCRIBED' || result?.alreadySubscribed) {
@@ -234,6 +245,7 @@ export class AppComponent implements OnInit, OnDestroy {
   acceptAnalyticsCookies(): void {
     this.consent.acceptAnalytics();
     this.showCookieBanner = false;
+    this.syncOverlayBodyState();
     const currentPath = this.getCurrentPathOnly();
     this.analytics.track('cookie_consent_updated', {
       route: currentPath,
@@ -249,6 +261,7 @@ export class AppComponent implements OnInit, OnDestroy {
   useNecessaryCookiesOnly(): void {
     this.consent.rejectAnalytics();
     this.showCookieBanner = false;
+    this.syncOverlayBodyState();
     const currentPath = this.getCurrentPathOnly();
     this.maybeShowSubscribePrompt(currentPath);
   }
@@ -300,23 +313,27 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.previewModeActive) {
       this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
+      this.syncOverlayBodyState();
       return;
     }
     if (this.showCookieBanner || this.consent.needsDecision()) {
       this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
+      this.syncOverlayBodyState();
       return;
     }
 
     if (this.shouldHidePromptForRoute(pathOnly)) {
       this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
+      this.syncOverlayBodyState();
       return;
     }
 
     if (!this.subscriptions.shouldShowPromptForPath(pathOnly)) {
       this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
+      this.syncOverlayBodyState();
       return;
     }
 
@@ -329,6 +346,7 @@ export class AppComponent implements OnInit, OnDestroy {
       if (!this.subscriptions.shouldShowPromptForPath(currentPath)) return;
       this.subscriptions.markPromptShown();
       this.showSubscribePrompt = true;
+      this.syncOverlayBodyState();
       this.analytics.track('subscribe_prompt_shown', {
         route: currentPath,
         page: 'blog',
@@ -349,6 +367,62 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!this.subscribePromptTimer) return;
     clearTimeout(this.subscribePromptTimer);
     this.subscribePromptTimer = null;
+  }
+
+  private initializeWidgetObserver(): void {
+    if (typeof document === 'undefined' || this.widgetObserver) return;
+    this.tagBuyMeCoffeeElements();
+    this.widgetObserver = new MutationObserver(() => this.tagBuyMeCoffeeElements());
+    this.widgetObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class', 'src', 'alt']
+    });
+  }
+
+  private tagBuyMeCoffeeElements(): void {
+    if (typeof document === 'undefined') return;
+
+    document.querySelectorAll('img[alt="Buy Me A Coffee"]').forEach((node) => {
+      node.classList.add('bmc-widget-button');
+    });
+
+    document.querySelectorAll('iframe[src*="buymeacoffee"]').forEach((node) => {
+      node.classList.add('bmc-widget-frame');
+    });
+
+    const scriptMessage = String(
+      document.querySelector('script[data-name="BMC-Widget"]')?.getAttribute('data-message') || ''
+    ).trim();
+
+    Array.from(document.body.querySelectorAll('div')).forEach((node) => {
+      const text = String(node.textContent || '').trim();
+      const style = String(node.getAttribute('style') || '');
+      const looksLikeBmcMessage = (
+        !!scriptMessage
+        && text === scriptMessage
+        && style.includes('position: fixed')
+        && style.includes('z-index: 9999')
+      );
+      if (looksLikeBmcMessage) {
+        node.classList.add('bmc-widget-message');
+      }
+    });
+  }
+
+  private syncOverlayBodyState(): void {
+    const cookieOpen = this.showCookieBanner;
+    const subscribeOpen = this.showSubscribePrompt;
+    this.setBodyClass('cookie-banner-active', cookieOpen);
+    this.setBodyClass('subscribe-prompt-active', subscribeOpen);
+    this.setBodyClass('mobile-overlay-active', cookieOpen || subscribeOpen);
+    this.tagBuyMeCoffeeElements();
+  }
+
+  private setBodyClass(className: string, enabled: boolean): void {
+    if (typeof document === 'undefined' || !document.body) return;
+    document.body.classList.toggle(className, enabled);
   }
 
   private getCurrentPathOnly(): string {

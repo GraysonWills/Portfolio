@@ -76,6 +76,17 @@ body {
 }
 
 @media (max-width: 640px) {
+  body.mobile-overlay-active .bmc-widget-button,
+  body.mobile-overlay-active .bmc-widget-message,
+  body.mobile-overlay-active .bmc-widget-frame {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: opacity 0.18s ease, visibility 0.18s ease !important;
+  }
+}
+
+@media (max-width: 640px) {
   :root {
     --site-header-offset: 68px;
   }
