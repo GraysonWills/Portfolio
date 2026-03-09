@@ -1577,8 +1577,17 @@ export class BlogApiService {
         );
       }),
       catchError((err) => {
-        console.warn('Signed image upload failed; falling back to legacy upload endpoint:', err);
-        return this.uploadImageLegacy(file);
+        const signedUploadError = this.extractErrorMessage(err);
+        console.warn('Signed image upload failed; falling back to legacy upload endpoint:', signedUploadError);
+        return this.uploadImageLegacy(file).pipe(
+          catchError((legacyErr) => {
+            const legacyMessage = this.extractErrorMessage(legacyErr);
+            const detail = signedUploadError && legacyMessage && signedUploadError !== legacyMessage
+              ? `${signedUploadError} | Legacy fallback: ${legacyMessage}`
+              : legacyMessage || signedUploadError || 'Image upload failed.';
+            return throwError(() => new Error(detail));
+          })
+        );
       })
     );
   }
@@ -1832,16 +1841,41 @@ export class BlogApiService {
    * Error handling
    */
   private handleError(error: any): Observable<never> {
-    let errorMessage = 'An unknown error occurred';
-    
-    if (error.error instanceof ErrorEvent) {
-      errorMessage = `Error: ${error.error.message}`;
-    } else {
-      errorMessage = `Error Code: ${error.status}\nMessage: ${error.message}`;
-    }
+    const errorMessage = this.extractErrorMessage(error);
 
     console.error('Blog API Service Error:', errorMessage);
     return throwError(() => new Error(errorMessage));
+  }
+
+  private extractErrorMessage(error: any): string {
+    if (!error) return 'An unknown error occurred';
+
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    if (error.error instanceof ErrorEvent) {
+      return error.error.message || 'An unknown client-side error occurred';
+    }
+
+    const backendMessage = String(
+      error?.error?.error
+      || error?.error?.message
+      || error?.message
+      || ''
+    ).trim();
+
+    if (backendMessage) {
+      const status = Number(error?.status || 0);
+      return status ? `HTTP ${status}: ${backendMessage}` : backendMessage;
+    }
+
+    const status = Number(error?.status || 0);
+    if (status) {
+      return `HTTP ${status}: Request failed`;
+    }
+
+    return 'An unknown error occurred';
   }
 
   private normalizeUrl(url: string): string {

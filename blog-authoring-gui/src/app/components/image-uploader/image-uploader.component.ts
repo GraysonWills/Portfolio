@@ -9,6 +9,14 @@ import { MessageService } from 'primeng/api';
   standalone: false
 })
 export class ImageUploaderComponent implements OnInit {
+  private readonly supportedMimeTypes = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif',
+    'image/svg+xml'
+  ]);
   @Input() currentImage: string | null = null;
   @Input() maxWidth: number = 1200;   // Max width for resize
   @Input() maxHeight: number = 800;   // Max height for resize
@@ -40,11 +48,11 @@ export class ImageUploaderComponent implements OnInit {
     const file = event.files?.[0] || event.target?.files?.[0];
     if (file) {
       // Validate file type
-      if (!file.type.startsWith('image/')) {
+      if (!this.isSupportedMimeType(file.type)) {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: 'Please select an image file'
+          detail: 'Supported formats: JPG, PNG, WEBP, GIF, SVG, and AVIF.'
         });
         return;
       }
@@ -253,10 +261,23 @@ export class ImageUploaderComponent implements OnInit {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: 'Failed to upload image'
+          detail: this.getErrorMessage(error)
         });
       }
     });
+  }
+
+  private isSupportedMimeType(rawMimeType: string): boolean {
+    const mimeType = String(rawMimeType || '').trim().toLowerCase();
+    return this.supportedMimeTypes.has(mimeType);
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    const message = String((error as any)?.error?.error || (error as any)?.error?.message || '').trim();
+    return message || 'Failed to upload image';
   }
 
   /**

@@ -4,7 +4,7 @@ set -euo pipefail
 # Provisions photo asset storage architecture:
 # - S3 for binaries
 # - DynamoDB for metadata/indexing
-# - IAM permissions for ECS API task role
+# - IAM permissions + env vars for the Lambda API
 
 PROFILE="${AWS_PROFILE:-grayson-sso}"
 REGION="${AWS_REGION:-us-east-2}"
@@ -13,8 +13,9 @@ ACCOUNT_ID="$(aws --profile "$PROFILE" sts get-caller-identity --query 'Account'
 PHOTO_BUCKET="${PHOTO_BUCKET:-grayson-wills-media-${ACCOUNT_ID}}"
 PHOTO_PREFIX="$(echo "${PHOTO_PREFIX:-photo-assets/}" | sed 's#^/*##; s#/*$#/#')"
 PHOTO_TABLE_NAME="${PHOTO_TABLE_NAME:-portfolio-photo-assets}"
-TASK_ROLE_NAME="${TASK_ROLE_NAME:-PortfolioRedisApiTaskRole}"
-TASK_ROLE_POLICY_NAME="${TASK_ROLE_POLICY_NAME:-PortfolioRedisApiS3Uploads}"
+LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-portfolio-redis-api}"
+LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-PortfolioRedisApiLambdaRole}"
+LAMBDA_ROLE_POLICY_NAME="${LAMBDA_ROLE_POLICY_NAME:-PortfolioRedisApiLambdaPolicy}"
 
 log() { echo "[photo-assets-setup] $*"; }
 
@@ -203,8 +204,33 @@ ensure_iam_permissions() {
     Resource:[$table,$index]
   }')"
 
-  upsert_inline_policy_statement "$TASK_ROLE_NAME" "$TASK_ROLE_POLICY_NAME" "PhotoAssetsS3Access" "$s3_statement"
-  upsert_inline_policy_statement "$TASK_ROLE_NAME" "$TASK_ROLE_POLICY_NAME" "PhotoAssetsDdbAccess" "$ddb_statement"
+  upsert_inline_policy_statement "$LAMBDA_ROLE_NAME" "$LAMBDA_ROLE_POLICY_NAME" "PhotoAssetsS3Access" "$s3_statement"
+  upsert_inline_policy_statement "$LAMBDA_ROLE_NAME" "$LAMBDA_ROLE_POLICY_NAME" "PhotoAssetsDdbAccess" "$ddb_statement"
+}
+
+ensure_lambda_env() {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  aws --profile "$PROFILE" --region "$REGION" lambda get-function-configuration \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --query 'Environment.Variables' --output json > "$tmp_dir/current-env.json"
+
+  jq --arg bucket "$PHOTO_BUCKET" \
+    --arg prefix "$PHOTO_PREFIX" \
+    --arg table "$PHOTO_TABLE_NAME" \
+    --arg region "$REGION" \
+    '.PHOTO_ASSETS_BUCKET = $bucket
+     | .PHOTO_ASSETS_PREFIX = $prefix
+     | .PHOTO_ASSETS_TABLE_NAME = $table
+     | .PHOTO_ASSETS_REGION = $region' \
+    "$tmp_dir/current-env.json" > "$tmp_dir/new-vars.json"
+  jq -n --slurpfile v "$tmp_dir/new-vars.json" '{Variables: $v[0]}' > "$tmp_dir/env-wrapper.json"
+
+  aws --profile "$PROFILE" --region "$REGION" lambda update-function-configuration \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --environment "file://$tmp_dir/env-wrapper.json" >/dev/null
+  aws --profile "$PROFILE" --region "$REGION" lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
 }
 
 main() {
@@ -213,6 +239,7 @@ main() {
   secure_bucket
   ensure_dynamodb_table
   ensure_iam_permissions
+  ensure_lambda_env
 
   cat <<EOF
 
@@ -221,15 +248,12 @@ Photo assets stack configured successfully.
   Bucket: ${PHOTO_BUCKET}
   Prefix: ${PHOTO_PREFIX}
   DynamoDB table: ${PHOTO_TABLE_NAME}
-  Task role policy updated: ${TASK_ROLE_NAME}/${TASK_ROLE_POLICY_NAME}
+  Lambda role policy updated: ${LAMBDA_ROLE_NAME}/${LAMBDA_ROLE_POLICY_NAME}
+  Lambda env updated: ${LAMBDA_FUNCTION_NAME}
 
 Next:
-  1) Ensure ECS task definition includes:
-     - PHOTO_ASSETS_BUCKET=${PHOTO_BUCKET}
-     - PHOTO_ASSETS_PREFIX=${PHOTO_PREFIX}
-     - PHOTO_ASSETS_TABLE_NAME=${PHOTO_TABLE_NAME}
-  2) Deploy redis-api ECS service so new env + routes are active.
-  3) In blog authoring, uploads now use:
+  1) Deploy/publish the Lambda API so new routes/code are active if needed.
+  2) In blog authoring, uploads now use:
      - POST /api/photo-assets/upload-url
      - POST /api/photo-assets/{assetId}/complete
 

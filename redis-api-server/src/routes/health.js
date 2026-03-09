@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const redisClient = require('../config/redis');
 const { isContentDdbEnabled, ddbPing } = require('../services/content-ddb');
+const { isPhotoAssetsEnabled } = require('../services/photo-assets-ddb');
 
 /**
  * GET /api/health
@@ -20,6 +21,9 @@ router.get('/', async (req, res) => {
   const schedulerInvokeRoleConfigured = !!String(process.env.SCHEDULER_INVOKE_ROLE_ARN || '').trim();
   const schedulerTargetLambdaConfigured = !!String(process.env.SCHEDULER_TARGET_LAMBDA_ARN || '').trim();
   const sesFromEmailConfigured = !!String(process.env.SES_FROM_EMAIL || '').trim();
+  const photoAssetsBucketConfigured = !!String(process.env.PHOTO_ASSETS_BUCKET || process.env.S3_UPLOAD_BUCKET || '').trim();
+  const photoAssetsRegionConfigured = !!String(process.env.PHOTO_ASSETS_REGION || process.env.S3_UPLOAD_REGION || process.env.AWS_REGION || '').trim();
+  const photoAssetsTableConfigured = isPhotoAssetsEnabled();
   const integrationIssues = [];
 
   if (emailNotificationsEnabled && !sesFromEmailConfigured) {
@@ -30,6 +34,15 @@ router.get('/', async (req, res) => {
   }
   if (!schedulerTargetLambdaConfigured) {
     integrationIssues.push('SCHEDULER_TARGET_LAMBDA_ARN missing');
+  }
+  if (!photoAssetsBucketConfigured) {
+    integrationIssues.push('PHOTO_ASSETS_BUCKET missing');
+  }
+  if (!photoAssetsTableConfigured) {
+    integrationIssues.push('PHOTO_ASSETS_TABLE_NAME missing');
+  }
+  if (!photoAssetsRegionConfigured) {
+    integrationIssues.push('PHOTO_ASSETS_REGION missing');
   }
 
   try {
@@ -92,6 +105,11 @@ router.get('/', async (req, res) => {
         sesFromEmailConfigured,
         schedulerInvokeRoleConfigured,
         schedulerTargetLambdaConfigured,
+        photoAssets: {
+          bucketConfigured: photoAssetsBucketConfigured,
+          regionConfigured: photoAssetsRegionConfigured,
+          tableConfigured: photoAssetsTableConfigured
+        },
         issues: integrationIssues
       },
       memory: {
