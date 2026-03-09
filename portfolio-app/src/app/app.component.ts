@@ -9,6 +9,7 @@ import { environment } from '../environments/environment';
 import { routeTransition } from './animations/route-animations';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from './services/analytics.service';
+import { SiteConsentService } from './services/site-consent.service';
 
 @Component({
   selector: 'app-root',
@@ -20,8 +21,11 @@ import { AnalyticsService } from './services/analytics.service';
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Grayson Wills - Portfolio';
   private routerSub!: Subscription;
+  private consentSub?: Subscription;
+  private consentReviewSub?: Subscription;
   previewModeActive = false;
   showSubscribePrompt = false;
+  showCookieBanner = false;
   subscribePromptEmail = '';
   isSubscribePromptSubmitting = false;
   private subscribePromptTimer: ReturnType<typeof setTimeout> | null = null;
@@ -33,6 +37,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private seo: SeoService,
     private subscriptions: SubscriptionService,
     private analytics: AnalyticsService,
+    private consent: SiteConsentService,
     private messageService: MessageService,
     private router: Router,
     private activatedRoute: ActivatedRoute
@@ -41,6 +46,17 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
+    this.showCookieBanner = this.consent.needsDecision();
+    this.consentSub = this.consent.consent$.subscribe((state) => {
+      this.showCookieBanner = state.analytics === null;
+      if (this.showCookieBanner) {
+        this.showSubscribePrompt = false;
+      }
+    });
+    this.consentReviewSub = this.consent.reviewRequests$.subscribe(() => {
+      this.showCookieBanner = true;
+      this.showSubscribePrompt = false;
+    });
 
     this.routerSub = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
@@ -55,22 +71,23 @@ export class AppComponent implements OnInit, OnDestroy {
       const description = data['description'] as string | undefined;
       const type = data['type'] as ('website' | 'article') | undefined;
 
-      const pathOnly = (this.router.url || '/').split('?')[0].split('#')[0];
+      const pathOnly = this.getCurrentPathOnly();
       this.seo.update({ title: pageTitle, description, url: pathOnly, type });
       this.analytics.trackPageView(pathOnly, pageTitle);
+      this.subscriptions.trackPromptRoute(pathOnly);
       this.maybeShowSubscribePrompt(pathOnly);
     });
 
-    const initialPath = (this.router.url || '/').split('?')[0].split('#')[0];
+    const initialPath = this.getCurrentPathOnly();
+    this.subscriptions.trackPromptRoute(initialPath);
     this.maybeShowSubscribePrompt(initialPath);
   }
 
   ngOnDestroy(): void {
     this.routerSub?.unsubscribe();
-    if (this.subscribePromptTimer) {
-      clearTimeout(this.subscribePromptTimer);
-      this.subscribePromptTimer = null;
-    }
+    this.consentSub?.unsubscribe();
+    this.consentReviewSub?.unsubscribe();
+    this.clearSubscribePromptTimer();
   }
 
   getRouteAnimationData(outlet: RouterOutlet): string {
@@ -96,23 +113,29 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   dismissSubscribePrompt(): void {
+    const promptState = this.subscriptions.dismissPrompt();
+    const currentPath = this.getCurrentPathOnly();
     this.showSubscribePrompt = false;
-    this.subscriptions.setPromptDismissedForSession(true);
     this.subscribePromptEmail = '';
     this.analytics.track('subscribe_prompt_dismissed', {
-      route: this.router.url,
-      page: 'home',
-      metadata: { source: 'first-visit-popup' }
+      route: currentPath,
+      page: 'blog',
+      metadata: {
+        source: 'blog-engagement-modal',
+        dismissCount: promptState.dismissCount,
+        permanentlyDismissed: promptState.permanentlyDismissed
+      }
     });
   }
 
   submitSubscribePrompt(): void {
+    const currentPath = this.getCurrentPathOnly();
     const email = (this.subscribePromptEmail || '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       this.analytics.track('subscribe_prompt_invalid_email', {
-        route: this.router.url,
-        page: 'home',
-        metadata: { source: 'first-visit-popup' }
+        route: currentPath,
+        page: 'blog',
+        metadata: { source: 'blog-engagement-modal' }
       });
       this.messageService.add({
         severity: 'warn',
@@ -125,12 +148,12 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.isSubscribePromptSubmitting) return;
     this.isSubscribePromptSubmitting = true;
     this.analytics.track('subscribe_prompt_submit_attempt', {
-      route: this.router.url,
-      page: 'home',
-      metadata: { source: 'first-visit-popup' }
+      route: currentPath,
+      page: 'blog',
+      metadata: { source: 'blog-engagement-modal' }
     });
 
-    this.subscriptions.request(email, ['blog_posts'], 'first-visit-popup').subscribe({
+    this.subscriptions.request(email, ['blog_posts'], 'blog-engagement-modal').subscribe({
       next: (result) => {
         this.isSubscribePromptSubmitting = false;
         this.showSubscribePrompt = false;
@@ -139,9 +162,9 @@ export class AppComponent implements OnInit, OnDestroy {
         const status = String(result?.status || '').toUpperCase();
         if (status === 'ALREADY_SUBSCRIBED' || result?.alreadySubscribed) {
           this.analytics.track('subscribe_prompt_already_subscribed', {
-            route: this.router.url,
-            page: 'home',
-            metadata: { source: 'first-visit-popup' }
+            route: currentPath,
+            page: 'blog',
+            metadata: { source: 'blog-engagement-modal' }
           });
           this.subscriptions.setPromptState('subscribed');
           this.messageService.add({
@@ -154,9 +177,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
         if (status === 'ALREADY_PENDING' || result?.alreadyPending) {
           this.analytics.track('subscribe_prompt_already_pending', {
-            route: this.router.url,
-            page: 'home',
-            metadata: { source: 'first-visit-popup' }
+            route: currentPath,
+            page: 'blog',
+            metadata: { source: 'blog-engagement-modal' }
           });
           this.subscriptions.setPromptState('requested');
           this.messageService.add({
@@ -169,9 +192,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
         this.subscriptions.setPromptState('requested');
         this.analytics.track('subscribe_prompt_requested', {
-          route: this.router.url,
-          page: 'home',
-          metadata: { source: 'first-visit-popup' }
+          route: currentPath,
+          page: 'blog',
+          metadata: { source: 'blog-engagement-modal' }
         });
         this.messageService.add({
           severity: 'success',
@@ -182,10 +205,10 @@ export class AppComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.isSubscribePromptSubmitting = false;
         this.analytics.track('subscribe_prompt_error', {
-          route: this.router.url,
-          page: 'home',
+          route: currentPath,
+          page: 'blog',
           metadata: {
-            source: 'first-visit-popup',
+            source: 'blog-engagement-modal',
             error: String(err?.error?.error || err?.message || 'unknown')
           }
         });
@@ -197,6 +220,28 @@ export class AppComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  acceptAnalyticsCookies(): void {
+    this.consent.acceptAnalytics();
+    this.showCookieBanner = false;
+    const currentPath = this.getCurrentPathOnly();
+    this.analytics.track('cookie_consent_updated', {
+      route: currentPath,
+      metadata: {
+        source: 'cookie-banner',
+        analytics: true
+      }
+    });
+    this.analytics.trackPageView(currentPath, document.title || undefined);
+    this.maybeShowSubscribePrompt(currentPath);
+  }
+
+  useNecessaryCookiesOnly(): void {
+    this.consent.rejectAnalytics();
+    this.showCookieBanner = false;
+    const currentPath = this.getCurrentPathOnly();
+    this.maybeShowSubscribePrompt(currentPath);
   }
 
   private initializePreviewMode(): void {
@@ -243,18 +288,25 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private maybeShowSubscribePrompt(pathOnly: string): void {
     if (typeof window === 'undefined') return;
-    if (this.previewModeActive) return;
+    if (this.previewModeActive) {
+      this.clearSubscribePromptTimer();
+      this.showSubscribePrompt = false;
+      return;
+    }
+    if (this.showCookieBanner || this.consent.needsDecision()) {
+      this.clearSubscribePromptTimer();
+      this.showSubscribePrompt = false;
+      return;
+    }
 
     if (this.shouldHidePromptForRoute(pathOnly)) {
+      this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
       return;
     }
 
-    if (this.subscriptions.getPromptState()) {
-      this.showSubscribePrompt = false;
-      return;
-    }
-    if (this.subscriptions.isPromptDismissedForSession()) {
+    if (!this.subscriptions.shouldShowPromptForPath(pathOnly)) {
+      this.clearSubscribePromptTimer();
       this.showSubscribePrompt = false;
       return;
     }
@@ -263,16 +315,34 @@ export class AppComponent implements OnInit, OnDestroy {
 
     this.subscribePromptTimer = setTimeout(() => {
       this.subscribePromptTimer = null;
-      const currentPath = (this.router.url || '/').split('?')[0].split('#')[0];
+      const currentPath = this.getCurrentPathOnly();
       if (this.shouldHidePromptForRoute(currentPath)) return;
-      if (this.subscriptions.getPromptState()) return;
-      if (this.subscriptions.isPromptDismissedForSession()) return;
+      if (!this.subscriptions.shouldShowPromptForPath(currentPath)) return;
+      this.subscriptions.markPromptShown();
       this.showSubscribePrompt = true;
+      this.analytics.track('subscribe_prompt_shown', {
+        route: currentPath,
+        page: 'blog',
+        metadata: {
+          source: 'blog-engagement-modal',
+          blogVisitCount: this.subscriptions.getPromptInteractionState().blogVisitCount
+        }
+      });
     }, this.subscribePromptDelayMs);
   }
 
   private shouldHidePromptForRoute(pathOnly: string): boolean {
     const path = String(pathOnly || '/');
     return path.startsWith('/notifications');
+  }
+
+  private clearSubscribePromptTimer(): void {
+    if (!this.subscribePromptTimer) return;
+    clearTimeout(this.subscribePromptTimer);
+    this.subscribePromptTimer = null;
+  }
+
+  private getCurrentPathOnly(): string {
+    return (this.router.url || '/').split('?')[0].split('#')[0];
   }
 }

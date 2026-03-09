@@ -50,13 +50,18 @@ export class RouteViewStateService {
     this.patchState(routeKey, { scrollY: window.scrollY } as Partial<StoredRouteViewState>);
   }
 
-  restoreScroll(routeKey: string, fallbackTop: number = 0): Promise<void> {
+  restoreScrollImmediate(routeKey: string, fallbackTop: number = 0): void {
+    if (typeof window === 'undefined') return;
+    const desiredTop = this.getDesiredTop(routeKey, fallbackTop);
+    window.scrollTo({ top: Math.max(0, desiredTop), behavior: 'auto' });
+  }
+
+  restoreScrollFinal(routeKey: string, fallbackTop: number = 0): Promise<void> {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
       return Promise.resolve();
     }
 
-    const state = this.getState<StoredRouteViewState>(routeKey);
-    const desiredTop = Number.isFinite(Number(state?.scrollY)) ? Number(state?.scrollY) : fallbackTop;
+    const desiredTop = this.getDesiredTop(routeKey, fallbackTop);
     if (desiredTop <= 0) {
       window.scrollTo({ top: Math.max(0, fallbackTop), behavior: 'auto' });
       return Promise.resolve();
@@ -64,7 +69,7 @@ export class RouteViewStateService {
 
     return new Promise((resolve) => {
       let attempts = 0;
-      const maxAttempts = 18;
+      const maxAttempts = 3;
       const tryRestore = () => {
         attempts += 1;
         const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -78,15 +83,29 @@ export class RouteViewStateService {
           return;
         }
 
-        window.setTimeout(() => requestAnimationFrame(tryRestore), 80);
+        requestAnimationFrame(tryRestore);
       };
 
       requestAnimationFrame(tryRestore);
     });
   }
 
+  restoreScroll(routeKey: string, fallbackTop: number = 0): Promise<void> {
+    this.restoreScrollImmediate(routeKey, fallbackTop);
+    return this.restoreScrollFinal(routeKey, fallbackTop);
+  }
+
   private buildKey(routeKey: string): string {
     return `${this.storageKeyPrefix}${routeKey}`;
+  }
+
+  private getDesiredTop(routeKey: string, fallbackTop: number): number {
+    const state = this.getState<StoredRouteViewState>(routeKey);
+    const stored = Number(state?.scrollY);
+    if (Number.isFinite(stored) && stored > 0) {
+      return stored;
+    }
+    return Math.max(0, fallbackTop);
   }
 
   private canUseStorage(): boolean {

@@ -65,6 +65,7 @@ export class LandingComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.loadLandingContent();
     this.loadLinkedInData();
     this.refreshHeroSlides();
@@ -224,7 +225,7 @@ export class LandingComponent implements OnInit, OnDestroy {
     }
 
     this.viewStateRestored = true;
-    void this.routeViewState.restoreScroll(this.routeKey);
+    void this.routeViewState.restoreScrollFinal(this.routeKey);
   }
 
   private persistViewState(): void {

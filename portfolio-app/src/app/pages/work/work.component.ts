@@ -78,6 +78,7 @@ export class WorkComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.updateTimelineAlign();
     this.loadWorkContent();
     this.loadLinkedInData();
@@ -399,7 +400,7 @@ export class WorkComponent implements OnInit, OnDestroy {
     }
 
     this.viewStateRestored = true;
-    await this.routeViewState.restoreScroll(this.routeKey);
+    await this.routeViewState.restoreScrollFinal(this.routeKey);
   }
 
   private persistViewState(): void {

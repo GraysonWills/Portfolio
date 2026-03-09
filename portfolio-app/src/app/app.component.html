@@ -9,6 +9,29 @@
   </main>
   <app-footer></app-footer>
 
+  <section
+    class="cookie-banner"
+    *ngIf="showCookieBanner"
+    role="region"
+    aria-labelledby="cookie-banner-title"
+    aria-live="polite">
+    <div class="cookie-banner-copy">
+      <h2 id="cookie-banner-title">Cookie Preferences</h2>
+      <p>
+        We always use one necessary cookie to remember your choice. If you allow analytics cookies,
+        we set anonymous visitor, session, and attribution cookies so we can measure traffic and improve the site.
+      </p>
+    </div>
+    <div class="cookie-banner-actions">
+      <button type="button" class="cookie-banner-btn cookie-banner-btn-secondary" (click)="useNecessaryCookiesOnly()">
+        Necessary Only
+      </button>
+      <button type="button" class="cookie-banner-btn cookie-banner-btn-primary" (click)="acceptAnalyticsCookies()">
+        Allow Analytics
+      </button>
+    </div>
+  </section>
+
   <div
     class="subscribe-modal-backdrop"
     *ngIf="showSubscribePrompt"
@@ -21,7 +44,9 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="subscribe-modal-title">
-    <button type="button" class="subscribe-modal-close" (click)="dismissSubscribePrompt()" aria-label="Close">×</button>
+    <div class="subscribe-modal-topbar">
+      <button type="button" class="subscribe-modal-close" (click)="dismissSubscribePrompt()" aria-label="Close">×</button>
+    </div>
     <div class="subscribe-modal-content">
       <h2 id="subscribe-modal-title">Stay Updated</h2>
       <p>Get an email when a new blog post goes live. Confirm once, unsubscribe anytime.</p>

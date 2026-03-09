@@ -71,11 +71,12 @@ flowchart LR
 - SEO basics (`robots.txt`, `sitemap.xml`, meta tags)
 - Email subscription UX:
   - Blog subscribe form
-  - First-visit subscribe popup
+  - Blog-engagement subscribe modal with persistent dismissal suppression
   - Duplicate-aware messaging (`already subscribed`, `already pending`)
   - Confirm/unsubscribe pages under `/notifications/*`
 - Cloud preview mode support using preview tokens (`previewToken` query param)
 - Route-level metadata and SEO service updates
+- Session-scoped route-view restoration for landing, work, projects, and blog with immediate scroll restore plus a short post-hydration correction pass
 
 ### Authoring GUI (`blog-authoring-gui`)
 

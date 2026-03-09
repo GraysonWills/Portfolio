@@ -56,6 +56,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.loadProjectsContent();
   }
 
@@ -457,7 +458,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.hydrateProjectsForCategories(needsHydration);
 
     this.viewStateRestored = true;
-    await this.routeViewState.restoreScroll(this.routeKey);
+    await this.routeViewState.restoreScrollFinal(this.routeKey);
   }
 
   private persistViewState(): void {

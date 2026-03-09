@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
+import { SiteConsentService } from '../../services/site-consent.service';
 
 @Component({
   selector: 'app-footer',
@@ -17,7 +18,8 @@ export class FooterComponent implements OnInit {
 
   constructor(
     private redisService: RedisService,
-    private linkedInService: LinkedInDataService
+    private linkedInService: LinkedInDataService,
+    private consent: SiteConsentService
   ) {}
 
   ngOnInit(): void {
@@ -97,5 +99,9 @@ export class FooterComponent implements OnInit {
     if (url.includes('grayson-wills.com')) return true;
 
     return false;
+  }
+
+  openCookieSettings(): void {
+    this.consent.requestPreferencesReview();
   }
 }

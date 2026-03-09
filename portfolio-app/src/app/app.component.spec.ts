@@ -29,6 +29,11 @@ class SubscriptionServiceStub {
   request() { return of({}); }
   getPromptState() { return null; }
   setPromptState(): void {}
+  trackPromptRoute(): void {}
+  shouldShowPromptForPath() { return false; }
+  markPromptShown(): void {}
+  dismissPrompt() { return { dismissCount: 1, permanentlyDismissed: false }; }
+  getPromptInteractionState() { return { blogVisitCount: 0 }; }
   isPromptDismissedForSession() { return false; }
   setPromptDismissedForSession(): void {}
 }
