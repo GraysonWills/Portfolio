@@ -127,7 +127,9 @@ export class BlogComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
-    this.routeViewState.captureScroll(this.routeKey);
+    if (this.viewStateRestored) {
+      this.routeViewState.captureScroll(this.routeKey);
+    }
   }
 
   /**
@@ -457,12 +459,13 @@ export class BlogComponent implements OnInit, OnDestroy {
     this.currentPage = Math.min(Math.max(1, targetPage), Math.max(1, maxPage));
     this.applyVisiblePage();
     this.hydrateVisibleImages();
-    this.persistViewState();
 
     if (!this.viewStateRestored) {
       this.viewStateRestored = true;
-      await this.routeViewState.restoreScrollFinal(this.routeKey);
+      await this.routeViewState.restoreScrollFinal(this.routeKey, 0);
     }
+
+    this.persistViewState();
   }
 
   private rebuildVisibleState(page: number = this.currentPage): void {

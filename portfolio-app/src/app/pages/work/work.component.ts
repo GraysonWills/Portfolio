@@ -99,7 +99,9 @@ export class WorkComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
-    this.routeViewState.captureScroll(this.routeKey);
+    if (this.viewStateRestored) {
+      this.routeViewState.captureScroll(this.routeKey);
+    }
     if (!this.timelineNextToken || this.isFetchingTimeline || typeof window === 'undefined' || typeof document === 'undefined') {
       return;
     }
@@ -392,6 +394,7 @@ export class WorkComponent implements OnInit, OnDestroy {
     const state = this.routeViewState.getState<WorkViewState>(this.routeKey);
     if (!state) {
       this.viewStateRestored = true;
+      await this.routeViewState.restoreScrollFinal(this.routeKey, 0);
       return;
     }
 
@@ -402,7 +405,7 @@ export class WorkComponent implements OnInit, OnDestroy {
     }
 
     this.viewStateRestored = true;
-    await this.routeViewState.restoreScrollFinal(this.routeKey);
+    await this.routeViewState.restoreScrollFinal(this.routeKey, 0);
   }
 
   private persistViewState(): void {

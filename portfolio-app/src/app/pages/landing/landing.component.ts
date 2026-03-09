@@ -83,6 +83,9 @@ export class LandingComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
+    if (!this.viewStateRestored) {
+      return;
+    }
     this.routeViewState.captureScroll(this.routeKey);
   }
 
@@ -221,13 +224,19 @@ export class LandingComponent implements OnInit, OnDestroy {
     if (this.viewStateRestored) return;
 
     const state = this.routeViewState.getState<LandingViewState>(this.routeKey);
+    if (!state) {
+      this.viewStateRestored = true;
+      void this.routeViewState.restoreScrollFinal(this.routeKey, 0);
+      return;
+    }
+
     if (state && Number.isFinite(Number(state.activeHeroIndex)) && this.heroSlides.length > 0) {
       const requestedIndex = Number(state.activeHeroIndex);
       this.activeHeroIndex = Math.min(Math.max(0, requestedIndex), this.heroSlides.length - 1);
     }
 
     this.viewStateRestored = true;
-    void this.routeViewState.restoreScrollFinal(this.routeKey);
+    void this.routeViewState.restoreScrollFinal(this.routeKey, 0);
   }
 
   private persistViewState(): void {

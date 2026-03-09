@@ -70,7 +70,9 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
-    this.routeViewState.captureScroll(this.routeKey);
+    if (this.viewStateRestored) {
+      this.routeViewState.captureScroll(this.routeKey);
+    }
     if (this.isLoading || !this.hasMoreCategories) return;
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -428,6 +430,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     const state = this.routeViewState.getState<ProjectsViewState>(this.routeKey);
     if (!state) {
       this.viewStateRestored = true;
+      await this.routeViewState.restoreScrollFinal(this.routeKey, 0);
       return;
     }
 
@@ -460,7 +463,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.hydrateProjectsForCategories(needsHydration);
 
     this.viewStateRestored = true;
-    await this.routeViewState.restoreScrollFinal(this.routeKey);
+    await this.routeViewState.restoreScrollFinal(this.routeKey, 0);
   }
 
   private persistViewState(): void {
