@@ -123,3 +123,37 @@ jobs:
           aws lambda update-function-code \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
             --zip-file "fileb://redis-api-lambda.zip"
+          aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}"
+
+      - name: Publish version and move live alias
+        run: |
+          set -euo pipefail
+
+          VERSION="$(aws lambda publish-version \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --description "GitHub Actions deploy ${GITHUB_SHA}" \
+            --query 'Version' \
+            --output text)"
+
+          echo "Published version: ${VERSION}"
+
+          if aws lambda get-alias --function-name "${LAMBDA_FUNCTION_NAME}" --name live >/dev/null 2>&1; then
+            aws lambda update-alias \
+              --function-name "${LAMBDA_FUNCTION_NAME}" \
+              --name live \
+              --function-version "${VERSION}"
+          else
+            aws lambda create-alias \
+              --function-name "${LAMBDA_FUNCTION_NAME}" \
+              --name live \
+              --function-version "${VERSION}" \
+              --description "Provisioned alias for public API"
+          fi
+
+      - name: Verify live alias target
+        run: |
+          aws lambda get-alias \
+            --function-name "${LAMBDA_FUNCTION_NAME}" \
+            --name live \
+            --query '{Name:Name,FunctionVersion:FunctionVersion}' \
+            --output json
