@@ -96,6 +96,7 @@ export class BlogComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.initialSavedViewState = this.routeViewState.getState<BlogViewState>(this.routeKey);
     this.applySavedViewPreferences(this.initialSavedViewState);
+    this.routeViewState.primeRestore(this.routeKey);
     this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.syncResponsiveLayout();
     this.queryParamSub = this.route.queryParamMap.subscribe((params) => {
@@ -126,6 +127,7 @@ export class BlogComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
+    this.routeViewState.captureScroll(this.routeKey);
   }
 
   /**

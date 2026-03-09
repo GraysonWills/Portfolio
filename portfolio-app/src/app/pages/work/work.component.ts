@@ -78,6 +78,7 @@ export class WorkComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.routeViewState.primeRestore(this.routeKey);
     this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.updateTimelineAlign();
     this.loadWorkContent();
@@ -98,6 +99,7 @@ export class WorkComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.lastScrollY = window.scrollY;
     }
+    this.routeViewState.captureScroll(this.routeKey);
     if (!this.timelineNextToken || this.isFetchingTimeline || typeof window === 'undefined' || typeof document === 'undefined') {
       return;
     }

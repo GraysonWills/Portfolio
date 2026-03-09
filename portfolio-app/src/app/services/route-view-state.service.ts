@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 
 type StoredRouteViewState = Record<string, unknown> & {
   scrollY?: number;
+  pageHeight?: number;
   updatedAt?: number;
 };
 
@@ -10,6 +11,9 @@ type StoredRouteViewState = Record<string, unknown> & {
 })
 export class RouteViewStateService {
   private readonly storageKeyPrefix = 'portfolio_route_view_state_v1_';
+  private readonly pendingCaptureFrames = new Map<string, number>();
+  private readonly queuedCapturePatches = new Map<string, Partial<StoredRouteViewState>>();
+  private activePrimedRouteKey: string | null = null;
 
   getState<T extends StoredRouteViewState>(routeKey: string): T | null {
     if (!this.canUseStorage()) return null;
@@ -29,6 +33,8 @@ export class RouteViewStateService {
     try {
       const next = {
         ...state,
+        scrollY: this.resolveScrollY(state.scrollY),
+        pageHeight: this.resolvePageHeight(state.pageHeight),
         updatedAt: Date.now()
       };
       sessionStorage.setItem(this.buildKey(routeKey), JSON.stringify(next));
@@ -46,8 +52,39 @@ export class RouteViewStateService {
   }
 
   captureScroll(routeKey: string): void {
-    if (typeof window === 'undefined') return;
-    this.patchState(routeKey, { scrollY: window.scrollY } as Partial<StoredRouteViewState>);
+    if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
+
+    this.queuedCapturePatches.set(routeKey, {
+      scrollY: this.resolveScrollY(),
+      pageHeight: this.resolvePageHeight()
+    });
+
+    if (this.pendingCaptureFrames.has(routeKey)) return;
+
+    const frameId = requestAnimationFrame(() => {
+      this.pendingCaptureFrames.delete(routeKey);
+      const patch = this.queuedCapturePatches.get(routeKey);
+      this.queuedCapturePatches.delete(routeKey);
+      if (!patch) return;
+      this.patchState(routeKey, patch);
+    });
+
+    this.pendingCaptureFrames.set(routeKey, frameId);
+  }
+
+  primeRestore(routeKey: string): void {
+    if (typeof document === 'undefined') return;
+
+    const state = this.getState<StoredRouteViewState>(routeKey);
+    const savedHeight = Number(state?.pageHeight);
+
+    if (!Number.isFinite(savedHeight) || savedHeight <= 0) {
+      this.clearRestorePrime();
+      return;
+    }
+
+    document.body.style.minHeight = `${Math.max(savedHeight, window.innerHeight)}px`;
+    this.activePrimedRouteKey = routeKey;
   }
 
   restoreScrollImmediate(routeKey: string, fallbackTop: number = 0): void {
@@ -64,6 +101,7 @@ export class RouteViewStateService {
     const desiredTop = this.getDesiredTop(routeKey, fallbackTop);
     if (desiredTop <= 0) {
       window.scrollTo({ top: Math.max(0, fallbackTop), behavior: 'auto' });
+      this.clearRestorePrime(routeKey);
       return Promise.resolve();
     }
 
@@ -79,6 +117,7 @@ export class RouteViewStateService {
 
         const closeEnough = Math.abs(window.scrollY - targetTop) < 4;
         if (closeEnough || attempts >= maxAttempts) {
+          this.clearRestorePrime(routeKey);
           resolve();
           return;
         }
@@ -110,5 +149,38 @@ export class RouteViewStateService {
 
   private canUseStorage(): boolean {
     return typeof window !== 'undefined' && typeof sessionStorage !== 'undefined';
+  }
+
+  private resolveScrollY(explicit?: unknown): number {
+    const direct = Number(explicit);
+    if (Number.isFinite(direct) && direct >= 0) {
+      return direct;
+    }
+    if (typeof window !== 'undefined') {
+      return Math.max(0, window.scrollY || 0);
+    }
+    return 0;
+  }
+
+  private resolvePageHeight(explicit?: unknown): number {
+    const direct = Number(explicit);
+    if (Number.isFinite(direct) && direct > 0) {
+      return direct;
+    }
+    if (typeof document !== 'undefined') {
+      return Math.max(
+        document.body?.scrollHeight || 0,
+        document.documentElement?.scrollHeight || 0,
+        typeof window !== 'undefined' ? window.innerHeight : 0
+      );
+    }
+    return 0;
+  }
+
+  private clearRestorePrime(routeKey?: string): void {
+    if (typeof document === 'undefined') return;
+    if (routeKey && this.activePrimedRouteKey && this.activePrimedRouteKey !== routeKey) return;
+    document.body.style.minHeight = '';
+    this.activePrimedRouteKey = null;
   }
 }
