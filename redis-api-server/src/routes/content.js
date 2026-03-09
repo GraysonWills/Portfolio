@@ -354,7 +354,7 @@ router.get('/v3/bootstrap', async (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const items = await readContentByPage(LANDING_PAGE_ID);
-    const payload = buildBootstrapPayload(items);
+    const payload = buildBootstrapPayload(normalizeContentArray(items, req));
     logV2Metric('/v3/bootstrap', startedAt, {
       headerItems: payload.header.items.length,
       footerItems: payload.footer.items.length
@@ -373,7 +373,7 @@ router.get('/v3/landing', async (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const items = await readContentByPage(LANDING_PAGE_ID);
-    const payload = buildLandingPayload(items);
+    const payload = buildLandingPayload(normalizeContentArray(items, req));
     logV2Metric('/v3/landing', startedAt, {
       slides: payload.heroSlides.length,
       hasSummary: !!payload.summary
@@ -466,7 +466,7 @@ router.get('/v3/projects/categories', async (req, res) => {
     }
 
     const items = await readContentByPage(PROJECTS_PAGE_ID);
-    const payload = buildProjectCategoriesPayload(items, { limit, nextOffset });
+    const payload = buildProjectCategoriesPayload(normalizeContentArray(items, req), { limit, nextOffset });
     const nextToken = payload.hasMore
       ? encodeOffsetToken({
           offset: payload.nextOffset,
