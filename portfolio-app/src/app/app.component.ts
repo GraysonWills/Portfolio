@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, NavigationEnd, ActivatedRoute, RouterOutlet } from '@angular/router';
+import { Router, NavigationEnd, NavigationStart, ActivatedRoute, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter, map, mergeMap } from 'rxjs/operators';
 import { RedisService } from './services/redis.service';
@@ -10,6 +10,7 @@ import { routeTransition } from './animations/route-animations';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from './services/analytics.service';
 import { SiteConsentService } from './services/site-consent.service';
+import { RouteViewStateService } from './services/route-view-state.service';
 
 @Component({
   selector: 'app-root',
@@ -21,6 +22,7 @@ import { SiteConsentService } from './services/site-consent.service';
 export class AppComponent implements OnInit, OnDestroy {
   title = 'Grayson Wills - Portfolio';
   private routerSub!: Subscription;
+  private navigationStartSub?: Subscription;
   private consentSub?: Subscription;
   private consentReviewSub?: Subscription;
   previewModeActive = false;
@@ -38,6 +40,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private subscriptions: SubscriptionService,
     private analytics: AnalyticsService,
     private consent: SiteConsentService,
+    private routeViewState: RouteViewStateService,
     private messageService: MessageService,
     private router: Router,
     private activatedRoute: ActivatedRoute
@@ -47,6 +50,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
     this.showCookieBanner = this.consent.needsDecision();
+    this.navigationStartSub = this.router.events.pipe(
+      filter((event) => event instanceof NavigationStart)
+    ).subscribe(() => {
+      this.routeViewState.captureSnapshot(this.getCurrentPathOnly());
+    });
     this.consentSub = this.consent.consent$.subscribe((state) => {
       this.showCookieBanner = state.analytics === null;
       if (this.showCookieBanner) {
@@ -85,6 +93,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.routerSub?.unsubscribe();
+    this.navigationStartSub?.unsubscribe();
     this.consentSub?.unsubscribe();
     this.consentReviewSub?.unsubscribe();
     this.clearSubscribePromptTimer();

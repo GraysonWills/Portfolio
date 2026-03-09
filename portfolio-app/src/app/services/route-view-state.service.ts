@@ -72,6 +72,14 @@ export class RouteViewStateService {
     this.pendingCaptureFrames.set(routeKey, frameId);
   }
 
+  captureSnapshot(routeKey: string, patch: Partial<StoredRouteViewState> = {}): void {
+    this.patchState(routeKey, {
+      scrollY: this.resolveScrollY(),
+      pageHeight: this.resolvePageHeight(),
+      ...patch
+    });
+  }
+
   primeRestore(routeKey: string): void {
     if (typeof document === 'undefined') return;
 
