@@ -71,7 +71,6 @@ function parseS3ObjectKeyFromUrl(rawUrl, cfg = getMediaConfig()) {
   }
 
   const bucket = String(cfg.bucket || '').trim().toLowerCase();
-  if (!bucket) return '';
 
   let parsed;
   try {
@@ -83,6 +82,7 @@ function parseS3ObjectKeyFromUrl(rawUrl, cfg = getMediaConfig()) {
   const host = String(parsed.hostname || '').trim().toLowerCase();
   const pathname = String(parsed.pathname || '');
   const path = pathname.replace(/^\/+/, '');
+  const pathLooksLikeManagedAsset = (candidate) => /^(uploads|photo-assets)\//i.test(String(candidate || ''));
 
   if (pathname.startsWith('/media/')) {
     return decodeS3PathSegments(pathname.replace(/^\/media\/+/, ''));
@@ -93,6 +93,13 @@ function parseS3ObjectKeyFromUrl(rawUrl, cfg = getMediaConfig()) {
     return decodeS3PathSegments(path);
   }
 
+  // If the configured bucket drifts but the URL is still one of our managed asset prefixes,
+  // rewrite it through the public CDN/proxy instead of leaking the raw S3 URL.
+  const anyBucketVirtualHostPattern = /^.+\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i;
+  if (anyBucketVirtualHostPattern.test(host) && pathLooksLikeManagedAsset(path)) {
+    return decodeS3PathSegments(path);
+  }
+
   const pathHostPattern = /^s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i;
   if (!pathHostPattern.test(host)) {
     return '';
@@ -100,6 +107,10 @@ function parseS3ObjectKeyFromUrl(rawUrl, cfg = getMediaConfig()) {
 
   const [first, ...rest] = path.split('/');
   if (String(first || '').toLowerCase() !== bucket) {
+    const candidate = rest.join('/');
+    if (!bucket && pathLooksLikeManagedAsset(candidate)) {
+      return decodeS3PathSegments(candidate);
+    }
     return '';
   }
   return decodeS3PathSegments(rest.join('/'));
