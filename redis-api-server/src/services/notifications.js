@@ -618,6 +618,57 @@ async function releaseRecipientNotificationMarker(tokenHash) {
   }));
 }
 
+async function clearBlogNotificationMarkers({ listItemID, topic = null }) {
+  const normalizedListItemID = String(listItemID || '').trim();
+  if (!normalizedListItemID) return { deleted: 0 };
+
+  const cfg = getConfig();
+  const ddb = getDdbDoc();
+  const normalizedTopic = String(topic || '').trim().toLowerCase();
+  let ExclusiveStartKey;
+  let deleted = 0;
+
+  do {
+    const scanArgs = {
+      TableName: cfg.tokensTable,
+      ExclusiveStartKey,
+      ProjectionExpression: 'tokenHash',
+      FilterExpression: '#listItemID = :listItemID AND begins_with(#action, :actionPrefix)',
+      ExpressionAttributeNames: {
+        '#listItemID': 'listItemID',
+        '#action': 'action'
+      },
+      ExpressionAttributeValues: {
+        ':listItemID': normalizedListItemID,
+        ':actionPrefix': 'blog_notify_'
+      }
+    };
+
+    if (normalizedTopic) {
+      scanArgs.FilterExpression += ' AND (attribute_not_exists(#topic) OR #topic = :topic)';
+      scanArgs.ExpressionAttributeNames['#topic'] = 'topic';
+      scanArgs.ExpressionAttributeValues[':topic'] = normalizedTopic;
+    }
+
+    const result = await ddb.send(new ScanCommand(scanArgs));
+    const items = Array.isArray(result?.Items) ? result.Items : [];
+
+    for (const item of items) {
+      const tokenHash = String(item?.tokenHash || '').trim();
+      if (!tokenHash) continue;
+      await ddb.send(new DeleteCommand({
+        TableName: cfg.tokensTable,
+        Key: { tokenHash }
+      }));
+      deleted += 1;
+    }
+
+    ExclusiveStartKey = result?.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+
+  return { deleted };
+}
+
 function isFifoQueueUrl(queueUrl) {
   return String(queueUrl || '').toLowerCase().endsWith('.fifo');
 }
@@ -996,6 +1047,7 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
   }
 
   const { meta: existingMeta } = await getBlogMetadataForSchedule(listItemID);
+  const notifyTopic = String(topic || existingMeta?.notifyTopic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
 
   // Best-effort cleanup for reschedules.
   try {
@@ -1014,13 +1066,33 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     // ignore
   }
 
+  try {
+    const cleared = await clearBlogNotificationMarkers({
+      listItemID,
+      topic: notifyTopic
+    });
+    if (cleared.deleted > 0) {
+      console.info('[notifications] Cleared previous notification markers before schedule', {
+        listItemID,
+        topic: notifyTopic,
+        deletedMarkers: cleared.deleted
+      });
+    }
+  } catch (err) {
+    console.warn('[notifications] Failed to clear notification markers before schedule', {
+      listItemID,
+      topic: notifyTopic,
+      message: String(err?.message || err)
+    });
+  }
+
   const name = safeScheduleName(listItemID);
   const input = {
     kind: 'publish_blog_post',
     listItemID,
     scheduleName: name,
     sendEmail: !!sendEmail,
-    topic
+    topic: notifyTopic
   };
 
   const scheduler = getScheduler();
@@ -1044,8 +1116,14 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     publishDate: runAt.toISOString(),
     scheduleName: name,
     scheduledAt: runAt.toISOString(),
-    notifyTopic: topic,
-    notifyEmail: !!sendEmail
+    notifyTopic,
+    notifyEmail: !!sendEmail,
+    lastExecutedScheduleName: null,
+    lastExecutedScheduleAt: null,
+    emailNotificationSentAt: null,
+    emailNotificationTopic: null,
+    emailNotificationDelivery: null,
+    emailNotificationRecipientCount: null
   });
 
   // Cleanup legacy duplicate schedules for this list item so only the newest remains.
@@ -1113,6 +1191,7 @@ async function unpublishBlogPost({ listItemID }) {
   const { meta: existingMeta } = extractBlogMetadata(items);
   const previousStatus = String(existingMeta?.status || 'published').trim().toLowerCase() || 'published';
   const previousScheduleName = String(existingMeta?.scheduleName || '').trim();
+  const notifyTopic = String(existingMeta?.notifyTopic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
 
   // Best-effort: remove recorded active schedule.
   if (previousScheduleName) {
@@ -1142,11 +1221,37 @@ async function unpublishBlogPost({ listItemID }) {
     });
   }
 
+  try {
+    const cleared = await clearBlogNotificationMarkers({
+      listItemID: normalizedListItemID,
+      topic: notifyTopic
+    });
+    if (cleared.deleted > 0) {
+      console.info('[notifications] Cleared notification markers during unpublish', {
+        listItemID: normalizedListItemID,
+        topic: notifyTopic,
+        deletedMarkers: cleared.deleted
+      });
+    }
+  } catch (err) {
+    console.warn('[notifications] Failed to clear notification markers during unpublish', {
+      listItemID: normalizedListItemID,
+      topic: notifyTopic,
+      message: String(err?.message || err)
+    });
+  }
+
   const unpublishedAt = new Date().toISOString();
   await updateBlogMetadata(normalizedListItemID, {
     status: 'draft',
     scheduleName: null,
-    unpublishedAt
+    unpublishedAt,
+    lastExecutedScheduleName: null,
+    lastExecutedScheduleAt: null,
+    emailNotificationSentAt: null,
+    emailNotificationTopic: null,
+    emailNotificationDelivery: null,
+    emailNotificationRecipientCount: null
   });
 
   return {
