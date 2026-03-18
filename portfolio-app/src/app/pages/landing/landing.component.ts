@@ -28,7 +28,9 @@ export class LandingComponent implements OnInit, OnDestroy {
   education: Array<{degree: string; institution: string; location: string; graduationDate?: string}> = [];
   heroSlides: Array<{ photo: string; alt: string }> = [];
   activeHeroIndex: number = 0;
+  isResumeCooldown = false;
   private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
+  private resumeCooldownHandle: ReturnType<typeof setTimeout> | null = null;
   private readonly heroAutoplayMs = 5000;
   private readonly routeKey = '/';
   private viewStateRestored = false;
@@ -76,6 +78,7 @@ export class LandingComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.persistViewState();
     this.stopHeroAutoplay();
+    this.clearResumeCooldown();
   }
 
   @HostListener('window:scroll')
@@ -145,13 +148,23 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   downloadResume(): void {
+    if (this.isResumeCooldown) {
+      return;
+    }
+
     this.analytics.track('resume_download_clicked', {
       route: '/',
       page: 'home',
       metadata: { location: 'hero' }
     });
+    this.isResumeCooldown = true;
+    this.clearResumeCooldown();
+    this.resumeCooldownHandle = setTimeout(() => {
+      this.isResumeCooldown = false;
+      this.resumeCooldownHandle = null;
+    }, 5000);
     if (typeof window !== 'undefined') {
-      window.open('/assets/resume.pdf', '_blank');
+      window.open('/api/resume/download', '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -211,6 +224,12 @@ export class LandingComponent implements OnInit, OnDestroy {
     if (!this.heroAutoplayHandle) return;
     clearInterval(this.heroAutoplayHandle);
     this.heroAutoplayHandle = null;
+  }
+
+  private clearResumeCooldown(): void {
+    if (!this.resumeCooldownHandle) return;
+    clearTimeout(this.resumeCooldownHandle);
+    this.resumeCooldownHandle = null;
   }
 
   onHeroImageError(event: Event): void {

@@ -21,6 +21,7 @@ const notificationsRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
 const photoAssetsRoutes = require('./routes/photo-assets');
 const mediaRoutes = require('./routes/media');
+const resumeRoutes = require('./routes/resume');
 
 function createApp() {
   const app = express();
@@ -152,6 +153,15 @@ function createApp() {
     message: { error: 'Analytics rate limit exceeded. Please try again later.' }
   });
 
+  const resumeLimiter = rateLimit({
+    windowMs: 5 * 1000,
+    max: 1,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
+    message: { error: 'Resume download is cooling down. Please wait a few seconds.' }
+  });
+
   // ─── Body Parsing ────────────────────────────────────────────
   // Keep request size bounded to reduce abuse blast radius.
   const requestBodyLimit = String(process.env.REQUEST_BODY_LIMIT || '6mb').trim() || '6mb';
@@ -179,6 +189,7 @@ function createApp() {
   app.use('/api/notifications', writeLimiter, notificationsRoutes);
   app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
   app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
+  app.use('/api/resume', resumeLimiter, resumeRoutes);
   app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
@@ -194,6 +205,7 @@ function createApp() {
         subscriptions: '/api/subscriptions',
         notifications: '/api/notifications (requires auth)',
         analytics: '/api/analytics/events (public)',
+        resume: '/api/resume/download (public, rate limited)',
         photoAssets: '/api/photo-assets (requires auth)',
         media: '/media/:key (public S3 proxy)'
       }

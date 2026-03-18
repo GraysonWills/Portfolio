@@ -50,3 +50,23 @@ test('GET / returns API metadata', async (t) => {
   assert.ok(body.endpoints);
   assert.ok(body.endpoints.health);
 });
+
+test('GET /api/resume/download redirects and rate limits repeated requests', async (t) => {
+  process.env.PUBLIC_SITE_URL = 'https://www.grayson-wills.com';
+  const app = createApp();
+  const server = http.createServer(app);
+  t.after(() => {
+    server.close();
+    delete process.env.PUBLIC_SITE_URL;
+  });
+
+  const address = await listen(server);
+  const url = `http://127.0.0.1:${address.port}/api/resume/download`;
+
+  const first = await fetch(url, { redirect: 'manual' });
+  assert.equal(first.status, 302);
+  assert.equal(first.headers.get('location'), 'https://www.grayson-wills.com/assets/Grayson_Wills_Resume.docx');
+
+  const second = await fetch(url, { redirect: 'manual' });
+  assert.equal(second.status, 429);
+});

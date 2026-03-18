@@ -47,7 +47,8 @@
             icon="pi pi-download"
             (onClick)="downloadResume()"
             styleClass="p-button-lg p-button-rounded p-button-outlined"
-            ariaLabel="Download resume PDF">
+            [disabled]="isResumeCooldown"
+            ariaLabel="Download resume document">
           </p-button>
         </div>
       </div>

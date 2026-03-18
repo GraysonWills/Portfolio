@@ -17,6 +17,7 @@ function isAllowedPublicEdgeRoute(req) {
     key === 'GET /api/content/v3/landing' ||
     key === 'GET /api/content/v3/work' ||
     key === 'GET /api/content/v3/projects/categories' ||
+    key === 'GET /api/resume/download' ||
     key === 'GET /api/content/v2/blog/cards' ||
     key === 'GET /api/content/v2/blog/cards/media' ||
     key === 'POST /api/content/v3/projects/items' ||
