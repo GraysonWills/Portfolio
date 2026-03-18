@@ -152,6 +152,33 @@
   background: rgba(255, 255, 255, 0.12) !important;
 }
 
+:host ::ng-deep .hero-actions .hero-resume-button.p-button {
+  color: #fef3e7 !important;
+  border: 1px solid rgba(255, 255, 255, 0.82) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(241, 143, 59, 0.28)) !important;
+  box-shadow: 0 12px 28px rgba(9, 20, 35, 0.18);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+:host ::ng-deep .hero-actions .hero-resume-button.p-button .p-button-label,
+:host ::ng-deep .hero-actions .hero-resume-button.p-button .p-button-icon {
+  color: #fff7ef !important;
+  font-weight: 700;
+}
+
+:host ::ng-deep .hero-actions .hero-resume-button.p-button:enabled:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.95) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(241, 143, 59, 0.38)) !important;
+  box-shadow: 0 16px 34px rgba(9, 20, 35, 0.24);
+}
+
+:host ::ng-deep .hero-actions .hero-resume-button.p-button:disabled {
+  opacity: 0.74 !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(241, 143, 59, 0.18)) !important;
+}
+
 /* ── Summary ── */
 .summary-text {
   font-size: 1.1rem;
