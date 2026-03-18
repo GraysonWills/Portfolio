@@ -8,7 +8,7 @@
 
 export const environment = {
   production: true,
-  redisApiUrl: 'https://api.grayson-wills.com/api',
+  redisApiUrl: '/api',
   useContentV2Stream: true,
   useBlogV2Cards: true,
   mailchimpApiKey: '',

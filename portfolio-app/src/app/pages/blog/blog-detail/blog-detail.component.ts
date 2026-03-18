@@ -125,7 +125,9 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.isLoading = false;
       },
       error: () => {
-        this.loadPostLegacy(listItemId);
+        this.notFound = true;
+        this.isLoading = false;
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load blog post' });
       }
     });
   }

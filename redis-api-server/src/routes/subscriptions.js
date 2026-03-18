@@ -6,6 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
+const requirePublicEdgeAccess = require('../middleware/requirePublicEdgeAccess');
 
 const {
   requestSubscription,
@@ -14,7 +15,7 @@ const {
   updatePreferences
 } = require('../services/subscriptions');
 
-router.post('/request', async (req, res) => {
+router.post('/request', requirePublicEdgeAccess, async (req, res) => {
   try {
     const { email, topics, source } = req.body || {};
     const consentIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
@@ -54,7 +55,7 @@ router.get('/unsubscribe', async (req, res) => {
   }
 });
 
-router.post('/preferences', async (req, res) => {
+router.post('/preferences', requirePublicEdgeAccess, async (req, res) => {
   try {
     const { token, topics } = req.body || {};
     const result = await updatePreferences({ token, topics });
@@ -65,4 +66,3 @@ router.post('/preferences', async (req, res) => {
 });
 
 module.exports = router;
-

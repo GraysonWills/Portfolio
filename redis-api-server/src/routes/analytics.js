@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { enqueueAnalyticsEvents } = require('../services/analytics');
+const requirePublicEdgeAccess = require('../middleware/requirePublicEdgeAccess');
 
 function getClientIp(req) {
   const xff = req.headers['x-forwarded-for'];
@@ -17,7 +18,7 @@ function getClientIp(req) {
   return req.socket?.remoteAddress || req.ip || '';
 }
 
-router.post('/events', async (req, res) => {
+router.post('/events', requirePublicEdgeAccess, async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const events = Array.isArray(body.events) ? body.events : [body];
@@ -40,4 +41,3 @@ router.post('/events', async (req, res) => {
 });
 
 module.exports = router;
-

@@ -12,6 +12,7 @@ const redisClient = require('../config/redis');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const requireAuth = require('../middleware/requireAuth');
+const requirePublicEdgeAccess = require('../middleware/requirePublicEdgeAccess');
 const {
   addToIndex,
   removeFromIndex,
@@ -192,15 +193,16 @@ async function readContentByListItemIds(listItemIds) {
   }
 }
 
-// Public reads; authenticated writes.
+// Public reads require the trusted portfolio edge header in production.
+// Authenticated authoring requests are still allowed directly.
 router.use((req, res, next) => {
   if (req.method === 'POST' && req.path === '/v2/list-items/batch') {
-    return next();
+    return requirePublicEdgeAccess(req, res, next);
   }
   if (req.method === 'POST' && req.path === '/v3/projects/items') {
-    return next();
+    return requirePublicEdgeAccess(req, res, next);
   }
-  if (req.method === 'GET') return next();
+  if (req.method === 'GET') return requirePublicEdgeAccess(req, res, next);
   return requireAuth(req, res, next);
 });
 
@@ -235,7 +237,7 @@ router.get('/', async (req, res) => {
  * POST /api/content/preview/session
  * Create a short-lived preview session payload used by portfolio CloudFront previews.
  */
-router.post('/preview/session', async (req, res) => {
+router.post('/preview/session', requireAuth, async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const upserts = Array.isArray(body.upserts) ? body.upserts : [];
@@ -697,7 +699,7 @@ router.get('/v3/admin/content', requireAuth, async (req, res) => {
  * GET /api/content/v2/page/:pageId
  * Paged content read with optional projection and filtering.
  */
-router.get('/v2/page/:pageId', async (req, res) => {
+router.get('/v2/page/:pageId', requireAuth, async (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const pageId = Number.parseInt(req.params.pageId, 10);
@@ -901,7 +903,7 @@ router.get('/v2/blog/cards/media', async (req, res) => {
  * POST /api/content/v2/list-items/batch
  * Batch read content grouped by list-item ID.
  */
-router.post('/v2/list-items/batch', async (req, res) => {
+router.post('/v2/list-items/batch', requireAuth, async (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -956,7 +958,7 @@ router.post('/v2/list-items/batch', async (req, res) => {
  * GET /api/content/page/:pageId
  * Get content by PageID
  */
-router.get('/page/:pageId', async (req, res) => {
+router.get('/page/:pageId', requireAuth, async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
     if (useDdbAsPrimary) {
@@ -983,7 +985,7 @@ router.get('/page/:pageId', async (req, res) => {
  * GET /api/content/page/:pageId/content/:contentId
  * Get content by PageID and PageContentID
  */
-router.get('/page/:pageId/content/:contentId', async (req, res) => {
+router.get('/page/:pageId/content/:contentId', requireAuth, async (req, res) => {
   try {
     const pageId = parseInt(req.params.pageId);
     const contentId = parseInt(req.params.contentId);
@@ -1013,7 +1015,7 @@ router.get('/page/:pageId/content/:contentId', async (req, res) => {
  * GET /api/content/list-item/:listItemId
  * Get content by ListItemID
  */
-router.get('/list-item/:listItemId', async (req, res) => {
+router.get('/list-item/:listItemId', requireAuth, async (req, res) => {
   try {
     const listItemId = req.params.listItemId;
     if (useDdbAsPrimary) {
@@ -1040,7 +1042,7 @@ router.get('/list-item/:listItemId', async (req, res) => {
  * GET /api/content/:id
  * Get content by ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
     if (useDdbAsPrimary) {
       const content = await ddbGetContentById(req.params.id);
