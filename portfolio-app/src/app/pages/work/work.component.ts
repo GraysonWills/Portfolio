@@ -67,6 +67,36 @@ export class WorkComponent implements OnInit, OnDestroy {
   private isFetchingTimeline = false;
   private readonly scrollLoadBufferPx = 500;
   private readonly routeKey = '/work';
+  private readonly metricCalibrations: Array<{ labels: string[]; value: number }> = [
+    {
+      labels: ['AI Systems Architecture', 'AI & Machine Learning'],
+      value: 46
+    },
+    {
+      labels: ['Analytics Storytelling', 'Data Science Delivery', 'Data Engineering & Analytics'],
+      value: 58
+    },
+    {
+      labels: ['Full-Stack Web Development'],
+      value: 52
+    },
+    {
+      labels: ['Embedded & Robotics Systems'],
+      value: 43
+    },
+    {
+      labels: ['Computer Vision'],
+      value: 37
+    },
+    {
+      labels: ['Cross-Functional Leadership', 'Product + Executive Communication', 'Program Leadership'],
+      value: 51
+    },
+    {
+      labels: ['Teaching & Technical Communication'],
+      value: 60
+    }
+  ];
   private viewStateRestored = false;
   private lastScrollY = 0;
 
@@ -265,32 +295,32 @@ export class WorkComponent implements OnInit, OnDestroy {
         {
           id: 'metric-systems',
           label: 'AI Systems Architecture',
-          value: 86,
-          level: 'Advanced',
+          value: 46,
+          level: 'Building',
           summary: 'Platform-minded architecture and deployment of production data + AI workflows',
           order: 1
         },
         {
           id: 'metric-analytics',
           label: 'Analytics Storytelling',
-          value: 90,
-          level: 'Advanced',
+          value: 58,
+          level: 'Working',
           summary: 'Converting complex model and data outputs into high-confidence executive decisions',
           order: 2
         },
         {
           id: 'metric-computer-vision',
           label: 'Computer Vision',
-          value: 74,
-          level: 'Developing',
+          value: 37,
+          level: 'Early',
           summary: 'Active growth area through proof-of-concepts and applied production experiments',
           order: 3
         },
         {
           id: 'metric-leadership',
           label: 'Cross-Functional Leadership',
-          value: 81,
-          level: 'Strong',
+          value: 51,
+          level: 'Working',
           summary: 'Driving outcomes across investigation, engineering, and stakeholder teams',
           order: 4
         }
@@ -309,6 +339,30 @@ export class WorkComponent implements OnInit, OnDestroy {
     }
   }
 
+  private calibrateMetric(metric: CareerMetric): CareerMetric {
+    const matchedCalibration = this.metricCalibrations.find((entry) => entry.labels.includes(metric.label));
+    const calibratedValue = matchedCalibration?.value ?? Math.min(metric.value, 62);
+
+    return {
+      ...metric,
+      value: calibratedValue,
+      level: this.getMetricLevel(calibratedValue)
+    };
+  }
+
+  private getMetricLevel(value: number): string {
+    if (value >= 68) {
+      return 'Applied';
+    }
+    if (value >= 52) {
+      return 'Working';
+    }
+    if (value >= 40) {
+      return 'Building';
+    }
+    return 'Early';
+  }
+
   /**
    * Calculate career progress percentage
    */
@@ -321,13 +375,13 @@ export class WorkComponent implements OnInit, OnDestroy {
   }
 
   getMetricTone(metric: CareerMetric): 'elite' | 'strong' | 'developing' | 'emerging' {
-    if (metric.value >= 90) {
+    if (metric.value >= 76) {
       return 'elite';
     }
-    if (metric.value >= 80) {
+    if (metric.value >= 60) {
       return 'strong';
     }
-    if (metric.value >= 70) {
+    if (metric.value >= 45) {
       return 'developing';
     }
     return 'emerging';
@@ -375,14 +429,14 @@ export class WorkComponent implements OnInit, OnDestroy {
       if (!parsed.label) {
         return null;
       }
-      return {
+      return this.calibrateMetric({
         id: item.ID,
         label: parsed.label,
         value: Math.max(0, Math.min(100, Number(parsed.value) || 0)),
         level: parsed.level || 'Growing',
         summary: parsed.summary || '',
         order: Number(item.Metadata?.['order']) || index + 1
-      };
+      });
     } catch (error) {
       return null;
     }

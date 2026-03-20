@@ -21,9 +21,9 @@
     <!-- Career Progress -->
     <section class="progress-section" *ngIf="!isLoading" appScrollReveal aria-label="Career progress">
       <h2 class="section-title">Career Momentum</h2>
-      <p class="progress-intro">Snapshot of current strengths and growth tracks pulled from Redis content records.</p>
+      <p class="progress-intro">Working snapshot of hands-on experience across recent roles and shipped projects. These bars reflect applied exposure and growth, not mastery claims.</p>
       <div class="career-progress-total">
-        <span>Overall Profile Strength</span>
+        <span>Average Applied Experience</span>
         <strong>{{ getCareerProgress() }}%</strong>
       </div>
       <div class="career-metrics-grid" *ngIf="careerMetrics.length > 0">
