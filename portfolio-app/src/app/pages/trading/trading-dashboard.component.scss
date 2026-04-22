@@ -1,0 +1,311 @@
+.trading-dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  .page-header {
+    margin-bottom: 2rem;
+
+    h1 {
+      font-size: 2rem;
+      margin: 0 0 0.25rem;
+      color: #1a202c;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #718096;
+      font-size: 0.95rem;
+    }
+  }
+
+  .gate-card,
+  .loading-state,
+  .error-state {
+    max-width: 560px;
+    margin: 3rem auto;
+    padding: 2rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+
+    h2 { margin-top: 0; font-size: 1.25rem; }
+    .gate-message { color: #4a5568; }
+    .gate-error { color: #c53030; margin-top: 0.75rem; }
+    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+
+    .gate-form {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+
+      input {
+        flex: 1;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid #cbd5e0;
+        border-radius: 6px;
+        font-size: 0.95rem;
+      }
+      button {
+        padding: 0.55rem 1.2rem;
+        background: #2b6cb0;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        &:hover { background: #2c5282; }
+      }
+    }
+
+    button.secondary {
+      margin-left: 0.5rem;
+      background: transparent;
+      color: #4a5568;
+      border: 1px solid #cbd5e0;
+    }
+  }
+
+  // ─── Flag strip ──────────────────────────────────────────────
+  .flags-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
+
+    &.killed {
+      background: #fff5f5;
+      border-color: #feb2b2;
+    }
+
+    .flag-chip {
+      display: flex;
+      flex-direction: column;
+      padding: 0.5rem 0.9rem;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      min-width: 110px;
+
+      .flag-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #718096;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .flag-value {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #1a202c;
+        margin-top: 2px;
+      }
+
+      &.mode-live {
+        background: #fff5f5;
+        border-color: #fc8181;
+        .flag-value { color: #c53030; }
+      }
+      &.mode-paper {
+        background: #ebf8ff;
+        border-color: #63b3ed;
+        .flag-value { color: #2b6cb0; }
+      }
+      &.mode-off {
+        background: #edf2f7;
+        border-color: #cbd5e0;
+      }
+
+      &.flag-alert {
+        background: #fff5f5;
+        border-color: #f56565;
+        .flag-value { color: #c53030; }
+      }
+      &.flag-ok {
+        background: #f0fff4;
+        border-color: #68d391;
+        .flag-value { color: #2f855a; }
+      }
+    }
+
+    .flag-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 0.5rem;
+
+      .icon-button {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 1rem;
+        &:hover { background: #edf2f7; }
+      }
+    }
+  }
+
+  // ─── Counts row ──────────────────────────────────────────────
+  .counts-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+
+    .count-card {
+      padding: 1.25rem;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      text-align: center;
+
+      .count-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #2d3748;
+      }
+      .count-label {
+        font-size: 0.75rem;
+        color: #718096;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-top: 0.25rem;
+      }
+    }
+  }
+
+  // ─── Data tables ─────────────────────────────────────────────
+  .table-section {
+    margin-bottom: 2rem;
+
+    h2 {
+      font-size: 1.1rem;
+      color: #2d3748;
+      margin: 0 0 0.75rem;
+    }
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+
+    th, td {
+      padding: 0.6rem 0.9rem;
+      text-align: left;
+      font-size: 0.88rem;
+      border-bottom: 1px solid #edf2f7;
+    }
+    thead th {
+      background: #f7fafc;
+      font-weight: 600;
+      color: #4a5568;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f7fafc; }
+
+    code {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 0.8rem;
+      color: #4a5568;
+    }
+
+    .pnl-positive { color: #2f855a; font-weight: 600; }
+    .pnl-negative { color: #c53030; font-weight: 600; }
+  }
+
+  // ─── Journal ─────────────────────────────────────────────────
+  .journal-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+
+    .journal-card {
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 0.5rem;
+
+        h3 {
+          margin: 0;
+          font-size: 1rem;
+          color: #2d3748;
+
+          .journal-meta {
+            font-weight: 400;
+            font-size: 0.8rem;
+            color: #718096;
+          }
+        }
+        time { font-size: 0.75rem; color: #a0aec0; }
+      }
+
+      .journal-thought {
+        font-size: 0.9rem;
+        color: #4a5568;
+        line-height: 1.5;
+        margin: 0.5rem 0;
+      }
+
+      footer {
+        text-align: right;
+        font-weight: 600;
+        font-size: 0.95rem;
+
+        .pnl-positive { color: #2f855a; }
+        .pnl-negative { color: #c53030; }
+      }
+    }
+  }
+
+  // ─── Sentiment list ──────────────────────────────────────────
+  .sentiment-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      padding: 0.6rem 0.9rem;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 0.4rem;
+      display: flex;
+      flex-direction: column;
+
+      a { color: #2b6cb0; font-size: 0.9rem; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      small { color: #a0aec0; font-size: 0.75rem; margin-top: 2px; }
+    }
+  }
+
+  .page-footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #edf2f7;
+    color: #a0aec0;
+    font-size: 0.8rem;
+    text-align: center;
+  }
+}

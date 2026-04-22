@@ -22,6 +22,7 @@ const analyticsRoutes = require('./routes/analytics');
 const photoAssetsRoutes = require('./routes/photo-assets');
 const mediaRoutes = require('./routes/media');
 const resumeRoutes = require('./routes/resume');
+const tradingBotRoutes = require('./routes/trading-bot');
 
 function createApp() {
   const app = express();
@@ -190,6 +191,7 @@ function createApp() {
   app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
   app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
   app.use('/api/resume', resumeLimiter, resumeRoutes);
+  app.use('/api/trading-bot', tradingBotRoutes);
   app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
@@ -207,6 +209,7 @@ function createApp() {
         analytics: '/api/analytics/events (public)',
         resume: '/api/resume/download (public, rate limited)',
         photoAssets: '/api/photo-assets (requires auth)',
+        tradingBot: '/api/trading-bot/summary (requires auth; feature-flagged)',
         media: '/media/:key (public S3 proxy)'
       }
     });

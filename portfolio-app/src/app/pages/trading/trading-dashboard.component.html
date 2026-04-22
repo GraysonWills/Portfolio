@@ -1,0 +1,226 @@
+<div class="trading-dashboard">
+  <header class="page-header">
+    <h1>Trading Bot Dashboard</h1>
+    <p class="subtitle">AI/ML stock trading bot — live state from AWS</p>
+  </header>
+
+  <!-- Admin key prompt -->
+  <section *ngIf="state === 'needs-key' || state === 'disabled'" class="gate-card">
+    <h2 *ngIf="state === 'needs-key'">Admin Key Required</h2>
+    <h2 *ngIf="state === 'disabled'">Dashboard Disabled</h2>
+    <p *ngIf="state === 'disabled'" class="gate-message">
+      {{ errorMessage }}
+    </p>
+    <p *ngIf="state === 'needs-key'" class="gate-message">
+      Enter the admin key (same one used by <code>/api/admin</code>) to view
+      the trading bot's live state. Key is cached for this browser session only.
+    </p>
+    <form *ngIf="state === 'needs-key'" (ngSubmit)="submitKey()" class="gate-form">
+      <input
+        type="password"
+        [(ngModel)]="adminKey"
+        name="adminKey"
+        placeholder="X-Admin-Key"
+        autocomplete="off"
+        required
+      />
+      <button type="submit">Unlock</button>
+    </form>
+    <p *ngIf="errorMessage && state === 'needs-key'" class="gate-error">{{ errorMessage }}</p>
+  </section>
+
+  <!-- Loading -->
+  <section *ngIf="state === 'loading'" class="loading-state">
+    <p>Loading dashboard…</p>
+  </section>
+
+  <!-- Error -->
+  <section *ngIf="state === 'error'" class="error-state">
+    <h2>Could not load dashboard</h2>
+    <p>{{ errorMessage }}</p>
+    <button (click)="refreshAll()">Retry</button>
+    <button (click)="resetKey()" class="secondary">Change admin key</button>
+  </section>
+
+  <!-- Main dashboard -->
+  <ng-container *ngIf="state === 'ready' && summary">
+    <!-- Flags strip -->
+    <section class="flags-strip" [class.killed]="killSwitchOn">
+      <div class="flag-chip" [ngClass]="modeBadgeClass">
+        <span class="flag-label">MODE</span>
+        <span class="flag-value">{{ flags?.mode || '—' }}</span>
+      </div>
+      <div class="flag-chip" [class.flag-alert]="killSwitchOn">
+        <span class="flag-label">KILL SWITCH</span>
+        <span class="flag-value">{{ flags?.killSwitch || 'off' }}</span>
+      </div>
+      <div class="flag-chip" [class.flag-ok]="flags?.armed === 'true'">
+        <span class="flag-label">ARMED</span>
+        <span class="flag-value">{{ flags?.armed || 'false' }}</span>
+      </div>
+      <div class="flag-chip">
+        <span class="flag-label">MODEL</span>
+        <span class="flag-value">{{ flags?.activeModel || '(heuristic fallback)' }}</span>
+      </div>
+      <div class="flag-actions">
+        <button (click)="refreshAll()" class="icon-button" title="Refresh">↻</button>
+        <button (click)="resetKey()" class="icon-button" title="Change key">⚙</button>
+      </div>
+    </section>
+
+    <!-- Counts -->
+    <section class="counts-row">
+      <div class="count-card">
+        <div class="count-value">{{ summary.counts.positions }}</div>
+        <div class="count-label">Open Positions</div>
+      </div>
+      <div class="count-card">
+        <div class="count-value">{{ summary.counts.openOrders }}</div>
+        <div class="count-label">Order Intents</div>
+      </div>
+      <div class="count-card">
+        <div class="count-value">{{ summary.counts.recentTrades }}</div>
+        <div class="count-label">Recent Trades</div>
+      </div>
+      <div class="count-card">
+        <div class="count-value">{{ sentiment.length }}</div>
+        <div class="count-label">Sentiment Items</div>
+      </div>
+    </section>
+
+    <!-- Positions -->
+    <section class="table-section" *ngIf="summary.positionsPreview?.length">
+      <h2>Positions</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Qty</th>
+            <th>Weight</th>
+            <th>Avg Cost</th>
+            <th>Unrealized P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let p of summary.positionsPreview">
+            <td>{{ p.symbol }}</td>
+            <td>{{ p.qty }}</td>
+            <td>{{ p.weight ? (p.weight * 1 | number:'1.2-2') + '%' : '—' }}</td>
+            <td>{{ p.avg_cost ? ('$' + (p.avg_cost | number:'1.2-2')) : '—' }}</td>
+            <td>{{ p.unrealized_pnl ? ('$' + (p.unrealized_pnl | number:'1.2-2')) : '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Orders -->
+    <section class="table-section" *ngIf="summary.ordersPreview?.length">
+      <h2>Recent Orders</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Status</th>
+            <th>Reason</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let o of summary.ordersPreview">
+            <td><code>{{ o.order_id }}</code></td>
+            <td>{{ o.symbol }}</td>
+            <td>{{ o.side }}</td>
+            <td>{{ o.status }}</td>
+            <td>{{ o.reason }}</td>
+            <td>{{ o.created_at | date:'short' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Trades -->
+    <section class="table-section" *ngIf="summary.tradesPreview?.length">
+      <h2>Closed Trades</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Trade ID</th>
+            <th>Symbol</th>
+            <th>Net P&amp;L</th>
+            <th>Strategy</th>
+            <th>Closed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let t of summary.tradesPreview">
+            <td><code>{{ t.trade_id }}</code></td>
+            <td>{{ t.symbol }}</td>
+            <td [class.pnl-positive]="t.net_pnl > 0" [class.pnl-negative]="t.net_pnl < 0">
+              {{ t.net_pnl ? ('$' + (t.net_pnl | number:'1.2-2')) : '—' }}
+            </td>
+            <td>{{ t.strategy_id }}</td>
+            <td>{{ t.timestamp_sold | date:'short' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Journal -->
+    <section class="table-section" *ngIf="journal?.length">
+      <h2>Trade Journal</h2>
+      <div class="journal-list">
+        <article *ngFor="let j of journal" class="journal-card">
+          <header>
+            <h3>{{ j.symbol }} <span class="journal-meta">{{ j.side }} • {{ j.strategy_id }}</span></h3>
+            <time>{{ j.entry_time | date:'medium' }}</time>
+          </header>
+          <p class="journal-thought">{{ j.thought_process }}</p>
+          <footer *ngIf="j.net_pnl !== undefined">
+            <span [class.pnl-positive]="j.net_pnl > 0" [class.pnl-negative]="j.net_pnl < 0">
+              {{ j.net_pnl ? ('$' + (j.net_pnl | number:'1.2-2')) : '—' }}
+            </span>
+          </footer>
+        </article>
+      </div>
+    </section>
+
+    <!-- Drift rollup -->
+    <section class="table-section" *ngIf="drift?.length">
+      <h2>Drift Rollup (latest PSI)</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Feature / Rollup</th>
+            <th>Captured</th>
+            <th>Halted</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let d of drift">
+            <td>{{ d.feature }}</td>
+            <td>{{ d.captured_at | date:'medium' }}</td>
+            <td>{{ d.halted ? 'yes' : 'no' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Sentiment feed -->
+    <section class="table-section" *ngIf="sentiment?.length">
+      <h2>Recent Sentiment Items</h2>
+      <ul class="sentiment-list">
+        <li *ngFor="let s of sentiment">
+          <a *ngIf="s.url" [href]="s.url" target="_blank" rel="noopener">{{ s.title || s.url }}</a>
+          <span *ngIf="!s.url">{{ s.title || s.ticker || '(untitled)' }}</span>
+          <small>{{ s.captured_at | date:'short' }} • {{ s.source || 'unknown' }}</small>
+        </li>
+      </ul>
+    </section>
+
+    <footer class="page-footer">
+      <p>Data generated {{ summary.generatedAt | date:'medium' }}. Flags polled every 30s.</p>
+    </footer>
+  </ng-container>
+</div>
