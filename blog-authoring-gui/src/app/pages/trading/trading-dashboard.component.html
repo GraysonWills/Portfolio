@@ -4,34 +4,16 @@
     <p class="subtitle">AI/ML stock trading bot — live state from AWS</p>
   </header>
 
-  <!-- Admin key prompt -->
-  <section *ngIf="state === 'needs-key' || state === 'disabled'" class="gate-card">
-    <h2 *ngIf="state === 'needs-key'">Admin Key Required</h2>
-    <h2 *ngIf="state === 'disabled'">Dashboard Disabled</h2>
-    <p *ngIf="state === 'disabled'" class="gate-message">
-      {{ errorMessage }}
-    </p>
-    <p *ngIf="state === 'needs-key'" class="gate-message">
-      Enter the admin key (same one used by <code>/api/admin</code>) to view
-      the trading bot's live state. Key is cached for this browser session only.
-    </p>
-    <form *ngIf="state === 'needs-key'" (ngSubmit)="submitKey()" class="gate-form">
-      <input
-        type="password"
-        [(ngModel)]="adminKey"
-        name="adminKey"
-        placeholder="X-Admin-Key"
-        autocomplete="off"
-        required
-      />
-      <button type="submit">Unlock</button>
-    </form>
-    <p *ngIf="errorMessage && state === 'needs-key'" class="gate-error">{{ errorMessage }}</p>
-  </section>
-
   <!-- Loading -->
   <section *ngIf="state === 'loading'" class="loading-state">
     <p>Loading dashboard…</p>
+  </section>
+
+  <!-- Disabled (feature flag off) -->
+  <section *ngIf="state === 'disabled'" class="gate-card">
+    <h2>Dashboard Disabled</h2>
+    <p class="gate-message">{{ errorMessage }}</p>
+    <button (click)="refreshAll()">Retry</button>
   </section>
 
   <!-- Error -->
@@ -39,14 +21,13 @@
     <h2>Could not load dashboard</h2>
     <p>{{ errorMessage }}</p>
     <button (click)="refreshAll()">Retry</button>
-    <button (click)="resetKey()" class="secondary">Change admin key</button>
   </section>
 
   <!-- Main dashboard -->
   <ng-container *ngIf="state === 'ready' && summary">
     <!-- Flags strip -->
     <section class="flags-strip" [class.killed]="killSwitchOn">
-      <div class="flag-chip" [ngClass]="modeBadgeClass">
+      <div [ngClass]="modeBadgeClass">
         <span class="flag-label">MODE</span>
         <span class="flag-value">{{ flags?.mode || '—' }}</span>
       </div>
@@ -64,7 +45,6 @@
       </div>
       <div class="flag-actions">
         <button (click)="refreshAll()" class="icon-button" title="Refresh">↻</button>
-        <button (click)="resetKey()" class="icon-button" title="Change key">⚙</button>
       </div>
     </section>
 

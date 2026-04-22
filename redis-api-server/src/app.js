@@ -209,7 +209,7 @@ function createApp() {
         analytics: '/api/analytics/events (public)',
         resume: '/api/resume/download (public, rate limited)',
         photoAssets: '/api/photo-assets (requires auth)',
-        tradingBot: '/api/trading-bot/summary (requires auth; feature-flagged)',
+        tradingBot: '/api/trading-bot/summary (requires Cognito; feature-flagged)',
         media: '/media/:key (public S3 proxy)'
       }
     });

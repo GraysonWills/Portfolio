@@ -2,8 +2,8 @@
  * Trading Bot Routes
  *
  * Read-only windows into the AI/ML Stock Trading Bot's DynamoDB state
- * so the portfolio app can render a live dashboard without the bot
- * having to stand up its own web tier.
+ * so the blog-authoring-gui can render a live operator dashboard without
+ * the trading bot having to stand up its own web tier.
  *
  * Everything here reads from the six tables provisioned by the
  * TradingBotStack CDK stack in the same account (381492289909,
@@ -15,19 +15,22 @@
  *   - drift_metrics      — PSI rollups from drift_monitor Lambda
  *   - journal_entries    — structured trade journal
  *
- * Auth: mirrors /api/admin — requires an X-Admin-Key header matching
- * ADMIN_API_KEY so only the authenticated dashboard can query it.
+ * Auth: requires a valid Cognito ID token via the shared requireAuth
+ * middleware (same as /api/content writes). The AUTH_ALLOWED_USERNAMES
+ * allowlist (if set) further restricts which users can query these
+ * endpoints.
  *
  * Feature flag: all endpoints return 503 unless
- * TRADING_BOT_API_ENABLED=true. This keeps the routes dark until the
- * CDK stack is deployed.
+ * TRADING_BOT_API_ENABLED=true. Keeps the routes dark until the CDK
+ * stack is deployed.
  */
 
 const express = require('express');
 const router = express.Router();
+const requireAuth = require('../middleware/requireAuth');
 
 // Optional AWS SDK import — only loaded when the feature is on, so
-// unrelated deploys don't need boto3/aws-sdk in their node_modules.
+// unrelated deploys don't need the client libs in their node_modules.
 let _ddbClient = null;
 function getDdbClient() {
   if (_ddbClient) return _ddbClient;
@@ -56,6 +59,9 @@ function isEnabled() {
 }
 
 // ─── Middleware ────────────────────────────────────────────────────────
+// Feature flag runs first so a disabled deploy returns 503 with no
+// reliance on Cognito. Once enabled, every request must carry a valid
+// Bearer token.
 router.use((req, res, next) => {
   if (!isEnabled()) {
     return res.status(503).json({
@@ -63,25 +69,15 @@ router.use((req, res, next) => {
       hint: 'set TRADING_BOT_API_ENABLED=true after deploying the CDK stack',
     });
   }
-  const key = req.header('x-admin-key') || req.query.key;
-  const expected = process.env.ADMIN_API_KEY;
-  if (!expected || key !== expected) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
   next();
 });
+router.use(requireAuth);
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-async function scanTable(tableName, { limit = 100, filterExpr, exprValues } = {}) {
+async function scanTable(tableName, { limit = 100 } = {}) {
   const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
   const client = getDdbClient();
-  const input = {
-    TableName: tableName,
-    Limit: limit,
-  };
-  if (filterExpr) input.FilterExpression = filterExpr;
-  if (exprValues) input.ExpressionAttributeValues = exprValues;
-  const resp = await client.send(new ScanCommand(input));
+  const resp = await client.send(new ScanCommand({ TableName: tableName, Limit: limit }));
   return resp.Items || [];
 }
 
@@ -105,13 +101,6 @@ function logAndFail(res, stage, err) {
 }
 
 // ─── Dashboard summary ─────────────────────────────────────────────────
-/**
- * GET /api/trading-bot/summary
- *
- * One-shot payload for the dashboard: flags + top-line counts. Keeps
- * the UI to a single round-trip on initial load; individual tables
- * can be refreshed separately via the more-specific endpoints.
- */
 router.get('/summary', async (req, res) => {
   try {
     const [mode, killSwitch, armed, activeModel, strategyWeights] = await Promise.all([
@@ -131,7 +120,6 @@ router.get('/summary', async (req, res) => {
         openOrders: orders.filter((o) => o.status === 'intent' || o.status === 'open').length,
         recentTrades: trades.length,
       },
-      // Only return a preview of each table — full lists via their dedicated endpoints.
       positionsPreview: positions.slice(0, 20),
       ordersPreview: orders.slice(0, 20),
       tradesPreview: trades.slice(0, 20),
@@ -191,14 +179,6 @@ router.get('/drift', async (req, res) => {
   } catch (err) { logAndFail(res, 'drift', err); }
 });
 
-// ─── Flags ─────────────────────────────────────────────────────────────
-/**
- * GET /api/trading-bot/flags
- *
- * Compact, just the SSM runtime flags. Used by the dashboard to poll
- * kill-switch + mode status on a short interval without pulling full
- * DynamoDB scans each time.
- */
 router.get('/flags', async (req, res) => {
   try {
     const [mode, killSwitch, armed, activeModel, strategyWeights] = await Promise.all([

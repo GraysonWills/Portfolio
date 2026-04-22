@@ -43,14 +43,6 @@ const routes: Routes = [
       description: 'Confirm or unsubscribe from email notifications.'
     }
   },
-  {
-    path: 'trading',
-    loadChildren: () => import('./pages/trading/trading.module').then(m => m.TradingModule),
-    data: {
-      title: 'Trading Bot Dashboard',
-      description: 'Live state of the AI/ML stock trading bot — positions, orders, trades, journal, drift, sentiment.'
-    }
-  },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
 

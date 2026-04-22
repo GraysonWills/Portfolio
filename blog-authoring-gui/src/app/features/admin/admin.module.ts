@@ -21,6 +21,7 @@ import { DashboardComponent } from '../../pages/dashboard/dashboard.component';
 import { ContentStudioComponent } from '../../pages/content-studio/content-studio.component';
 import { SubscribersComponent } from '../../pages/subscribers/subscribers.component';
 import { CollectionsComponent } from '../../pages/collections/collections.component';
+import { TradingDashboardComponent } from '../../pages/trading/trading-dashboard.component';
 import { BlogEditorComponent } from '../../components/blog-editor/blog-editor.component';
 import { ImageUploaderComponent } from '../../components/image-uploader/image-uploader.component';
 import { AdminRoutingModule } from './admin-routing.module';
@@ -31,6 +32,7 @@ import { AdminRoutingModule } from './admin-routing.module';
     ContentStudioComponent,
     SubscribersComponent,
     CollectionsComponent,
+    TradingDashboardComponent,
     BlogEditorComponent,
     ImageUploaderComponent,
   ],

@@ -7,15 +7,18 @@ import {
   TradingBotTableResponse,
 } from '../../services/trading-bot.service';
 
-type LoadState = 'needs-key' | 'loading' | 'ready' | 'error' | 'disabled';
+type LoadState = 'loading' | 'ready' | 'error' | 'disabled';
 
 /**
  * Read-only dashboard for the AI/ML Stock Trading Bot.
  *
- * Gates behind an admin-key prompt (same key as /api/admin). Once unlocked,
- * polls /api/trading-bot/flags every 30s and refreshes the full summary
- * on user action. No write surface — kill-switch toggle lives in the
- * Python CLI (`python -m agentic_trader.cli.kill_switch`).
+ * Sits inside the blog-authoring-gui admin area — auth is handled by
+ * the Cognito AuthGuard + AuthInterceptor at the shell level, so this
+ * component just focuses on data. Polls /flags every 30s; full
+ * refresh on user action.
+ *
+ * No write surface — kill-switch toggle lives in the Python CLI
+ * (`python -m agentic_trader.cli.kill_switch`).
  */
 @Component({
   selector: 'app-trading-dashboard',
@@ -24,9 +27,8 @@ type LoadState = 'needs-key' | 'loading' | 'ready' | 'error' | 'disabled';
   styleUrl: './trading-dashboard.component.scss',
 })
 export class TradingDashboardComponent implements OnInit, OnDestroy {
-  state: LoadState = 'needs-key';
+  state: LoadState = 'loading';
   errorMessage = '';
-  adminKey = '';
 
   summary: TradingBotSummary | null = null;
   journal: any[] = [];
@@ -38,28 +40,11 @@ export class TradingDashboardComponent implements OnInit, OnDestroy {
   constructor(private bot: TradingBotService) {}
 
   ngOnInit(): void {
-    // If key is already stored in session (same tab), reuse it
-    const cached = typeof window !== 'undefined' ? sessionStorage.getItem('tradingBotAdminKey') : null;
-    if (cached) {
-      this.adminKey = cached;
-      this.submitKey();
-    }
+    this.refreshAll();
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
-  }
-
-  submitKey(): void {
-    if (!this.adminKey?.trim()) {
-      this.errorMessage = 'Admin key is required.';
-      return;
-    }
-    this.bot.setAdminKey(this.adminKey.trim());
-    try {
-      sessionStorage.setItem('tradingBotAdminKey', this.adminKey.trim());
-    } catch { /* ignore storage errors */ }
-    this.refreshAll();
   }
 
   refreshAll(): void {
@@ -75,13 +60,15 @@ export class TradingDashboardComponent implements OnInit, OnDestroy {
       error: (err) => {
         if (err?.status === 503) {
           this.state = 'disabled';
-          this.errorMessage = err?.error?.hint || 'Trading bot dashboard is disabled on the server.';
+          this.errorMessage =
+            err?.error?.hint ||
+            'Trading bot API is disabled on the server. Set TRADING_BOT_API_ENABLED=true after the CDK stack is deployed.';
           return;
         }
-        if (err?.status === 401) {
-          this.state = 'needs-key';
-          this.errorMessage = 'Invalid admin key. Try again.';
-          sessionStorage.removeItem('tradingBotAdminKey');
+        if (err?.status === 401 || err?.status === 403) {
+          this.state = 'error';
+          this.errorMessage =
+            'Authentication failed. Your session may have expired — try signing in again.';
           return;
         }
         this.state = 'error';
@@ -127,15 +114,8 @@ export class TradingDashboardComponent implements OnInit, OnDestroy {
 
   get modeBadgeClass(): string {
     const mode = this.flags?.mode;
-    if (mode === 'live') return 'mode-badge mode-live';
-    if (mode === 'paper') return 'mode-badge mode-paper';
-    return 'mode-badge mode-off';
-  }
-
-  resetKey(): void {
-    sessionStorage.removeItem('tradingBotAdminKey');
-    this.adminKey = '';
-    this.state = 'needs-key';
-    this.summary = null;
+    if (mode === 'live') return 'flag-chip mode-live';
+    if (mode === 'paper') return 'flag-chip mode-paper';
+    return 'flag-chip mode-off';
   }
 }
