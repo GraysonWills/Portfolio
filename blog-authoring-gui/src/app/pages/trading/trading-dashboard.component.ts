@@ -6,8 +6,17 @@ import {
   TradingBotSummary,
   TradingBotTableResponse,
 } from '../../services/trading-bot.service';
+import {
+  computeMetrics,
+  PerformanceMetrics,
+  PresetPeriod,
+  resolvePeriod,
+  Trade,
+} from './trading-metrics';
 
 type LoadState = 'loading' | 'ready' | 'error' | 'disabled';
+
+const DEFAULT_STARTING_EQUITY = 100_000;  // paper-trading default; real starting equity comes from user setting later
 
 /**
  * Read-only dashboard for the AI/ML Stock Trading Bot.
@@ -34,6 +43,15 @@ export class TradingDashboardComponent implements OnInit, OnDestroy {
   journal: any[] = [];
   sentiment: any[] = [];
   drift: any[] = [];
+
+  // Performance tab — all trades (not just the summary preview) feed this
+  allTrades: Trade[] = [];
+  presetPeriods: PresetPeriod[] = ['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'];
+  selectedPeriod: PresetPeriod = '1M';
+  customFrom: string | null = null;
+  customTo: string | null = null;
+  startingEquity = DEFAULT_STARTING_EQUITY;
+  metrics: PerformanceMetrics | null = null;
 
   private pollSub: Subscription | null = null;
 
@@ -90,6 +108,80 @@ export class TradingDashboardComponent implements OnInit, OnDestroy {
       next: (r: TradingBotTableResponse) => { this.drift = r.items; },
       error: () => { this.drift = []; },
     });
+    // Fetch every trade so the performance metrics can do historical
+    // windowing client-side instead of re-calling the backend.
+    this.bot.getTrades(1000).subscribe({
+      next: (r: TradingBotTableResponse<Trade>) => {
+        this.allTrades = r.items ?? [];
+        this.recomputeMetrics();
+      },
+      error: () => {
+        this.allTrades = [];
+        this.recomputeMetrics();
+      },
+    });
+  }
+
+  // ─── Performance metrics controls ─────────────────────────────────
+  selectPeriod(p: PresetPeriod): void {
+    this.selectedPeriod = p;
+    this.customFrom = null;
+    this.customTo = null;
+    this.recomputeMetrics();
+  }
+
+  applyCustomRange(): void {
+    if (!this.customFrom || !this.customTo) return;
+    this.recomputeMetrics();
+  }
+
+  setStartingEquity(value: number | string | null): void {
+    const parsed = typeof value === 'string' ? parseFloat(value) : value;
+    if (!parsed || !Number.isFinite(parsed) || parsed <= 0) return;
+    this.startingEquity = parsed;
+    this.recomputeMetrics();
+  }
+
+  recomputeMetrics(): void {
+    const { from, to, label } = resolvePeriod(
+      this.customFrom ? null : this.selectedPeriod,
+      this.customFrom,
+      this.customTo,
+    );
+    this.metrics = computeMetrics(this.allTrades, {
+      from,
+      to,
+      periodLabel: label,
+      startingEquity: this.startingEquity,
+    });
+  }
+
+  // Formatting helpers for the template
+  fmtPct(v: number | null | undefined, digits = 2): string {
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+    return `${(v * 100).toFixed(digits)}%`;
+  }
+
+  fmtSigned(v: number | null | undefined, digits = 2): string {
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+    const sign = v >= 0 ? '+' : '';
+    return `${sign}${v.toFixed(digits)}`;
+  }
+
+  fmtDollars(v: number | null | undefined): string {
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+    const sign = v >= 0 ? '+' : '-';
+    return `${sign}$${Math.abs(v).toFixed(2)}`;
+  }
+
+  fmtRatio(v: number | null | undefined, digits = 2): string {
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+    return v.toFixed(digits);
+  }
+
+  signClass(v: number | null | undefined): string {
+    if (v === null || v === undefined || !Number.isFinite(v) || v === 0) return '';
+    return v > 0 ? 'positive' : 'negative';
   }
 
   private startPolling(): void {

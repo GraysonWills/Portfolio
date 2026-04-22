@@ -94,6 +94,12 @@ export class AppComponent implements OnInit {
         description: 'Go to Collections',
         action: () => this.router.navigate(['/collections']),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+5',
+        description: 'Go to Trading Bot',
+        action: () => this.router.navigate(['/trading']),
+        allowInInputs: true
       }
     ]);
   }

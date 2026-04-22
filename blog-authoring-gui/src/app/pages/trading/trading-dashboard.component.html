@@ -68,6 +68,150 @@
       </div>
     </section>
 
+    <!-- Performance -->
+    <section class="performance-section">
+      <header class="performance-header">
+        <h2>Performance</h2>
+        <div class="performance-controls">
+          <div class="period-pills">
+            <button
+              *ngFor="let p of presetPeriods"
+              type="button"
+              class="period-pill"
+              [class.active]="!customFrom && selectedPeriod === p"
+              (click)="selectPeriod(p)">
+              {{ p }}
+            </button>
+          </div>
+          <div class="custom-range">
+            <input type="date" [(ngModel)]="customFrom" name="customFrom" placeholder="From" />
+            <span class="range-sep">→</span>
+            <input type="date" [(ngModel)]="customTo" name="customTo" placeholder="To" />
+            <button type="button" class="apply-btn" (click)="applyCustomRange()">Apply</button>
+          </div>
+          <div class="equity-input">
+            <label>Starting equity</label>
+            <input type="number" [value]="startingEquity"
+                   (change)="setStartingEquity(($any($event.target)).value)"
+                   min="1000" step="1000" />
+          </div>
+        </div>
+      </header>
+
+      <div *ngIf="metrics" class="metrics-grid">
+        <div class="metric-card wide">
+          <div class="metric-label">{{ metrics.periodLabel }}</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.totalReturnPct ?? metrics.totalPnl)">
+            {{ fmtPct(metrics.totalReturnPct) }}
+          </div>
+          <div class="metric-sub">{{ fmtDollars(metrics.totalPnl) }} over {{ metrics.tradeCount }} trades</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Today</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.todayReturnPct ?? metrics.todayPnl)">
+            {{ fmtPct(metrics.todayReturnPct) }}
+          </div>
+          <div class="metric-sub">{{ fmtDollars(metrics.todayPnl) }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Yesterday</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.yesterdayReturnPct ?? metrics.yesterdayPnl)">
+            {{ fmtPct(metrics.yesterdayReturnPct) }}
+          </div>
+          <div class="metric-sub">{{ fmtDollars(metrics.yesterdayPnl) }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Best day</div>
+          <div class="metric-primary positive">{{ fmtDollars(metrics.bestDayPnl) }}</div>
+          <div class="metric-sub">{{ metrics.bestDayDate || '—' }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Worst day</div>
+          <div class="metric-primary negative">{{ fmtDollars(metrics.worstDayPnl) }}</div>
+          <div class="metric-sub">{{ metrics.worstDayDate || '—' }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Annualized</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.annualizedReturnPct)">
+            {{ fmtPct(metrics.annualizedReturnPct) }}
+          </div>
+          <div class="metric-sub">vs. starting equity</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Sharpe ratio</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.sharpe)">
+            {{ fmtRatio(metrics.sharpe) }}
+          </div>
+          <div class="metric-sub">annualized, 252d</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Sortino ratio</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.sortino)">
+            {{ fmtRatio(metrics.sortino) }}
+          </div>
+          <div class="metric-sub">downside-deviation only</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Calmar ratio</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.calmar)">
+            {{ fmtRatio(metrics.calmar) }}
+          </div>
+          <div class="metric-sub">annualized / max DD</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Max drawdown</div>
+          <div class="metric-primary negative">{{ fmtPct(metrics.maxDrawdownPct) }}</div>
+          <div class="metric-sub">peak-to-trough</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Win rate</div>
+          <div class="metric-primary">{{ fmtPct(metrics.hitRatePct) }}</div>
+          <div class="metric-sub">winning trades / total</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Profit factor</div>
+          <div class="metric-primary" [ngClass]="signClass((metrics.profitFactor ?? 1) - 1)">
+            {{ fmtRatio(metrics.profitFactor) }}
+          </div>
+          <div class="metric-sub">gross winnings / gross losses</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Avg win / loss</div>
+          <div class="metric-primary" [ngClass]="signClass((metrics.winLossRatio ?? 1) - 1)">
+            {{ fmtRatio(metrics.winLossRatio) }}
+          </div>
+          <div class="metric-sub">
+            {{ fmtDollars(metrics.averageWin) }} / {{ fmtDollars(metrics.averageLoss) }}
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-label">Current streak</div>
+          <div class="metric-primary" [ngClass]="signClass(metrics.currentStreak)">
+            {{ metrics.currentStreak === 0 ? '—' : (metrics.currentStreak > 0 ? '+' : '') + metrics.currentStreak }}
+          </div>
+          <div class="metric-sub">consecutive days</div>
+        </div>
+      </div>
+
+      <p *ngIf="metrics && metrics.tradeCount === 0" class="performance-empty">
+        No closed trades in this period yet. Metrics appear once the inference
+        Lambda starts closing positions.
+      </p>
+    </section>
+
     <!-- Positions -->
     <section class="table-section" *ngIf="summary.positionsPreview?.length">
       <h2>Positions</h2>

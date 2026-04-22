@@ -291,6 +291,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.router.navigate(['/collections']);
   }
 
+  goToTrading(): void {
+    this.router.navigate(['/trading']);
+  }
+
   /**
    * Edit existing blog post — with confirmation
    */
