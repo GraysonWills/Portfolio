@@ -30,7 +30,8 @@ export enum PageContentID {
   WorkSkillMetric = 14,
   BlogSignatureSettings = 15,
   CollectionsCategoryRegistry = 16,
-  CollectionsEntry = 17
+  CollectionsEntry = 17,
+  BlogRoughDraft = 18
 }
 
 export interface RedisContent {
@@ -101,6 +102,7 @@ export interface BlogPostMetadata {
   category?: string;
   signatureId?: string;
   signatureSnapshot?: BlogSignature;
+  hasRoughDraft?: boolean;
 }
 
 export interface BlogSignature {

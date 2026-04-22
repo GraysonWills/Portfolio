@@ -47,6 +47,18 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   bodyBlocks: BlogBodyBlock[] = [];
   signature: BlogSignature | null = null;
 
+  // Rough draft toggle
+  roughDraftBlocks: BlogBodyBlock[] = [];
+  showRoughDraft = false;
+
+  get hasRoughDraft(): boolean {
+    return this.roughDraftBlocks.length > 0;
+  }
+
+  get activeBlocks(): BlogBodyBlock[] {
+    return this.showRoughDraft ? this.roughDraftBlocks : this.bodyBlocks;
+  }
+
   // Recent posts
   recentPosts: ContentGroup[] = [];
   recentPostCards: RecentPostCard[] = [];
@@ -90,9 +102,15 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     this.seo.clearStructuredData('article');
   }
 
+  toggleDraftView(): void {
+    this.showRoughDraft = !this.showRoughDraft;
+  }
+
   private loadPost(listItemId: string): void {
     this.notFound = false;
     this.bodyBlocks = [];
+    this.roughDraftBlocks = [];
+    this.showRoughDraft = false;
     if (this.redisService.isContentV2StreamingEnabled()) {
       this.loadPostV3(listItemId);
       return;
@@ -120,6 +138,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.category = payload.category || 'General';
         this.signature = payload.signature || null;
         this.bodyBlocks = Array.isArray(payload.bodyBlocks) ? payload.bodyBlocks : [];
+        this.roughDraftBlocks = Array.isArray(payload.roughDraftBlocks) ? payload.roughDraftBlocks : [];
         this.readTime = Math.max(1, Number(payload.readTimeMinutes) || 1);
         this.updateSeo(listItemId);
         this.isLoading = false;
@@ -150,6 +169,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         const textItem = items.find(i => i.PageContentID === PageContentID.BlogText);
         const imgItem  = items.find(i => i.PageContentID === PageContentID.BlogImage);
         const bodyItem = items.find(i => i.PageContentID === PageContentID.BlogBody);
+        const roughDraftItem = items.find(i => i.PageContentID === PageContentID.BlogRoughDraft);
 
         const meta = metaItem?.Metadata as any || {};
         this.applyMetadata(meta);
@@ -177,6 +197,15 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         } else if (textItem?.Text) {
           // Fallback: use BlogText as single paragraph body
           this.bodyBlocks = [{ type: 'paragraph', content: textItem.Text }];
+        }
+
+        // Parse rough draft blocks (if present)
+        if (roughDraftItem?.Text) {
+          try {
+            this.roughDraftBlocks = JSON.parse(roughDraftItem.Text);
+          } catch {
+            this.roughDraftBlocks = [{ type: 'paragraph', content: roughDraftItem.Text }];
+          }
         }
 
         // If there is no body/text at all, treat as not found.

@@ -1192,7 +1192,8 @@ export class BlogApiService {
     category?: string,
     readTimeMinutes?: number,
     signatureId?: string,
-    signatureSnapshot?: BlogSignature
+    signatureSnapshot?: BlogSignature,
+    roughDraftContent?: string
   ): Observable<RedisContent[]> {
     const postItems: RedisContent[] = [];
     const itemId = listItemID || `blog-${Date.now()}`;
@@ -1206,7 +1207,8 @@ export class BlogApiService {
       ...(category ? { category } : {}),
       ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
       ...(signatureId ? { signatureId } : {}),
-      ...(signatureSnapshot ? { signatureSnapshot } : {})
+      ...(signatureSnapshot ? { signatureSnapshot } : {}),
+      ...(roughDraftContent?.trim() ? { hasRoughDraft: true } : {})
     };
 
     // Blog metadata record (required by portfolio for title/tags/date)
@@ -1251,6 +1253,18 @@ export class BlogApiService {
       });
     }
 
+    // Blog rough draft content (if provided)
+    if (roughDraftContent?.trim()) {
+      postItems.push({
+        ID: `blog-roughdraft-${itemId}`,
+        Text: roughDraftContent,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogRoughDraft,
+        ListItemID: itemId,
+        Metadata: metadata as any
+      } as any);
+    }
+
     return this.http.post<RedisContent[]>(`${this.apiUrl}/content/batch`, postItems, { headers: this.headers })
       .pipe(
         tap(() => this.invalidateReadCaches()),
@@ -1274,7 +1288,8 @@ export class BlogApiService {
     category?: string,
     readTimeMinutes?: number,
     signatureId?: string,
-    signatureSnapshot?: BlogSignature
+    signatureSnapshot?: BlogSignature,
+    roughDraftContent?: string
   ): Observable<RedisContent[]> {
     const metadata: BlogPostMetadata = {
       title,
@@ -1286,7 +1301,8 @@ export class BlogApiService {
       ...(category ? { category } : {}),
       ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
       ...(signatureId ? { signatureId } : {}),
-      ...(signatureSnapshot ? { signatureSnapshot } : {})
+      ...(signatureSnapshot ? { signatureSnapshot } : {}),
+      hasRoughDraft: !!roughDraftContent?.trim()
     };
 
     return this.getBlogPost(listItemID).pipe(
@@ -1295,6 +1311,7 @@ export class BlogApiService {
         const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
         const blogBody = items.find((item) => item.PageContentID === PageContentID.BlogBody);
         const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
+        const blogRoughDraft = items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft);
 
         const upserts: RedisContent[] = [
           {
@@ -1341,6 +1358,20 @@ export class BlogApiService {
           } as RedisContent);
         }
 
+        // Rough draft content
+        if (roughDraftContent?.trim()) {
+          upserts.push({
+            ...(blogRoughDraft || {}),
+            ID: blogRoughDraft?.ID || `blog-roughdraft-${listItemID}`,
+            Text: roughDraftContent,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogRoughDraft,
+            ListItemID: listItemID,
+            Metadata: metadata as any,
+            ...(blogRoughDraft?.CreatedAt ? { CreatedAt: blogRoughDraft.CreatedAt } : {})
+          } as RedisContent);
+        }
+
         const batch$ = this.http.post<RedisContent[]>(
           `${this.apiUrl}/content/batch`,
           upserts,
@@ -1350,14 +1381,17 @@ export class BlogApiService {
           catchError(this.handleError)
         );
 
-        if ((!image || !image.trim()) && blogImage?.ID) {
-          return batch$.pipe(
-            switchMap(() => this.deleteContent(blogImage.ID)),
-            map(() => upserts)
-          );
-        }
+        // Delete removed image
+        const deleteImage$ = (!image || !image.trim()) && blogImage?.ID
+          ? batch$.pipe(switchMap(() => this.deleteContent(blogImage.ID)), map(() => upserts))
+          : null;
 
-        return batch$.pipe(map(() => upserts));
+        // Delete removed rough draft
+        const deleteRoughDraft$ = (!roughDraftContent || !roughDraftContent.trim()) && blogRoughDraft?.ID
+          ? (deleteImage$ || batch$).pipe(switchMap(() => this.deleteContent(blogRoughDraft.ID)), map(() => upserts))
+          : null;
+
+        return (deleteRoughDraft$ || deleteImage$ || batch$).pipe(map(() => upserts));
       }),
       catchError(this.handleError)
     );

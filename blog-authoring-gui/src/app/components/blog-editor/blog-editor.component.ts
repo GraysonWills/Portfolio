@@ -78,6 +78,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       matchVisual: false
     }
   };
+  includeRoughDraft: boolean = false;
+  roughDraftContent: string = '';
+  previewShowRoughDraft: boolean = false;
+
   private quillEditor: any = null;
   private previewListItemID: string = '';
   private cleanupHotkeys: (() => void) | null = null;
@@ -137,6 +141,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     this.privateSeoTags = this.normalizeTagList(this.initialData.privateSeoTags || []);
     this.uploadedImage = this.initialData.image || null;
     this.draftSignatureName = this.initialData.signatureSnapshot?.signOffName || 'Grayson Wills';
+    this.roughDraftContent = this.initialData.roughDraftContent || '';
+    this.includeRoughDraft = !!this.roughDraftContent;
   }
 
   onPublicTagInputChange(value: string): void {
@@ -480,6 +486,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
           ? this.initialData.listItemID
           : `blog-${Date.now()}`;
 
+        const effectiveRoughDraft = this.includeRoughDraft ? this.roughDraftContent : '';
+
         const request$ = isEdit
           ? this.blogApi.updateBlogPost(
               listItemID,
@@ -494,7 +502,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               formValue.category,
               readTimeMinutes || undefined,
               selectedSignatureId,
-              selectedSignature
+              selectedSignature,
+              effectiveRoughDraft || undefined
             )
           : this.blogApi.createBlogPost(
               formValue.title,
@@ -509,7 +518,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               formValue.category,
               readTimeMinutes || undefined,
               selectedSignatureId,
-              selectedSignature
+              selectedSignature,
+              effectiveRoughDraft || undefined
             );
 
         request$.subscribe({
@@ -977,6 +987,22 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       .join('');
   }
 
+  getActivePreviewContentHtml(): string {
+    if (this.previewShowRoughDraft && this.includeRoughDraft && this.roughDraftContent?.trim()) {
+      const raw = String(this.roughDraftContent).trim();
+      if (raw.includes('<')) return this.normalizeEditorContentHtml(raw);
+      return raw
+        .split(/\n+/)
+        .map((line) => `<p>${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+        .join('');
+    }
+    return this.getPreviewContentHtml();
+  }
+
+  togglePreviewDraftView(): void {
+    this.previewShowRoughDraft = !this.previewShowRoughDraft;
+  }
+
   private getPreviewPlainText(): string {
     const contentHtml = String(this.blogForm.get('content')?.value || '');
     const contentText = contentHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1052,6 +1078,21 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         UpdatedAt: nowIso as any
       }
     ];
+
+    // Include rough draft in preview if enabled
+    if (this.includeRoughDraft && this.roughDraftContent?.trim()) {
+      const blogRoughDraftId = `blog-roughdraft-${listItemID}`;
+      upserts.push({
+        ID: blogRoughDraftId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogRoughDraft,
+        ListItemID: listItemID,
+        Text: this.roughDraftContent,
+        Metadata: { previewBypassVisibility: true },
+        UpdatedAt: nowIso as any
+      });
+      metadata.hasRoughDraft = true;
+    }
 
     const deleteIds: string[] = [];
     if (this.getPreviewImage()) {

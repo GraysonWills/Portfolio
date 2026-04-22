@@ -32,7 +32,8 @@ const CONTENT_IDS = {
   ProjectsPhoto: 11,
   ProjectsText: 12,
   BlogBody: 13,
-  WorkSkillMetric: 14
+  WorkSkillMetric: 14,
+  BlogRoughDraft: 18
 };
 
 function compareByOrderThenId(a, b) {
@@ -218,6 +219,7 @@ function buildBlogDetailPayload(items) {
   const textItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogText && !!item.Text) || null;
   const imageItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogImage && !!item.Photo) || null;
   const bodyItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogBody && !!item.Text) || null;
+  const roughDraftItem = normalized.find((item) => Number(item.PageContentID) === CONTENT_IDS.BlogRoughDraft && !!item.Text) || null;
   const metadata = normalizeMetadata(metaItem?.Metadata);
   const publishDate = metadata.publishDate || null;
   const publishTs = toMillis(publishDate);
@@ -240,7 +242,8 @@ function buildBlogDetailPayload(items) {
       ? Math.max(1, Math.round(Number(metadata.readTimeMinutes)))
       : Math.max(1, Math.ceil(String(textItem?.Text || '').split(/\s+/).filter(Boolean).length / 200)),
     signature: metadata.signatureSnapshot || null,
-    bodyBlocks: parseBlogBodyBlocks(bodyItem?.Text, textItem?.Text || '')
+    bodyBlocks: parseBlogBodyBlocks(bodyItem?.Text, textItem?.Text || ''),
+    roughDraftBlocks: roughDraftItem ? parseBlogBodyBlocks(roughDraftItem.Text, '') : []
   };
 }
 

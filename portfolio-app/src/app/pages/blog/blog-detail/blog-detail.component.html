@@ -60,9 +60,22 @@
         </div>
       </header>
 
+      <!-- Rough Draft Toggle -->
+      <div class="draft-toggle-wrapper" *ngIf="hasRoughDraft">
+        <span class="draft-toggle-label" [class.active]="!showRoughDraft">Blog</span>
+        <button class="draft-toggle-switch"
+                [class.active]="showRoughDraft"
+                (click)="toggleDraftView()"
+                [attr.aria-pressed]="showRoughDraft"
+                [attr.aria-label]="showRoughDraft ? 'Switch to polished blog' : 'Switch to rough draft'">
+          <span class="draft-toggle-thumb"></span>
+        </button>
+        <span class="draft-toggle-label" [class.active]="showRoughDraft">Rough Draft</span>
+      </div>
+
       <!-- Article Body -->
       <div class="article-body">
-        <ng-container *ngFor="let block of bodyBlocks">
+        <ng-container *ngFor="let block of activeBlocks">
           <!-- Paragraph (Markdown) -->
           <div *ngIf="block.type === 'paragraph'" 
                class="body-paragraph"

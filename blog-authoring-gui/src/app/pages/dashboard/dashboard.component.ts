@@ -308,6 +308,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage && !!item.Photo) || post.items.find(item => item.Photo);
         const metadata = post.metadata as any;
 
+        const roughDraftRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft && !!item.Text);
+
         this.selectedPost = {
           listItemID: post.listItemID,
           title: metadata?.title || '',
@@ -326,6 +328,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           signatureSnapshot: metadata?.signatureSnapshot || null,
           scheduleName: metadata?.scheduleName || null,
           sendEmailUpdate: metadata?.notifyEmail ?? true,
+          roughDraftContent: roughDraftRecord?.Text || '',
           blogItemId: post.items.find((item) => item.PageContentID === PageContentID.BlogItem)?.ID || null,
           blogTextId: post.items.find((item) => item.PageContentID === PageContentID.BlogText)?.ID || null,
           blogBodyId: post.items.find((item) => item.PageContentID === PageContentID.BlogBody)?.ID || null,

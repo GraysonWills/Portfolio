@@ -54,6 +54,7 @@ export type BlogCardV2 = {
   privateSeoTags: string[];
   readTimeMinutes: number;
   category: string;
+  hasRoughDraft?: boolean;
 };
 
 export type BlogCardsV2Request = {
@@ -136,6 +137,7 @@ export type BlogPostDetailV3Response = {
   readTimeMinutes: number;
   signature: any | null;
   bodyBlocks: any[];
+  roughDraftBlocks: any[];
 };
 
 export type RouteCacheOptions = {

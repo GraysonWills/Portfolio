@@ -189,6 +189,7 @@ function toBlogCard(item) {
     privateSeoTags: normalizeTagList(metadata.privateSeoTags),
     readTimeMinutes: Math.max(1, Math.round(Number(metadata.readTimeMinutes || 1))),
     category: String(metadata.category || 'General'),
+    hasRoughDraft: !!metadata.hasRoughDraft,
     _updatedTs: toMillis(item?.UpdatedAt || item?.CreatedAt),
     _searchBlob: [
       metadata.title || item?.Text || '',

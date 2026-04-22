@@ -54,6 +54,33 @@
               Content is required
             </small>
           </div>
+
+          <!-- Rough Draft -->
+          <div class="form-group main-field main-field-card main-field-rough-draft">
+            <div class="rough-draft-header">
+              <label>Rough Draft</label>
+              <p-toggleButton
+                [(ngModel)]="includeRoughDraft"
+                [ngModelOptions]="{standalone: true}"
+                onLabel="Included"
+                offLabel="Not Included"
+                onIcon="pi pi-file-edit"
+                offIcon="pi pi-file"
+                styleClass="p-button-sm">
+              </p-toggleButton>
+            </div>
+            <small class="help-text">Include the original rough draft/notes that preceded this polished blog post. Readers can toggle between views.</small>
+            <div *ngIf="includeRoughDraft" class="rough-draft-editor-wrapper">
+              <p-editor
+                [(ngModel)]="roughDraftContent"
+                [ngModelOptions]="{standalone: true}"
+                [modules]="editorModules"
+                [formats]="editorFormats"
+                [style]="{'height':'320px'}"
+                placeholder="Paste or write the original rough draft here...">
+              </p-editor>
+            </div>
+          </div>
         </section>
 
         <aside class="editor-side-column">
@@ -407,7 +434,17 @@
           <p-tag *ngFor="let tag of getPreviewTags()" [value]="tag"></p-tag>
         </div>
       </header>
-      <div class="preview-post-body" [innerHTML]="getPreviewContentHtml()"></div>
+      <div class="preview-draft-toggle" *ngIf="includeRoughDraft && roughDraftContent?.trim()">
+        <span class="preview-toggle-label" [class.active]="!previewShowRoughDraft">Blog</span>
+        <button class="preview-toggle-switch"
+                [class.active]="previewShowRoughDraft"
+                (click)="togglePreviewDraftView()"
+                type="button">
+          <span class="preview-toggle-thumb"></span>
+        </button>
+        <span class="preview-toggle-label" [class.active]="previewShowRoughDraft">Rough Draft</span>
+      </div>
+      <div class="preview-post-body" [innerHTML]="getActivePreviewContentHtml()"></div>
       <section *ngIf="getPreviewSignature() as signature" class="preview-signature">
         <p class="preview-signature-quote">"{{ signature.quote }}"</p>
         <p class="preview-signature-author">— {{ signature.quoteAuthor }}</p>
