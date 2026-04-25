@@ -10,7 +10,33 @@ function buildRequestKey(req) {
   return `${String(req.method || 'GET').toUpperCase()} ${baseUrl}${path}`;
 }
 
+function normalizePath(value) {
+  return String(value || '').split('?')[0].replace(/\/+$/, '');
+}
+
+function isPreviewFetchRoute(req) {
+  if (String(req.method || 'GET').toUpperCase() !== 'GET') {
+    return false;
+  }
+
+  const candidates = [
+    normalizePath(req.originalUrl),
+    normalizePath(req.url),
+    normalizePath(req.path)
+  ].filter(Boolean);
+
+  return candidates.some((value) =>
+    /(?:^|\/)api\/content\/preview\/[^/]+$/i.test(value) ||
+    /(?:^|\/)preview\/[^/]+$/i.test(value) ||
+    /(?:^|\/)content\/preview\/[^/]+$/i.test(value)
+  );
+}
+
 function isAllowedPublicEdgeRoute(req) {
+  if (isPreviewFetchRoute(req)) {
+    return true;
+  }
+
   const key = buildRequestKey(req);
   if (
     key === 'GET /api/content/v3/bootstrap' ||
