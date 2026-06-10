@@ -1,14 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import {
-  AuthenticationDetails,
-  CognitoRefreshToken,
-  CognitoUser,
-  CognitoUserAttribute,
-  CognitoUserPool,
-  CognitoUserSession
-} from 'amazon-cognito-identity-js';
 
 type StoredSession = {
   username: string;
@@ -17,6 +9,24 @@ type StoredSession = {
   refreshToken?: string;
   expiresAtMs: number;
 };
+
+type CognitoAuthTokens = {
+  AccessToken?: string;
+  IdToken?: string;
+  RefreshToken?: string;
+  ExpiresIn?: number;
+};
+
+type CognitoAuthResponse = {
+  AuthenticationResult?: CognitoAuthTokens;
+};
+
+type CognitoTarget =
+  | 'InitiateAuth'
+  | 'SignUp'
+  | 'ConfirmSignUp'
+  | 'ForgotPassword'
+  | 'ConfirmForgotPassword';
 
 export type LoginThrottleState = {
   locked: boolean;
@@ -39,15 +49,9 @@ export class AuthService {
   private refreshPromise: Promise<string | null> | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-  private readonly userPool = new CognitoUserPool({
-    UserPoolId: environment.cognito.userPoolId,
-    ClientId: environment.cognito.clientId
-  });
-
   constructor() {
     this.loadSession();
     this.startRefreshTimer();
-    void this.hydrateFromCognitoCurrentUser();
   }
 
   login(username: string, password: string): Observable<boolean> {
@@ -62,26 +66,32 @@ export class AuthService {
         return;
       }
 
-      const cognitoUser = new CognitoUser({ Username: trimmedUser, Pool: this.userPool });
-      const authDetails = new AuthenticationDetails({ Username: trimmedUser, Password: trimmedPass });
-
-      cognitoUser.authenticateUser(authDetails, {
-        onSuccess: (result: CognitoUserSession) => {
+      this.callCognito('InitiateAuth', {
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: environment.cognito.clientId,
+        AuthParameters: {
+          USERNAME: trimmedUser,
+          PASSWORD: trimmedPass
+        }
+      })
+        .then((response) => {
+          if (!response.AuthenticationResult?.IdToken || !response.AuthenticationResult?.AccessToken) {
+            throw new Error('Cognito did not return a signed-in session.');
+          }
           this.clearFailedLoginAttempts();
-          this.persistSession(trimmedUser, result);
+          this.persistAuthTokens(trimmedUser, response.AuthenticationResult);
           observer.next(true);
           observer.complete();
-        },
-        onFailure: (err: any) => {
+        })
+        .catch((err) => {
           this.recordFailedLoginAttempt();
           const nextState = this.getLoginThrottleState();
           if (nextState.locked) {
             observer.error(new Error(`Too many login attempts. Try again in ${this.formatDuration(nextState.retryAfterMs)}.`));
             return;
           }
-          observer.error(new Error(err?.message || 'Invalid username or password'));
-        }
-      });
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Invalid username or password'));
+        });
     });
   }
 
@@ -127,12 +137,6 @@ export class AuthService {
   }
 
   logout(): void {
-    try {
-      this.userPool.getCurrentUser()?.signOut();
-    } catch {
-      // ignore
-    }
-
     this.session = null;
     try {
       localStorage.removeItem(this.SESSION_KEY);
@@ -150,24 +154,6 @@ export class AuthService {
         void this.refreshSession();
       }
     }, 30 * 1000);
-  }
-
-  private async hydrateFromCognitoCurrentUser(): Promise<void> {
-    if (this.session?.idToken && !this.isTokenStale(this.session.expiresAtMs)) return;
-
-    const currentUser = this.userPool.getCurrentUser();
-    if (!currentUser) return;
-
-    await new Promise<void>((resolve) => {
-      currentUser.getSession((err: any, userSession: CognitoUserSession | null) => {
-        if (err || !userSession || !userSession.isValid()) {
-          resolve();
-          return;
-        }
-        this.persistSession(currentUser.getUsername(), userSession);
-        resolve();
-      });
-    });
   }
 
   isAuthenticated(): boolean {
@@ -228,21 +214,17 @@ export class AuthService {
     if (!trimmedUser) return new Observable<void>((obs) => { obs.error(new Error('Username is required')); });
 
     return new Observable<void>((observer) => {
-      const cognitoUser = new CognitoUser({ Username: trimmedUser, Pool: this.userPool });
-      cognitoUser.forgotPassword({
-        onSuccess: () => {
+      this.callCognito('ForgotPassword', {
+        ClientId: environment.cognito.clientId,
+        Username: trimmedUser
+      })
+        .then(() => {
           observer.next();
           observer.complete();
-        },
-        onFailure: (err: any) => {
-          observer.error(new Error(err?.message || 'Failed to send reset code'));
-        },
-        inputVerificationCode: () => {
-          // Code has been sent. UI should now ask for code + new password.
-          observer.next();
-          observer.complete();
-        }
-      });
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Failed to send reset code'));
+        });
     });
   }
 
@@ -255,16 +237,19 @@ export class AuthService {
     }
 
     return new Observable<void>((observer) => {
-      const cognitoUser = new CognitoUser({ Username: trimmedUser, Pool: this.userPool });
-      cognitoUser.confirmPassword(trimmedCode, trimmedNewPass, {
-        onSuccess: () => {
+      this.callCognito('ConfirmForgotPassword', {
+        ClientId: environment.cognito.clientId,
+        Username: trimmedUser,
+        ConfirmationCode: trimmedCode,
+        Password: trimmedNewPass
+      })
+        .then(() => {
           observer.next();
           observer.complete();
-        },
-        onFailure: (err: any) => {
-          observer.error(new Error(err?.message || 'Failed to reset password'));
-        }
-      });
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Failed to reset password'));
+        });
     });
   }
 
@@ -277,15 +262,21 @@ export class AuthService {
     }
 
     return new Observable<void>((observer) => {
-      const attrs = [new CognitoUserAttribute({ Name: 'email', Value: e })];
-      this.userPool.signUp(u, p, attrs, [], (err) => {
-        if (err) {
-          observer.error(new Error(err?.message || 'Registration failed'));
-          return;
-        }
-        observer.next();
-        observer.complete();
-      });
+      this.callCognito('SignUp', {
+        ClientId: environment.cognito.clientId,
+        Username: u,
+        Password: p,
+        UserAttributes: [
+          { Name: 'email', Value: e }
+        ]
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Registration failed'));
+        });
     });
   }
 
@@ -297,15 +288,19 @@ export class AuthService {
     }
 
     return new Observable<void>((observer) => {
-      const cognitoUser = new CognitoUser({ Username: u, Pool: this.userPool });
-      cognitoUser.confirmRegistration(c, true, (err) => {
-        if (err) {
-          observer.error(new Error(err?.message || 'Email verification failed'));
-          return;
-        }
-        observer.next();
-        observer.complete();
-      });
+      this.callCognito('ConfirmSignUp', {
+        ClientId: environment.cognito.clientId,
+        Username: u,
+        ConfirmationCode: c,
+        ForceAliasCreation: true
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Email verification failed'));
+        });
     });
   }
 
@@ -329,14 +324,6 @@ export class AuthService {
     }
   }
 
-  private persistSession(username: string, result: CognitoUserSession): void {
-    const idToken = result.getIdToken().getJwtToken();
-    const accessToken = result.getAccessToken().getJwtToken();
-    const refreshToken = result.getRefreshToken().getToken();
-
-    this.persistHostedSession({ username, idToken, accessToken, refreshToken });
-  }
-
   private persistHostedSession(input: { username: string; idToken: string; accessToken: string; refreshToken?: string }): void {
     const expMs = this.getJwtExpMs(input.idToken);
     const expiresAtMs = expMs ?? (Date.now() + 55 * 60 * 1000); // fallback ~55m
@@ -356,30 +343,84 @@ export class AuthService {
     }
   }
 
+  private persistAuthTokens(username: string, tokens: CognitoAuthTokens): void {
+    const idToken = String(tokens.IdToken || '');
+    const accessToken = String(tokens.AccessToken || '');
+    if (!idToken || !accessToken) {
+      throw new Error('Cognito did not return the expected tokens.');
+    }
+
+    const refreshToken = String(tokens.RefreshToken || this.session?.refreshToken || '');
+    this.persistHostedSession({
+      username,
+      idToken,
+      accessToken,
+      ...(refreshToken ? { refreshToken } : {})
+    });
+  }
+
   private async refreshSession(): Promise<string | null> {
     if (this.refreshPromise) return this.refreshPromise;
     if (!this.session?.username || !this.session?.refreshToken) return null;
 
-    this.refreshPromise = new Promise<string | null>((resolve) => {
+    this.refreshPromise = (async () => {
       const username = this.session?.username || '';
       const refreshToken = this.session?.refreshToken || '';
-      const cognitoUser = new CognitoUser({ Username: username, Pool: this.userPool });
-      const token = new CognitoRefreshToken({ RefreshToken: refreshToken });
-
-      cognitoUser.refreshSession(token, (err, session) => {
-        if (err || !session) {
-          this.logout();
-          resolve(null);
-          return;
+      try {
+        const response = await this.callCognito('InitiateAuth', {
+          AuthFlow: 'REFRESH_TOKEN_AUTH',
+          ClientId: environment.cognito.clientId,
+          AuthParameters: {
+            REFRESH_TOKEN: refreshToken
+          }
+        });
+        const tokens = response.AuthenticationResult;
+        if (!tokens?.IdToken || !tokens?.AccessToken) {
+          throw new Error('Cognito did not return a refreshed session.');
         }
-        this.persistSession(username, session);
-        resolve(this.session?.idToken || null);
-      });
-    }).finally(() => {
+        this.persistAuthTokens(username, {
+          ...tokens,
+          RefreshToken: tokens.RefreshToken || refreshToken
+        });
+        return this.session?.idToken || null;
+      } catch {
+        this.logout();
+        return null;
+      }
+    })().finally(() => {
       this.refreshPromise = null;
     });
 
     return this.refreshPromise;
+  }
+
+  private async callCognito(target: CognitoTarget, body: Record<string, unknown>): Promise<CognitoAuthResponse> {
+    const region = String(environment.cognito?.region || '').trim();
+    if (!region) throw new Error('Cognito region is not configured.');
+    if (!String(environment.cognito?.clientId || '').trim()) throw new Error('Cognito client is not configured.');
+
+    const response = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': `AWSCognitoIdentityProviderService.${target}`
+      },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
+    if (!response.ok) {
+      const message = typeof payload['message'] === 'string'
+        ? payload['message']
+        : (typeof payload['__type'] === 'string' ? payload['__type'] : 'Cognito request failed');
+      throw new Error(message);
+    }
+    return payload as CognitoAuthResponse;
+  }
+
+  private getCognitoErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err || '').trim();
   }
 
   private isTokenStale(expiresAtMs: number): boolean {

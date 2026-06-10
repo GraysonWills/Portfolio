@@ -1,7 +1,5 @@
 /**
- * Browser polyfills for Node-oriented libraries.
- *
- * `amazon-cognito-identity-js` expects a Node-like global object in dev builds.
+ * Browser global compatibility for dependencies that probe for global.
  */
 
 (window as any).global = window;

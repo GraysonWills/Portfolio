@@ -1,14 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import {
-  AuthenticationDetails,
-  CognitoRefreshToken,
-  CognitoUser,
-  CognitoUserAttribute,
-  CognitoUserPool,
-  CognitoUserSession
-} from 'amazon-cognito-identity-js';
 
 type StoredSiteSession = {
   username: string;
@@ -39,6 +31,18 @@ type CognitoAuthResponse = {
   Session?: string;
 };
 
+type CognitoAttribute = {
+  Name: string;
+  Value: string;
+};
+
+type CognitoTarget =
+  | 'InitiateAuth'
+  | 'RespondToAuthChallenge'
+  | 'SignUp'
+  | 'ConfirmSignUp'
+  | 'ResendConfirmationCode';
+
 type PendingEmailOtp = {
   email: string;
   session: string;
@@ -53,7 +57,6 @@ export class SiteAuthService {
   private readonly TOKEN_REFRESH_SKEW_MS = 60 * 1000;
   private readonly EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
   private session: StoredSiteSession | null = null;
-  private userPool: CognitoUserPool | null = null;
   private pendingEmailOtp: PendingEmailOtp | null = null;
   private refreshPromise: Promise<string | null> | null = null;
   private readonly currentUserSubject = new BehaviorSubject<SiteUser | null>(null);
@@ -61,7 +64,6 @@ export class SiteAuthService {
 
   constructor() {
     this.loadSession();
-    void this.hydrateFromCognitoCurrentUser();
   }
 
   isConfigured(): boolean {
@@ -79,22 +81,30 @@ export class SiteAuthService {
     }
 
     return new Observable<boolean>((observer) => {
-      const pool = this.requireUserPool(observer);
-      if (!pool) return;
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
 
-      const cognitoUser = new CognitoUser({ Username: username, Pool: pool });
-      const authDetails = new AuthenticationDetails({ Username: username, Password: pass });
-
-      cognitoUser.authenticateUser(authDetails, {
-        onSuccess: (result: CognitoUserSession) => {
-          this.persistSession(username, result);
+      this.callCognito('InitiateAuth', {
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: environment.commentsAuth.clientId,
+        AuthParameters: {
+          USERNAME: username,
+          PASSWORD: pass
+        }
+      })
+        .then((response) => {
+          if (!response.AuthenticationResult?.IdToken || !response.AuthenticationResult?.AccessToken) {
+            throw new Error('Cognito did not return a signed-in session.');
+          }
+          this.persistAuthTokens(username, response.AuthenticationResult);
           observer.next(true);
           observer.complete();
-        },
-        onFailure: (err: any) => {
-          observer.error(new Error(err?.message || 'Sign in failed'));
-        }
-      });
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Sign in failed'));
+        });
     });
   }
 
@@ -209,22 +219,29 @@ export class SiteAuthService {
     }
 
     return new Observable<void>((observer) => {
-      const pool = this.requireUserPool(observer);
-      if (!pool) return;
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
 
-      const attrs = [
-        new CognitoUserAttribute({ Name: 'email', Value: cleanEmail }),
-        new CognitoUserAttribute({ Name: 'preferred_username', Value: cleanName })
+      const attrs: CognitoAttribute[] = [
+        { Name: 'email', Value: cleanEmail },
+        { Name: 'preferred_username', Value: cleanName }
       ];
 
-      pool.signUp(cleanEmail, cleanPassword, attrs, [], (err) => {
-        if (err) {
-          observer.error(new Error(err?.message || 'Registration failed'));
-          return;
-        }
-        observer.next();
-        observer.complete();
-      });
+      this.callCognito('SignUp', {
+        ClientId: environment.commentsAuth.clientId,
+        Username: cleanEmail,
+        Password: cleanPassword,
+        UserAttributes: attrs
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Registration failed'));
+        });
     });
   }
 
@@ -238,18 +255,24 @@ export class SiteAuthService {
     }
 
     return new Observable<void>((observer) => {
-      const pool = this.requireUserPool(observer);
-      if (!pool) return;
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
 
-      const cognitoUser = new CognitoUser({ Username: cleanEmail, Pool: pool });
-      cognitoUser.confirmRegistration(cleanCode, true, (err) => {
-        if (err) {
-          observer.error(new Error(err?.message || 'Email verification failed'));
-          return;
-        }
-        observer.next();
-        observer.complete();
-      });
+      this.callCognito('ConfirmSignUp', {
+        ClientId: environment.commentsAuth.clientId,
+        Username: cleanEmail,
+        ConfirmationCode: cleanCode,
+        ForceAliasCreation: true
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Email verification failed'));
+        });
     });
   }
 
@@ -262,28 +285,26 @@ export class SiteAuthService {
     }
 
     return new Observable<void>((observer) => {
-      const pool = this.requireUserPool(observer);
-      if (!pool) return;
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
 
-      const cognitoUser = new CognitoUser({ Username: cleanEmail, Pool: pool });
-      cognitoUser.resendConfirmationCode((err) => {
-        if (err) {
-          observer.error(new Error(err?.message || 'Could not resend verification code'));
-          return;
-        }
-        observer.next();
-        observer.complete();
-      });
+      this.callCognito('ResendConfirmationCode', {
+        ClientId: environment.commentsAuth.clientId,
+        Username: cleanEmail
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Could not resend verification code'));
+        });
     });
   }
 
   logout(): void {
-    try {
-      this.getUserPool()?.getCurrentUser()?.signOut();
-    } catch {
-      // ignore
-    }
-
     this.session = null;
     this.currentUserSubject.next(null);
     try {
@@ -314,46 +335,6 @@ export class SiteAuthService {
     return this.refreshSession();
   }
 
-  private getUserPool(): CognitoUserPool | null {
-    if (this.userPool) return this.userPool;
-    if (!this.isConfigured()) return null;
-
-    this.userPool = new CognitoUserPool({
-      UserPoolId: environment.commentsAuth.userPoolId,
-      ClientId: environment.commentsAuth.clientId
-    });
-    return this.userPool;
-  }
-
-  private requireUserPool<T>(observer: { error: (err: Error) => void }): CognitoUserPool | null {
-    const pool = this.getUserPool();
-    if (!pool) {
-      observer.error(new Error('Comment accounts are not configured yet.'));
-      return null;
-    }
-    return pool;
-  }
-
-  private async hydrateFromCognitoCurrentUser(): Promise<void> {
-    const pool = this.getUserPool();
-    if (!pool) return;
-    if (this.session?.idToken && !this.isTokenStale(this.session.expiresAtMs)) return;
-
-    const currentUser = pool.getCurrentUser();
-    if (!currentUser) return;
-
-    await new Promise<void>((resolve) => {
-      currentUser.getSession((err: any, userSession: CognitoUserSession | null) => {
-        if (err || !userSession || !userSession.isValid()) {
-          resolve();
-          return;
-        }
-        this.persistSession(currentUser.getUsername(), userSession);
-        resolve();
-      });
-    });
-  }
-
   private loadSession(): void {
     try {
       const raw = localStorage.getItem(this.SESSION_KEY);
@@ -372,35 +353,6 @@ export class SiteAuthService {
     } catch {
       // ignore
     }
-  }
-
-  private persistSession(username: string, result: CognitoUserSession): void {
-    const idToken = result.getIdToken().getJwtToken();
-    const accessToken = result.getAccessToken().getJwtToken();
-    const refreshToken = result.getRefreshToken().getToken();
-    const expMs = this.getJwtExpMs(idToken);
-    const email = this.getJwtStringClaim(idToken, 'email') || undefined;
-    const displayName = this.getJwtStringClaim(idToken, 'preferred_username')
-      || this.getJwtStringClaim(idToken, 'name')
-      || this.nameFromEmail(email)
-      || username;
-
-    this.session = {
-      username,
-      email,
-      displayName,
-      idToken,
-      accessToken,
-      refreshToken,
-      expiresAtMs: expMs ?? (Date.now() + 55 * 60 * 1000)
-    };
-
-    try {
-      localStorage.setItem(this.SESSION_KEY, JSON.stringify(this.session));
-    } catch {
-      // ignore
-    }
-    this.publishCurrentUser();
   }
 
   private persistAuthTokens(username: string, tokens: CognitoAuthTokens): void {
@@ -440,24 +392,33 @@ export class SiteAuthService {
     if (this.refreshPromise) return this.refreshPromise;
     if (!this.session?.username || !this.session?.refreshToken) return null;
 
-    const pool = this.getUserPool();
-    if (!pool) return null;
+    if (!this.isConfigured()) return null;
 
-    this.refreshPromise = new Promise<string | null>((resolve) => {
+    this.refreshPromise = (async () => {
       const username = this.session?.username || '';
-      const token = new CognitoRefreshToken({ RefreshToken: this.session?.refreshToken || '' });
-      const cognitoUser = new CognitoUser({ Username: username, Pool: pool });
-
-      cognitoUser.refreshSession(token, (err, session) => {
-        if (err || !session) {
-          this.logout();
-          resolve(null);
-          return;
+      const refreshToken = this.session?.refreshToken || '';
+      try {
+        const response = await this.callCognito('InitiateAuth', {
+          AuthFlow: 'REFRESH_TOKEN_AUTH',
+          ClientId: environment.commentsAuth.clientId,
+          AuthParameters: {
+            REFRESH_TOKEN: refreshToken
+          }
+        });
+        const tokens = response.AuthenticationResult;
+        if (!tokens?.IdToken || !tokens?.AccessToken) {
+          throw new Error('Cognito did not return a refreshed session.');
         }
-        this.persistSession(username, session);
-        resolve(this.session?.idToken || null);
-      });
-    }).finally(() => {
+        this.persistAuthTokens(username, {
+          ...tokens,
+          RefreshToken: tokens.RefreshToken || refreshToken
+        });
+        return this.session?.idToken || null;
+      } catch {
+        this.logout();
+        return null;
+      }
+    })().finally(() => {
       this.refreshPromise = null;
     });
 
@@ -486,7 +447,7 @@ export class SiteAuthService {
     return value.split('@')[0].replace(/[._-]+/g, ' ');
   }
 
-  private async callCognito(target: 'InitiateAuth' | 'RespondToAuthChallenge', body: Record<string, unknown>): Promise<CognitoAuthResponse> {
+  private async callCognito(target: CognitoTarget, body: Record<string, unknown>): Promise<CognitoAuthResponse> {
     const region = String(environment.commentsAuth?.region || '').trim();
     if (!region) throw new Error('Cognito region is not configured.');
 
