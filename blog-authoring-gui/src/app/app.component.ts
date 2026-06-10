@@ -94,6 +94,12 @@ export class AppComponent implements OnInit {
         description: 'Go to Collections',
         action: () => this.router.navigate(['/collections']),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+5',
+        description: 'Go to Comments',
+        action: () => this.router.navigate(['/comments']),
+        allowInInputs: true
       }
     ]);
   }
@@ -103,6 +109,7 @@ export class AppComponent implements OnInit {
     if (clean.startsWith('/dashboard')) return 'dashboard';
     if (clean.startsWith('/content')) return 'content';
     if (clean.startsWith('/subscribers')) return 'subscribers';
+    if (clean.startsWith('/comments')) return 'comments';
     if (clean.startsWith('/collections')) return 'collections';
     if (clean.startsWith('/register')) return 'register';
     if (clean.startsWith('/forgot-password')) return 'forgot-password';

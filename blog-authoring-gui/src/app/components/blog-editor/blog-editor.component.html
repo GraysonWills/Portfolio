@@ -38,9 +38,22 @@
             </small>
           </div>
 
+          <!-- Rough Draft Editor -->
+          <div class="form-group main-field main-field-card main-field-content">
+            <label for="roughDraft">Rough Draft</label>
+            <p-editor
+              formControlName="roughDraft"
+              [modules]="editorModules"
+              [formats]="editorFormats"
+              [style]="{'height':'300px'}"
+              placeholder="Paste or write the unedited/original version here...">
+            </p-editor>
+            <small class="help-text">Optional. When present, the portfolio post page can switch between this rough draft and the polished version.</small>
+          </div>
+
           <!-- Content Editor -->
           <div class="form-group main-field main-field-card main-field-content">
-            <label for="content">Content *</label>
+            <label for="content">Polished Content *</label>
             <p-editor 
               formControlName="content"
               [modules]="editorModules"

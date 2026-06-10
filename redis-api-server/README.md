@@ -144,6 +144,10 @@ Unpublish behavior:
 | `COGNITO_USER_POOL_ID` | pool id |
 | `COGNITO_CLIENT_ID` | app client id |
 | `DISABLE_AUTH` | local-only write-auth bypass |
+| `COMMENTS_COGNITO_REGION` | optional public-comment Cognito region override |
+| `COMMENTS_COGNITO_USER_POOL_ID` | optional public-comment user pool override |
+| `COMMENTS_COGNITO_CLIENT_ID` / `COMMENTS_COGNITO_CLIENT_IDS` | optional public-comment app client(s); falls back to `COGNITO_CLIENT_ID` |
+| `COMMENTS_REQUIRE_VERIFIED_EMAIL` | require `email_verified` on commenter ID tokens (default true) |
 | `SCHEDULER_WEBHOOK_SECRET` | protects internal scheduler callback route |
 | `SCHEDULER_GROUP_NAME` | EventBridge Scheduler group (default `portfolio-email`) |
 | `SCHEDULER_INVOKE_ROLE_ARN` | IAM role EventBridge Scheduler assumes to invoke Lambda |
@@ -160,6 +164,24 @@ Unpublish behavior:
 | `PREVIEW_MAX_UPSERTS` | preview payload upsert cap |
 | `PREVIEW_MAX_DELETES` | preview payload delete cap |
 | `PREVIEW_MAX_BYTES` | preview payload size cap |
+
+### Blog Comments
+
+| Variable | Purpose |
+|---|---|
+| `COMMENTS_TABLE_NAME` | DynamoDB comments table (default `portfolio-blog-comments`) |
+| `COMMENTS_POST_INDEX_NAME` | comments table GSI for `postId` reads (default `PostIndex`) |
+| `COMMENTS_AUTHOR_DISPLAY_NAME` | display name used by authoring-studio replies |
+
+Recommended comments table shape:
+- Primary key: `commentId` (string)
+- GSI `PostIndex`: partition key `postId` (string), sort key `sortKey` (string)
+- Billing: on-demand is sufficient for current traffic expectations
+
+Production resources:
+- Cognito user pool: `GraysonPortfolioReaders` (`us-east-2_TA0sz2HlV`)
+- Cognito app client: `portfolio-comments-spa` (`4gdttn5rjq3k3jd47jltik9trd`)
+- DynamoDB comments table: `portfolio-blog-comments`
 
 ### Optional Redis Compatibility
 

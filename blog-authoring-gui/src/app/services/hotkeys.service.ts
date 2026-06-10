@@ -10,6 +10,7 @@ export type HotkeyContext =
   | 'dashboard'
   | 'content'
   | 'subscribers'
+  | 'comments'
   | 'collections';
 
 export type HotkeyDefinition = {

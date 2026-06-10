@@ -54,7 +54,6 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     'blockquote',
     'code-block',
     'list',
-    'bullet',
     'indent',
     'link',
     'image',
@@ -93,6 +92,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     this.blogForm = this.fb.group({
       title: ['', [Validators.required]],
       summary: ['', [Validators.required]],
+      roughDraft: [''],
       content: ['', [Validators.required]],
       readTimeMinutes: [null, [Validators.min(1), Validators.max(120)]],
       publishDate: [new Date()],
@@ -125,6 +125,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     this.blogForm.patchValue({
       title: this.initialData.title || '',
       summary: this.initialData.summary || '',
+      roughDraft: this.initialData.roughDraft || '',
       content: this.initialData.content || '',
       readTimeMinutes: this.normalizeReadTimeMinutes(this.initialData.readTimeMinutes),
       publishDate: this.initialData.publishDate || new Date(),
@@ -456,9 +457,15 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   private executeSave(formValue: any, isEdit: boolean): void {
     this.isSaving = true;
     this.flushPendingTagInputs();
-    this.prepareContentForSave(formValue.content)
-      .then((normalizedContent) => {
-        this.blogForm.patchValue({ content: normalizedContent }, { emitEvent: false });
+    Promise.all([
+      this.prepareEditorHtmlForSave(formValue.content),
+      this.prepareEditorHtmlForSave(formValue.roughDraft)
+    ])
+      .then(([normalizedContent, normalizedRoughDraft]) => {
+        this.blogForm.patchValue({
+          content: normalizedContent,
+          roughDraft: normalizedRoughDraft
+        }, { emitEvent: false });
         const effectiveStatus = this.getEffectiveStatus(formValue);
         if (effectiveStatus !== formValue.status) {
           formValue = { ...formValue, status: effectiveStatus };
@@ -485,6 +492,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               listItemID,
               formValue.title,
               normalizedContent,
+              normalizedRoughDraft,
               formValue.summary,
               publicTags,
               privateSeoTags,
@@ -499,6 +507,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
           : this.blogApi.createBlogPost(
               formValue.title,
               normalizedContent,
+              normalizedRoughDraft,
               formValue.summary,
               publicTags,
               privateSeoTags,
@@ -518,9 +527,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
 
             const onDone = () => {
               const action = isEdit ? 'UPDATED' : 'CREATED';
+              const hasRoughDraft = !!normalizedRoughDraft.trim();
               this.txLog.log(
                 action,
-                `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, readTime: ${readTimeMinutes || 'auto'}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
+                `Blog post "${formValue.title}" — status: ${formValue.status}, notify: ${sendEmailUpdate}, rough draft: ${hasRoughDraft ? 'yes' : 'no'}, readTime: ${readTimeMinutes || 'auto'}, public tags: [${publicTags.join(', ')}], private SEO tags: [${privateSeoTags.join(', ')}]`
               );
               this.messageService.add({
                 severity: 'success',
@@ -596,7 +606,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       });
   }
 
-  private async prepareContentForSave(rawContent: any): Promise<string> {
+  private async prepareEditorHtmlForSave(rawContent: any): Promise<string> {
     const normalized = this.normalizeEditorContentHtml(rawContent);
     return this.replaceInlineDataImages(normalized);
   }
@@ -1020,8 +1030,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     const blogItemId = this.initialData?.blogItemId || `blog-item-${listItemID}`;
     const blogTextId = this.initialData?.blogTextId || `blog-text-${listItemID}`;
     const blogBodyId = this.initialData?.blogBodyId || `blog-body-${listItemID}`;
+    const blogRoughDraftId = this.initialData?.blogRoughDraftId || `blog-rough-${listItemID}`;
     const blogImageId = this.initialData?.blogImageId || `blog-image-${listItemID}`;
     const contentValue = this.normalizeEditorContentHtml(this.blogForm.get('content')?.value || '');
+    const roughDraftValue = this.normalizeEditorContentHtml(this.blogForm.get('roughDraft')?.value || '');
 
     const upserts: Partial<RedisContent>[] = [
       {
@@ -1054,6 +1066,20 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     ];
 
     const deleteIds: string[] = [];
+    if (roughDraftValue.trim()) {
+      upserts.push({
+        ID: blogRoughDraftId,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogRoughDraft,
+        ListItemID: listItemID,
+        Text: roughDraftValue,
+        Metadata: metadata,
+        UpdatedAt: nowIso as any
+      });
+    } else if (this.initialData?.blogRoughDraftId) {
+      deleteIds.push(this.initialData.blogRoughDraftId);
+    }
+
     if (this.getPreviewImage()) {
       upserts.push({
         ID: blogImageId,

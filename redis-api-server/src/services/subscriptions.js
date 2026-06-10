@@ -34,7 +34,37 @@ function sanitizeTopics(requested, allowedTopics) {
   const clean = list.map(s => String(s || '').trim().toLowerCase()).filter(Boolean);
   const allowed = new Set(allowedTopics);
   const filtered = clean.filter(t => allowed.has(t));
-  return filtered.length ? filtered : ['blog_posts'];
+  const unique = [...new Set(filtered)];
+  return unique.length ? unique : ['blog_posts'];
+}
+
+function isPendingWithinCooldown(updatedAt, cooldownMs) {
+  const lastPendingIso = String(updatedAt || '').trim();
+  const lastPendingTs = Date.parse(lastPendingIso);
+  return Number.isFinite(lastPendingTs) && ((Date.now() - lastPendingTs) < cooldownMs);
+}
+
+function buildExistingSubscriptionResponse(existingItem, cooldownMs) {
+  const existingStatus = String(existingItem?.status || '').toUpperCase();
+  if (existingStatus === 'SUBSCRIBED') {
+    return {
+      ok: true,
+      status: 'ALREADY_SUBSCRIBED',
+      alreadySubscribed: true,
+      message: 'This email is already subscribed.'
+    };
+  }
+
+  if (existingStatus === 'PENDING' && isPendingWithinCooldown(existingItem?.updatedAt, cooldownMs)) {
+    return {
+      ok: true,
+      status: 'ALREADY_PENDING',
+      alreadyPending: true,
+      message: 'A confirmation email has already been sent. Please check your inbox.'
+    };
+  }
+
+  return null;
 }
 
 async function sendSesEmail({ to, subject, text, html }) {
@@ -111,80 +141,77 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
   const emailHash = sha256Hex(normalized);
   const nowIso = new Date().toISOString();
   const ddb = getDdbDoc();
-
-  // Prevent duplicate signups + duplicate confirmation sends.
-  // Table primary key is emailHash, so this is the single source of truth per email.
-  const existingRes = await ddb.send(new GetCommand({
-    TableName: cfg.subscribersTable,
-    Key: { emailHash },
-    ProjectionExpression: '#status, #updatedAt',
-    ExpressionAttributeNames: {
-      '#status': 'status',
-      '#updatedAt': 'updatedAt'
-    }
-  }));
-  const existingStatus = String(existingRes?.Item?.status || '').toUpperCase();
-  if (existingStatus === 'SUBSCRIBED') {
-    return {
-      ok: true,
-      status: 'ALREADY_SUBSCRIBED',
-      alreadySubscribed: true,
-      message: 'This email is already subscribed.'
-    };
-  }
-  if (existingStatus === 'PENDING') {
-    const lastPendingIso = String(existingRes?.Item?.updatedAt || '').trim();
-    const lastPendingTs = Date.parse(lastPendingIso);
-    const cooldownMs = cfg.pendingResendCooldownMs;
-    const withinCooldown = Number.isFinite(lastPendingTs) && ((Date.now() - lastPendingTs) < cooldownMs);
-
-    if (withinCooldown) {
-      return {
-        ok: true,
-        status: 'ALREADY_PENDING',
-        alreadyPending: true,
-        message: 'A confirmation email has already been sent. Please check your inbox.'
-      };
-    }
-  }
+  const resendCutoffIso = new Date(Date.now() - cfg.pendingResendCooldownMs).toISOString();
 
   // Upsert subscriber as PENDING. Don't overwrite unsubscribed/confirmed timestamps.
-  await ddb.send(new UpdateCommand({
-    TableName: cfg.subscribersTable,
-    Key: { emailHash },
-    UpdateExpression: [
-      'SET #email = if_not_exists(#email, :email)',
-      '#status = :pending',
-      '#topics = :topics',
-      '#source = :source',
-      '#updatedAt = :now',
-      '#createdAt = if_not_exists(#createdAt, :now)',
-      '#consentVersion = :consentVersion',
-      '#consentIp = :consentIp',
-      '#consentUserAgent = :consentUa'
-    ].join(', '),
-    ExpressionAttributeNames: {
-      '#email': 'email',
-      '#status': 'status',
-      '#topics': 'topics',
-      '#source': 'source',
-      '#updatedAt': 'updatedAt',
-      '#createdAt': 'createdAt',
-      '#consentVersion': 'consentVersion',
-      '#consentIp': 'consentIp',
-      '#consentUserAgent': 'consentUserAgent'
-    },
-    ExpressionAttributeValues: {
-      ':email': normalized,
-      ':pending': 'PENDING',
-      ':topics': topicList,
-      ':source': source || 'unknown',
-      ':now': nowIso,
-      ':consentVersion': 'v1',
-      ':consentIp': consentIp || null,
-      ':consentUa': consentUserAgent || null
+  try {
+    await ddb.send(new UpdateCommand({
+      TableName: cfg.subscribersTable,
+      Key: { emailHash },
+      ConditionExpression: [
+        'attribute_not_exists(#status)',
+        '#status = :unsubscribed',
+        '(#status = :pending AND (attribute_not_exists(#updatedAt) OR #updatedAt <= :resendCutoff))'
+      ].join(' OR '),
+      UpdateExpression: [
+        'SET #email = if_not_exists(#email, :email)',
+        '#status = :pending',
+        '#topics = :topics',
+        '#source = :source',
+        '#updatedAt = :now',
+        '#createdAt = if_not_exists(#createdAt, :now)',
+        '#consentVersion = :consentVersion',
+        '#consentIp = :consentIp',
+        '#consentUserAgent = :consentUa'
+      ].join(', '),
+      ExpressionAttributeNames: {
+        '#email': 'email',
+        '#status': 'status',
+        '#topics': 'topics',
+        '#source': 'source',
+        '#updatedAt': 'updatedAt',
+        '#createdAt': 'createdAt',
+        '#consentVersion': 'consentVersion',
+        '#consentIp': 'consentIp',
+        '#consentUserAgent': 'consentUserAgent'
+      },
+      ExpressionAttributeValues: {
+        ':email': normalized,
+        ':pending': 'PENDING',
+        ':unsubscribed': 'UNSUBSCRIBED',
+        ':topics': topicList,
+        ':source': source || 'unknown',
+        ':now': nowIso,
+        ':resendCutoff': resendCutoffIso,
+        ':consentVersion': 'v1',
+        ':consentIp': consentIp || null,
+        ':consentUa': consentUserAgent || null
+      }
+    }));
+  } catch (err) {
+    if (err?.name !== 'ConditionalCheckFailedException') {
+      throw err;
     }
-  }));
+
+    const existingRes = await ddb.send(new GetCommand({
+      TableName: cfg.subscribersTable,
+      Key: { emailHash },
+      ProjectionExpression: '#status, #updatedAt',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+        '#updatedAt': 'updatedAt'
+      }
+    }));
+
+    const existingResponse = buildExistingSubscriptionResponse(existingRes?.Item, cfg.pendingResendCooldownMs);
+    if (existingResponse) {
+      return existingResponse;
+    }
+
+    const e = new Error('Unable to process subscription request at this time');
+    e.status = 409;
+    throw e;
+  }
 
   // Create confirm token (24h TTL)
   const token = await createToken({ emailHash, action: 'confirm', ttlSeconds: 24 * 60 * 60 });
@@ -258,11 +285,12 @@ async function confirmSubscription({ token }) {
       'SET #status = :subscribed',
       '#confirmedAt = if_not_exists(#confirmedAt, :now)',
       '#updatedAt = :now'
-    ].join(', '),
+    ].join(', ') + ' REMOVE #unsubscribedAt',
     ExpressionAttributeNames: {
       '#status': 'status',
       '#confirmedAt': 'confirmedAt',
-      '#updatedAt': 'updatedAt'
+      '#updatedAt': 'updatedAt',
+      '#unsubscribedAt': 'unsubscribedAt'
     },
     ExpressionAttributeValues: {
       ':subscribed': 'SUBSCRIBED',
@@ -506,29 +534,43 @@ async function upsertSubscriberAdmin({ email, topics, status = 'SUBSCRIBED', sou
     '#updatedAt = :now',
     '#createdAt = if_not_exists(#createdAt, :now)'
   ];
+  const removeParts = [];
+  const expressionAttributeNames = {
+    '#email': 'email',
+    '#status': 'status',
+    '#topics': 'topics',
+    '#source': 'source',
+    '#updatedAt': 'updatedAt',
+    '#createdAt': 'createdAt'
+  };
 
   if (normalizedStatus === 'SUBSCRIBED') {
+    expressionAttributeNames['#confirmedAt'] = 'confirmedAt';
     expressionParts.push('#confirmedAt = if_not_exists(#confirmedAt, :now)');
+    expressionAttributeNames['#unsubscribedAt'] = 'unsubscribedAt';
+    removeParts.push('#unsubscribedAt');
   }
 
   if (normalizedStatus === 'UNSUBSCRIBED') {
+    expressionAttributeNames['#unsubscribedAt'] = 'unsubscribedAt';
     expressionParts.push('#unsubscribedAt = :now');
+  }
+
+  if (normalizedStatus === 'PENDING') {
+    expressionAttributeNames['#unsubscribedAt'] = 'unsubscribedAt';
+    removeParts.push('#unsubscribedAt');
+  }
+
+  let updateExpression = `SET ${expressionParts.join(', ')}`;
+  if (removeParts.length) {
+    updateExpression += ` REMOVE ${removeParts.join(', ')}`;
   }
 
   await ddb.send(new UpdateCommand({
     TableName: cfg.subscribersTable,
     Key: { emailHash },
-    UpdateExpression: `SET ${expressionParts.join(', ')}`,
-    ExpressionAttributeNames: {
-      '#email': 'email',
-      '#status': 'status',
-      '#topics': 'topics',
-      '#source': 'source',
-      '#updatedAt': 'updatedAt',
-      '#createdAt': 'createdAt',
-      '#confirmedAt': 'confirmedAt',
-      '#unsubscribedAt': 'unsubscribedAt'
-    },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: {
       ':email': normalized,
       ':status': normalizedStatus,

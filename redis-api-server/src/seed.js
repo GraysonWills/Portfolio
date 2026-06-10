@@ -246,6 +246,29 @@ const seedData = [
   {
     ID: 'work-exp-006',
     Text: JSON.stringify({
+      title: 'Assistant Program Manager',
+      company: 'General Motors',
+      location: 'Warren, Michigan, United States',
+      startDate: 'June 2023',
+      endDate: 'October 2023',
+      description: [
+        'Coordinated the BFT program at General Motors, ensuring proper vehicle build procedures aligned with the 2030 launch target.',
+        'Led strategic planning and project-management efforts with senior stakeholders across the program.'
+      ],
+      achievements: [
+        'Coordinated cross-functional program execution around vehicle build readiness and launch planning',
+        'Facilitated planning discussions with executive stakeholders to keep deliverables aligned and on track',
+        'Strengthened teamwork, communication, and project-management skills inside a fast-moving enterprise environment'
+      ]
+    }),
+    PageID: PageID.Work,
+    PageContentID: PageContentID.WorkText,
+    ListItemID: 'experience-5',
+    Metadata: { type: 'experience', order: 6 }
+  },
+  {
+    ID: 'work-exp-007',
+    Text: JSON.stringify({
       title: 'Robotics Intern',
       company: 'NASA',
       location: 'Houston, Texas',
@@ -262,11 +285,11 @@ const seedData = [
     }),
     PageID: PageID.Work,
     PageContentID: PageContentID.WorkText,
-    ListItemID: 'experience-5',
-    Metadata: { type: 'experience', order: 6 }
+    ListItemID: 'experience-6',
+    Metadata: { type: 'experience', order: 7 }
   },
   {
-    ID: 'work-exp-007',
+    ID: 'work-exp-008',
     Text: JSON.stringify({
       title: 'Software Engineer IT Intern',
       company: 'EnVen Energy Corporation',
@@ -284,15 +307,15 @@ const seedData = [
     }),
     PageID: PageID.Work,
     PageContentID: PageContentID.WorkText,
-    ListItemID: 'experience-6',
-    Metadata: { type: 'experience', order: 7 }
+    ListItemID: 'experience-7',
+    Metadata: { type: 'experience', order: 8 }
   },
   {
     ID: 'work-metric-architecture',
     Text: JSON.stringify({
       label: 'AI Systems Architecture',
-      value: 86,
-      level: 'Advanced',
+      value: 72,
+      level: 'Established',
       summary: 'Production design and platform integration across analytics + AI workflows'
     }),
     PageID: PageID.Work,
@@ -304,8 +327,8 @@ const seedData = [
     ID: 'work-metric-data-science',
     Text: JSON.stringify({
       label: 'Data Science Delivery',
-      value: 91,
-      level: 'Advanced',
+      value: 76,
+      level: 'Strong',
       summary: 'Experimentation, KPI translation, and executive-facing dashboard outcomes'
     }),
     PageID: PageID.Work,
@@ -317,7 +340,7 @@ const seedData = [
     ID: 'work-metric-computer-vision',
     Text: JSON.stringify({
       label: 'Computer Vision',
-      value: 74,
+      value: 61,
       level: 'Developing',
       summary: 'Active in CV pipelines, model experimentation, and edge case tuning'
     }),
@@ -330,8 +353,8 @@ const seedData = [
     ID: 'work-metric-product-exec',
     Text: JSON.stringify({
       label: 'Product + Executive Communication',
-      value: 80,
-      level: 'Strong',
+      value: 70,
+      level: 'Established',
       summary: 'Cross-functional decision support and narrative framing for leadership'
     }),
     PageID: PageID.Work,

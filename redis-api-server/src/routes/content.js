@@ -82,10 +82,13 @@ const CONTENT_BACKEND = String(process.env.CONTENT_BACKEND || 'redis').toLowerCa
 const useDdbAsPrimary = CONTENT_BACKEND === 'dynamodb' || CONTENT_BACKEND === 'ddb';
 const PREVIEW_KEY_PREFIX = 'content:preview:';
 const redisConfigured = !!redisClient.isConfigured;
+const allowInMemoryPreviewSessions = process.env.ALLOW_IN_MEMORY_PREVIEW_SESSIONS === 'true'
+  || process.env.NODE_ENV !== 'production';
 const PREVIEW_TTL_SECONDS = Math.max(300, parseInt(process.env.PREVIEW_TTL_SECONDS || '21600', 10) || 21600);
 const PREVIEW_MAX_UPSERTS = Math.max(1, parseInt(process.env.PREVIEW_MAX_UPSERTS || '500', 10) || 500);
 const PREVIEW_MAX_DELETES = Math.max(0, parseInt(process.env.PREVIEW_MAX_DELETES || '500', 10) || 500);
 const PREVIEW_MAX_BYTES = Math.max(16_384, parseInt(process.env.PREVIEW_MAX_BYTES || '1048576', 10) || 1048576);
+const inMemoryPreviewSessions = new Map();
 
 function normalizeContentArray(items, req) {
   if (!Array.isArray(items)) return [];
@@ -105,6 +108,33 @@ function logV2Metric(route, startedAt, extra = {}) {
     ...extra
   };
   console.info('[content-v2-metric]', JSON.stringify(metric));
+}
+
+function cleanupInMemoryPreviewSessions(now = Date.now()) {
+  for (const [token, entry] of inMemoryPreviewSessions.entries()) {
+    if (!entry || !Number.isFinite(entry.expiresAtMs) || entry.expiresAtMs <= now) {
+      inMemoryPreviewSessions.delete(token);
+    }
+  }
+}
+
+function putInMemoryPreviewSession(token, payload, ttlSeconds) {
+  cleanupInMemoryPreviewSessions();
+  inMemoryPreviewSessions.set(token, {
+    payload,
+    expiresAtMs: Date.now() + (Math.max(1, Number(ttlSeconds) || PREVIEW_TTL_SECONDS) * 1000)
+  });
+}
+
+function getInMemoryPreviewSession(token) {
+  cleanupInMemoryPreviewSessions();
+  const entry = inMemoryPreviewSessions.get(token);
+  if (!entry) return null;
+  if (!Number.isFinite(entry.expiresAtMs) || entry.expiresAtMs <= Date.now()) {
+    inMemoryPreviewSessions.delete(token);
+    return null;
+  }
+  return entry.payload;
 }
 
 async function readContentByPage(pageId) {
@@ -284,17 +314,23 @@ router.post('/preview/session', requireAuth, async (req, res) => {
         await putPreviewSession(token, payload, PREVIEW_TTL_SECONDS);
         stored = true;
       } catch (err) {
-        if (!redisConfigured) throw err;
-        console.warn('[preview] Failed to store preview session in DynamoDB, falling back to Redis:', err.message);
+        if (!redisConfigured && !allowInMemoryPreviewSessions) throw err;
+        const fallbackTarget = redisConfigured ? 'Redis' : 'in-memory storage';
+        console.warn(`[preview] Failed to store preview session in DynamoDB, falling back to ${fallbackTarget}:`, err.message);
       }
     }
 
     if (!stored) {
-      if (!redisConfigured) {
+      if (redisConfigured) {
+        const key = `${PREVIEW_KEY_PREFIX}${token}`;
+        await redisClient.set(key, encoded, { EX: PREVIEW_TTL_SECONDS });
+        stored = true;
+      } else if (allowInMemoryPreviewSessions) {
+        putInMemoryPreviewSession(token, payload, PREVIEW_TTL_SECONDS);
+        stored = true;
+      } else {
         return res.status(500).json({ error: 'Preview session store is not configured' });
       }
-      const key = `${PREVIEW_KEY_PREFIX}${token}`;
-      await redisClient.set(key, encoded, { EX: PREVIEW_TTL_SECONDS });
     }
 
     return res.status(201).json({
@@ -336,8 +372,12 @@ router.get('/preview/:token', async (req, res) => {
       }
     }
 
+    if (!payload && allowInMemoryPreviewSessions) {
+      payload = getInMemoryPreviewSession(token);
+    }
+
     if (!payload) {
-      if (ddbError && !redisConfigured) throw ddbError;
+      if (ddbError && !redisConfigured && !allowInMemoryPreviewSessions) throw ddbError;
       return res.status(404).json({ error: 'Preview session not found or expired' });
     }
 

@@ -12,6 +12,7 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - `/dashboard`
   - `/content`
   - `/subscribers`
+  - `/comments`
   - `/collections`
 - Blog lifecycle:
   - create/edit/delete
@@ -28,6 +29,7 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - typed fields for titles, summaries, dates, locations, links, tags, read time, and visibility where applicable
   - raw-record modal retained as an advanced fallback
 - Subscriber admin management (list/add/remove).
+- Comment management (list/filter, author replies, soft-delete moderation).
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
 - Inline editor image guard:
@@ -68,6 +70,7 @@ Main consumed APIs:
 - `/api/content/v3/admin/content`
 - `/api/notifications/*`
 - includes `/api/notifications/unpublish`
+- `/api/comments/*`
 - `/api/subscriptions/*`
 - `/api/photo-assets/*`
 - `/api/upload/image`

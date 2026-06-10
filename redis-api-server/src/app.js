@@ -22,9 +22,32 @@ const analyticsRoutes = require('./routes/analytics');
 const photoAssetsRoutes = require('./routes/photo-assets');
 const mediaRoutes = require('./routes/media');
 const resumeRoutes = require('./routes/resume');
+const commentsRoutes = require('./routes/comments');
 
 function createApp() {
   const app = express();
+
+  function isPublicContentCacheable(req) {
+    if (String(req.method || '').toUpperCase() !== 'GET') return false;
+    if (req.headers.authorization) return false;
+
+    const path = String(req.path || '').replace(/\/+$/, '');
+    if (path === '/content/v3/bootstrap') return true;
+    if (path === '/content/v3/landing') return true;
+    if (path === '/content/v3/work') return true;
+    if (path === '/content/v3/projects/categories') return true;
+    if (path === '/content/v2/blog/cards') return true;
+    if (path === '/content/v2/blog/cards/media') return true;
+    if (path.startsWith('/content/v3/blog/')) return true;
+    return false;
+  }
+
+  function getPublicReadCacheControl() {
+    return String(
+      process.env.PUBLIC_READ_CACHE_CONTROL
+      || 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+    ).trim();
+  }
 
   function normalizeOrigin(origin) {
     const raw = String(origin || '').trim();
@@ -169,13 +192,18 @@ function createApp() {
   app.use(express.urlencoded({ extended: true, limit: requestBodyLimit, parameterLimit: 1000 }));
 
   // ─── Dynamic API Cache Policy ────────────────────────────────
-  // Mutable content should always be fetched fresh from origin. Static build
-  // assets and media variants remain separately cacheable via CloudFront/S3.
+  // Mutable/admin/comment traffic stays fresh. Published public content reads
+  // get a short shared-cache window to reduce repeat Lambda/DynamoDB work.
   app.use('/api', (req, res, next) => {
     if (req.method === 'GET') {
-      res.set('Cache-Control', 'no-store, max-age=0');
-      res.set('Pragma', 'no-cache');
-      res.set('Expires', '0');
+      if (isPublicContentCacheable(req)) {
+        res.set('Cache-Control', getPublicReadCacheControl());
+        res.set('Vary', 'Accept-Encoding');
+      } else {
+        res.set('Cache-Control', 'no-store, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+      }
     }
     next();
   });
@@ -190,6 +218,7 @@ function createApp() {
   app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
   app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
   app.use('/api/resume', resumeLimiter, resumeRoutes);
+  app.use('/api/comments', commentsRoutes);
   app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
@@ -206,6 +235,7 @@ function createApp() {
         notifications: '/api/notifications (requires auth)',
         analytics: '/api/analytics/events (public)',
         resume: '/api/resume/download (public, rate limited)',
+        comments: '/api/comments',
         photoAssets: '/api/photo-assets (requires auth)',
         media: '/media/:key (public S3 proxy)'
       }

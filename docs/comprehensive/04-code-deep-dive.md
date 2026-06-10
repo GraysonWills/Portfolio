@@ -9,7 +9,8 @@ This document provides code-level detail for all three main applications.
 - Read content from backend APIs.
 - Render blog list/post pages and notification confirmation routes.
 - Track frontend analytics events.
-- Apply route-scoped browser caching and snapshot fallback for read performance.
+- Reuse only route-scoped in-memory reads during the current SPA session.
+- Render metadata before non-critical media and append list/timeline content progressively.
 
 ## 1.2 Routing
 File: `/Users/grayson/Desktop/Portfolio/portfolio-app/src/app/app-routing.module.ts`
@@ -31,16 +32,19 @@ Primary routes:
 - UI is driven by `PageID` and `PageContentID`.
 - Blog rendering groups content records by `ListItemID`.
 - Blog metadata is expected in `PageContentID=3` (`BlogItem`).
-- Blog/media lists use metadata-first `v2` reads + batch media hydration.
+- Blog feed/media lists use metadata-first `v2` reads + batch media hydration.
+- Landing, work, projects, and blog detail prefer `v3` route-shaped payloads.
 
 ## 2. Authoring Console (`blog-authoring-gui`)
 
 ## 2.1 Responsibilities
 - Authenticated authoring and administration UI.
 - Blog create/edit/delete, preview, schedule, publish.
+- Blog unpublish and send-now notification controls.
 - Site content editing and image upload.
 - Subscriber management.
 - Collections management (authoring-only content categories and visibility).
+- Human-friendly section-based editing over the same backend record model.
 
 ## 2.2 Routing
 File: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/app-routing.module.ts`
@@ -92,11 +96,14 @@ File: `/Users/grayson/Desktop/Portfolio/blog-authoring-gui/src/app/services/blog
 Core areas:
 - generic content CRUD.
 - blog lifecycle APIs.
+- save path keeps `BlogBody` and `BlogText` aligned for existing and new posts.
 - notification subscriber admin APIs.
+- unpublish API integration.
 - preview token session APIs.
 - photo-asset signed upload lifecycle.
 - collections registry and entry APIs.
-- route-scoped read caching and `v2` fallback behavior.
+- route-scoped in-memory read reuse and `v2`/`v3` fallback behavior.
+- inline editor image normalization for embedded `data:image/*` markup.
 
 ## 3. Backend API (`redis-api-server`)
 
@@ -105,7 +112,8 @@ File: `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`
 
 Composition details:
 - middleware stack (helmet, cors, compression, morgan, rate-limit, body parsers).
-- in-memory GET cache with write invalidation.
+- dynamic GET responses marked `Cache-Control: no-store`.
+- configurable request body limit (`REQUEST_BODY_LIMIT`, default `6mb`).
 - route mounting for all API groups.
 
 ## 3.2 Route inventory
@@ -121,6 +129,14 @@ File: `/Users/grayson/Desktop/Portfolio/redis-api-server/src/routes/content.js`
 - `GET /api/content/v2/blog/cards`
 - `GET /api/content/v2/blog/cards/media`
 - `POST /api/content/v2/list-items/batch`
+- `GET /api/content/v3/bootstrap`
+- `GET /api/content/v3/landing`
+- `GET /api/content/v3/work`
+- `GET /api/content/v3/projects/categories`
+- `POST /api/content/v3/projects/items`
+- `GET /api/content/v3/blog/:listItemId`
+- `GET /api/content/v3/admin/dashboard`
+- `GET /api/content/v3/admin/content`
 - `POST /api/content`
 - `POST /api/content/batch`
 - `PUT /api/content/:id`
@@ -139,6 +155,7 @@ File: `/Users/grayson/Desktop/Portfolio/redis-api-server/src/routes/notification
 - `POST /api/notifications/send-now`
 - `POST /api/notifications/schedule`
 - `DELETE /api/notifications/schedule/:scheduleName`
+- `POST /api/notifications/unpublish`
 
 ### Subscriptions
 File: `/Users/grayson/Desktop/Portfolio/redis-api-server/src/routes/subscriptions.js`
@@ -173,6 +190,8 @@ File: `/Users/grayson/Desktop/Portfolio/redis-api-server/src/services/notificati
 - supports schedule creation and cancellation.
 - writes metadata back into content to track schedule/send state.
 - includes send-marker logic for idempotency.
+- ignores stale/non-active scheduled publish executions using schedule-name checks.
+- supports unpublish cleanup of active + stale schedules.
 - supports subscriber admin list/add/remove through notifications route surface.
 
 ### Subscriptions engine

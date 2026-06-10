@@ -14,6 +14,8 @@ import { SeoService } from '../../../services/seo.service';
 import { MessageService } from 'primeng/api';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
+import { BlogComment, CommentService } from '../../../services/comment.service';
+import { SiteAuthService, SiteUser } from '../../../services/site-auth.service';
 
 interface RecentPostCard {
   listItemID: string;
@@ -24,6 +26,8 @@ interface RecentPostCard {
   tags: string[];
   readTime: number;
 }
+
+type CommentAuthMode = 'login' | 'email-code' | 'register' | 'confirm';
 
 @Component({
   selector: 'app-blog-detail',
@@ -41,10 +45,13 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   coverAlt = '';
   publishDate: Date | null = null;
   readTime = 1;
+  roughDraftReadTime = 1;
   tags: string[] = [];
   privateSeoTags: string[] = [];
   category = '';
   bodyBlocks: BlogBodyBlock[] = [];
+  roughDraftHtml = '';
+  contentVersion: 'polished' | 'rough' = 'polished';
   signature: BlogSignature | null = null;
 
   // Recent posts
@@ -56,10 +63,35 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   isLoading = true;
   notFound = false;
 
+  // Comments
+  comments: BlogComment[] = [];
+  commentsLoading = false;
+  commentsLoadFailed = false;
+  newCommentBody = '';
+  replyDrafts: Record<string, string> = {};
+  replyingToCommentId: string | null = null;
+  savingComment = false;
+  savingReplyFor: string | null = null;
+  likingCommentId: string | null = null;
+  deletingCommentId: string | null = null;
+  commentAccountOpen = false;
+  commentAuthMode: CommentAuthMode = 'login';
+  commentAuthEmail = '';
+  commentAuthPassword = '';
+  commentAuthDisplayName = '';
+  commentAuthCode = '';
+  commentAuthBusy = false;
+  commentAuthCodeExpiresAtMs = 0;
+  commentAuthCodeCountdown = '';
+  siteUser: SiteUser | null = null;
+  private commentAuthTimerId: number | null = null;
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private redisService: RedisService,
+    private commentService: CommentService,
+    readonly siteAuth: SiteAuthService,
     private sanitizer: DomSanitizer,
     private seo: SeoService,
     private messageService: MessageService
@@ -77,22 +109,38 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.siteAuth.currentUser$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((user) => {
+        const previousUser = this.siteUser?.username || '';
+        this.siteUser = user;
+        if (this.currentListItemId && previousUser !== (user?.username || '')) {
+          this.loadComments(this.currentListItemId, true);
+        }
+      });
+
     this.route.params
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(params => {
         this.currentListItemId = params['id'];
         this.loadPost(this.currentListItemId);
+        this.loadComments(this.currentListItemId);
         this.loadRecentPosts();
       });
   }
 
   ngOnDestroy(): void {
     this.seo.clearStructuredData('article');
+    this.clearCommentCodeExpiry();
   }
 
   private loadPost(listItemId: string): void {
     this.notFound = false;
     this.bodyBlocks = [];
+    this.roughDraftHtml = '';
+    this.contentVersion = 'polished';
+    this.readTime = 1;
+    this.roughDraftReadTime = 1;
     if (this.redisService.isContentV2StreamingEnabled()) {
       this.loadPostV3(listItemId);
       return;
@@ -121,6 +169,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.signature = payload.signature || null;
         this.bodyBlocks = Array.isArray(payload.bodyBlocks) ? payload.bodyBlocks : [];
         this.readTime = Math.max(1, Number(payload.readTimeMinutes) || 1);
+        this.roughDraftHtml = String(payload.roughDraftHtml || '');
+        this.roughDraftReadTime = this.hasRoughDraft()
+          ? this.calculateReadTimeFromText(this.extractReadableText(this.roughDraftHtml))
+          : this.readTime;
         this.updateSeo(listItemId);
         this.isLoading = false;
       },
@@ -150,6 +202,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         const textItem = items.find(i => i.PageContentID === PageContentID.BlogText);
         const imgItem  = items.find(i => i.PageContentID === PageContentID.BlogImage);
         const bodyItem = items.find(i => i.PageContentID === PageContentID.BlogBody);
+        const roughDraftItem = items.find(i => i.PageContentID === PageContentID.BlogRoughDraft);
 
         const meta = metaItem?.Metadata as any || {};
         this.applyMetadata(meta);
@@ -194,6 +247,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
           .map(b => (b as any).content || '')
           .join(' ');
         this.readTime = this.resolveReadTimeMinutes(meta as BlogPostMetadata, allText);
+        this.roughDraftHtml = String(roughDraftItem?.Text || '');
+        this.roughDraftReadTime = this.hasRoughDraft()
+          ? this.calculateReadTimeFromText(this.extractReadableText(this.roughDraftHtml))
+          : this.readTime;
 
         this.updateSeo(listItemId);
 
@@ -349,6 +406,294 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 
+  renderRoughDraftHtml(): SafeHtml {
+    return this.renderMarkdown(this.roughDraftHtml);
+  }
+
+  hasRoughDraft(): boolean {
+    return !!String(this.roughDraftHtml || '').trim();
+  }
+
+  isShowingRoughDraft(): boolean {
+    return this.contentVersion === 'rough' && this.hasRoughDraft();
+  }
+
+  showPolishedVersion(): void {
+    this.contentVersion = 'polished';
+  }
+
+  showRoughDraftVersion(): void {
+    if (!this.hasRoughDraft()) return;
+    this.contentVersion = 'rough';
+  }
+
+  getActiveReadTime(): number {
+    return this.isShowingRoughDraft() ? this.roughDraftReadTime : this.readTime;
+  }
+
+  refreshComments(): void {
+    this.loadComments(this.currentListItemId);
+  }
+
+  submitComment(): void {
+    if (!this.ensureCommentUser()) return;
+    const body = String(this.newCommentBody || '').trim();
+    if (!body) {
+      this.messageService.add({ severity: 'warn', summary: 'Comment Empty', detail: 'Write a comment first.' });
+      return;
+    }
+
+    this.savingComment = true;
+    this.commentService.createComment(this.currentListItemId, body).subscribe({
+      next: () => {
+        this.newCommentBody = '';
+        this.savingComment = false;
+        this.loadComments(this.currentListItemId, true);
+      },
+      error: (err) => {
+        this.savingComment = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Comment Failed',
+          detail: err?.message || 'Could not post comment.'
+        });
+      }
+    });
+  }
+
+  toggleReply(comment: BlogComment): void {
+    if (!this.ensureCommentUser()) return;
+    this.replyingToCommentId = this.replyingToCommentId === comment.commentId ? null : comment.commentId;
+  }
+
+  submitReply(comment: BlogComment): void {
+    if (!this.ensureCommentUser()) return;
+    const body = String(this.replyDrafts[comment.commentId] || '').trim();
+    if (!body) {
+      this.messageService.add({ severity: 'warn', summary: 'Reply Empty', detail: 'Write a reply first.' });
+      return;
+    }
+
+    this.savingReplyFor = comment.commentId;
+    this.commentService.createComment(this.currentListItemId, body, comment.commentId).subscribe({
+      next: () => {
+        this.replyDrafts[comment.commentId] = '';
+        this.replyingToCommentId = null;
+        this.savingReplyFor = null;
+        this.loadComments(this.currentListItemId, true);
+      },
+      error: (err) => {
+        this.savingReplyFor = null;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Reply Failed',
+          detail: err?.message || 'Could not post reply.'
+        });
+      }
+    });
+  }
+
+  toggleLike(comment: BlogComment): void {
+    if (!this.ensureCommentUser()) return;
+    this.likingCommentId = comment.commentId;
+    this.commentService.setLike(comment.commentId, !comment.likedByViewer).subscribe({
+      next: (updated) => {
+        this.comments = this.replaceComment(this.comments, updated);
+        this.likingCommentId = null;
+      },
+      error: (err) => {
+        this.likingCommentId = null;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Like Failed',
+          detail: err?.message || 'Could not update like.'
+        });
+      }
+    });
+  }
+
+  deleteComment(comment: BlogComment): void {
+    if (!comment.viewerCanDelete || comment.deleted) return;
+    this.deletingCommentId = comment.commentId;
+    this.commentService.deleteComment(comment.commentId).subscribe({
+      next: () => {
+        this.deletingCommentId = null;
+        this.loadComments(this.currentListItemId, true);
+      },
+      error: (err) => {
+        this.deletingCommentId = null;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Delete Failed',
+          detail: err?.message || 'Could not delete comment.'
+        });
+      }
+    });
+  }
+
+  openCommentAccount(mode: CommentAuthMode = 'login'): void {
+    if (!this.siteAuth.isConfigured()) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Accounts Not Ready',
+        detail: 'Comment accounts need a public Cognito client before sign-in is available.'
+      });
+      return;
+    }
+    this.commentAccountOpen = true;
+    this.setCommentAuthMode(mode);
+  }
+
+  closeCommentAccount(): void {
+    this.commentAccountOpen = false;
+    this.clearCommentCodeExpiry();
+  }
+
+  setCommentAuthMode(mode: CommentAuthMode): void {
+    this.commentAuthMode = mode;
+    if (mode === 'login' || mode === 'register') {
+      this.commentAuthCode = '';
+      this.clearCommentCodeExpiry();
+    }
+  }
+
+  getCommentAuthSubmitLabel(): string {
+    if (this.commentAuthMode === 'register') return 'Create Account';
+    if (this.commentAuthMode === 'confirm') return 'Verify Email';
+    if (this.commentAuthMode === 'email-code') return 'Verify Code';
+    return 'Send Code';
+  }
+
+  submitCommentAuth(): void {
+    if (this.commentAuthBusy) return;
+    this.commentAuthBusy = true;
+
+    const done = () => {
+      this.commentAuthBusy = false;
+    };
+
+    if (this.commentAuthMode === 'register') {
+      this.siteAuth.register(this.commentAuthDisplayName, this.commentAuthEmail, this.commentAuthPassword).subscribe({
+        next: () => {
+          done();
+          this.setCommentAuthMode('confirm');
+          this.startCommentCodeExpiry();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Check Email',
+            detail: 'Enter the verification code within 10 minutes to finish creating your account.'
+          });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Registration Failed', detail: err?.message || 'Could not register.' });
+        }
+      });
+      return;
+    }
+
+    if (this.commentAuthMode === 'confirm') {
+      this.siteAuth.confirmRegistration(this.commentAuthEmail, this.commentAuthCode).subscribe({
+        next: () => {
+          done();
+          this.setCommentAuthMode('login');
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Verified',
+            detail: 'Your account is verified. Send yourself a sign-in code to comment.'
+          });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Verification Failed', detail: err?.message || 'Could not verify account.' });
+        }
+      });
+      return;
+    }
+
+    if (this.commentAuthMode === 'email-code') {
+      this.siteAuth.confirmEmailCodeLogin(this.commentAuthEmail, this.commentAuthCode).subscribe({
+        next: () => {
+          done();
+          this.commentAccountOpen = false;
+          this.commentAuthCode = '';
+          this.commentAuthPassword = '';
+          this.clearCommentCodeExpiry();
+          this.loadComments(this.currentListItemId, true);
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Sign In Failed', detail: err?.message || 'Could not verify sign-in code.' });
+        }
+      });
+      return;
+    }
+
+    this.siteAuth.startEmailCodeLogin(this.commentAuthEmail).subscribe({
+      next: () => {
+        done();
+        this.setCommentAuthMode('email-code');
+        this.startCommentCodeExpiry();
+        this.commentAuthPassword = '';
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Check Email',
+          detail: 'Enter the sign-in code within 10 minutes.'
+        });
+      },
+      error: (err) => {
+        done();
+        this.messageService.add({ severity: 'error', summary: 'Code Failed', detail: err?.message || 'Could not send sign-in code.' });
+      }
+    });
+  }
+
+  resendCommentAuthCode(): void {
+    if (this.commentAuthBusy) return;
+    this.commentAuthBusy = true;
+
+    const done = () => {
+      this.commentAuthBusy = false;
+    };
+
+    if (this.commentAuthMode === 'confirm') {
+      this.siteAuth.resendRegistrationCode(this.commentAuthEmail).subscribe({
+        next: () => {
+          done();
+          this.startCommentCodeExpiry();
+          this.messageService.add({ severity: 'success', summary: 'Code Sent', detail: 'A new verification code was sent.' });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Resend Failed', detail: err?.message || 'Could not resend verification code.' });
+        }
+      });
+      return;
+    }
+
+    this.siteAuth.startEmailCodeLogin(this.commentAuthEmail).subscribe({
+      next: () => {
+        done();
+        this.setCommentAuthMode('email-code');
+        this.startCommentCodeExpiry();
+        this.messageService.add({ severity: 'success', summary: 'Code Sent', detail: 'A new sign-in code was sent.' });
+      },
+      error: (err) => {
+        done();
+        this.messageService.add({ severity: 'error', summary: 'Resend Failed', detail: err?.message || 'Could not send sign-in code.' });
+      }
+    });
+  }
+
+  logoutCommentUser(): void {
+    this.siteAuth.logout();
+    this.loadComments(this.currentListItemId, true);
+  }
+
+  trackByComment(index: number, comment: BlogComment): string {
+    return comment.commentId || `${index}`;
+  }
+
   private toRecentPostCard(post: ContentGroup): RecentPostCard {
     const textItem = post.items.find(i => i.PageContentID === PageContentID.BlogText);
     const imgItem  = post.items.find(i => i.PageContentID === PageContentID.BlogImage);
@@ -409,6 +754,24 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     return /<\/?[a-z][\s\S]*>/i.test(value);
   }
 
+  private extractReadableText(value: string): string {
+    const raw = String(value || '');
+    if (!raw.trim()) return '';
+
+    if (typeof document !== 'undefined' && this.looksLikeHtml(raw)) {
+      const root = document.createElement('div');
+      root.innerHTML = raw;
+      return String(root.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    return raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  private calculateReadTimeFromText(value: string): number {
+    const words = String(value || '').trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil(words / 200));
+  }
+
   private buildSeoKeywords(publicTags: string[], privateSeoTags: string[], category: string): string[] {
     const seen = new Set<string>();
     const merged: string[] = [];
@@ -430,5 +793,80 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     return value
       .replace(/&nbsp;/gi, ' ')
       .replace(/\u00a0/g, ' ');
+  }
+
+  private loadComments(listItemId: string, quiet: boolean = false): void {
+    const safeId = String(listItemId || '').trim();
+    if (!safeId) return;
+
+    if (!quiet) {
+      this.commentsLoading = true;
+    }
+    this.commentsLoadFailed = false;
+
+    this.commentService.getComments(safeId).subscribe({
+      next: (response) => {
+        this.comments = Array.isArray(response?.comments) ? response.comments : [];
+        this.commentsLoading = false;
+      },
+      error: () => {
+        this.commentsLoading = false;
+        this.commentsLoadFailed = true;
+      }
+    });
+  }
+
+  private ensureCommentUser(): boolean {
+    if (this.siteUser) return true;
+    this.openCommentAccount('login');
+    return false;
+  }
+
+  private startCommentCodeExpiry(): void {
+    this.commentAuthCodeExpiresAtMs = Date.now() + (10 * 60 * 1000);
+    this.updateCommentCodeCountdown();
+    if (this.commentAuthTimerId !== null) {
+      window.clearInterval(this.commentAuthTimerId);
+    }
+    this.commentAuthTimerId = window.setInterval(() => {
+      this.updateCommentCodeCountdown();
+    }, 1000);
+  }
+
+  private clearCommentCodeExpiry(): void {
+    this.commentAuthCodeExpiresAtMs = 0;
+    this.commentAuthCodeCountdown = '';
+    if (this.commentAuthTimerId !== null) {
+      window.clearInterval(this.commentAuthTimerId);
+      this.commentAuthTimerId = null;
+    }
+  }
+
+  private updateCommentCodeCountdown(): void {
+    const remainingMs = Math.max(0, this.commentAuthCodeExpiresAtMs - Date.now());
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = `${remainingSeconds % 60}`.padStart(2, '0');
+    this.commentAuthCodeCountdown = `${minutes}:${seconds}`;
+
+    if (remainingMs <= 0 && this.commentAuthTimerId !== null) {
+      window.clearInterval(this.commentAuthTimerId);
+      this.commentAuthTimerId = null;
+    }
+  }
+
+  private replaceComment(comments: BlogComment[], updated: BlogComment): BlogComment[] {
+    return comments.map((comment) => {
+      if (comment.commentId === updated.commentId) {
+        return {
+          ...updated,
+          replies: comment.replies
+        };
+      }
+      return {
+        ...comment,
+        replies: this.replaceComment(comment.replies || [], updated)
+      };
+    });
   }
 }

@@ -106,7 +106,8 @@ sequenceDiagram
   - general `/api/*` limiter
   - stricter write limiter
   - dedicated analytics limiter.
-- bounded request body parsing (`2mb` limits).
+- bounded request body parsing via `REQUEST_BODY_LIMIT` (default `6mb`).
+- dynamic GET responses marked `Cache-Control: no-store`.
 
 ### Data + queue controls
 - DynamoDB for source-of-truth records.
@@ -124,6 +125,9 @@ sequenceDiagram
 | Authoring bucket | `grayson-wills-blog-authoring-dev-381492289909` | `ci-cd.yml` |
 | API Lambda | `portfolio-redis-api` | `api-deploy.yml` |
 | API region | `us-east-2` | workflows + code defaults |
+| Lambda alias | `live` | runtime configuration |
+| Lambda architecture | `arm64` | runtime configuration |
+| Lambda provisioned concurrency | `2` | runtime configuration |
 | Content table | `portfolio-content` | README + runtime env |
 | Preview table | `portfolio-content-preview-sessions` | README + runtime env |
 | Subscriber table | `portfolio-email-subscribers` | notifications/subscriptions services |

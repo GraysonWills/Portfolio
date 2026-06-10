@@ -51,17 +51,39 @@
           <span class="meta-divider" *ngIf="publishDate"></span>
           <span class="meta-item">
             <i class="pi pi-clock" aria-hidden="true"></i>
-            {{ readTime }} min read
+            {{ getActiveReadTime() }} min read
           </span>
         </div>
 
         <div class="article-tags" *ngIf="tags.length">
           <span *ngFor="let tag of tags" class="article-tag">{{ tag }}</span>
         </div>
+
+        <div class="article-version-toggle" *ngIf="hasRoughDraft()">
+          <span class="version-toggle-label">View</span>
+          <div class="version-toggle-group" role="tablist" aria-label="Blog post version">
+            <button
+              type="button"
+              class="version-toggle-btn"
+              [class.active]="!isShowingRoughDraft()"
+              [attr.aria-pressed]="!isShowingRoughDraft()"
+              (click)="showPolishedVersion()">
+              Polished
+            </button>
+            <button
+              type="button"
+              class="version-toggle-btn"
+              [class.active]="isShowingRoughDraft()"
+              [attr.aria-pressed]="isShowingRoughDraft()"
+              (click)="showRoughDraftVersion()">
+              Rough Draft
+            </button>
+          </div>
+        </div>
       </header>
 
       <!-- Article Body -->
-      <div class="article-body">
+      <div class="article-body" *ngIf="!isShowingRoughDraft(); else roughDraftBody">
         <ng-container *ngFor="let block of bodyBlocks">
           <!-- Paragraph (Markdown) -->
           <div *ngIf="block.type === 'paragraph'" 
@@ -113,12 +135,257 @@
         </ng-container>
       </div>
 
+      <ng-template #roughDraftBody>
+        <div class="article-body article-body-rough">
+          <div
+            class="body-paragraph body-paragraph-rough"
+            [innerHTML]="renderRoughDraftHtml()">
+          </div>
+        </div>
+      </ng-template>
+
       <section class="article-signature" *ngIf="signature">
         <p class="signature-quote">"{{ signature.quote }}"</p>
         <p class="signature-author">— {{ signature.quoteAuthor }}</p>
         <p class="signature-name">{{ signature.signOffName }}</p>
       </section>
     </article>
+
+    <section class="comments-section container-narrow" aria-labelledby="comments-title">
+      <div class="comments-header">
+        <div>
+          <h2 id="comments-title">Comments</h2>
+          <p>{{ comments.length }} {{ comments.length === 1 ? 'thread' : 'threads' }}</p>
+        </div>
+        <div class="comments-account" *ngIf="siteUser; else commentSignInActions">
+          <span>Signed in as {{ siteUser.displayName }}</span>
+          <button type="button" class="comment-icon-btn" (click)="logoutCommentUser()" aria-label="Sign out">
+            <i class="pi pi-sign-out" aria-hidden="true"></i>
+          </button>
+        </div>
+        <ng-template #commentSignInActions>
+          <div class="comments-account">
+            <button type="button" class="comment-action-btn secondary" (click)="openCommentAccount('login')">
+              <i class="pi pi-sign-in" aria-hidden="true"></i>
+              Sign In
+            </button>
+            <button type="button" class="comment-action-btn" (click)="openCommentAccount('register')">
+              <i class="pi pi-user-plus" aria-hidden="true"></i>
+              Create Account
+            </button>
+          </div>
+        </ng-template>
+      </div>
+
+      <form class="comment-account-panel" *ngIf="commentAccountOpen" (ngSubmit)="submitCommentAuth()">
+        <div class="comment-auth-tabs" role="tablist" aria-label="Comment account mode">
+          <button
+            type="button"
+            [class.active]="commentAuthMode === 'login' || commentAuthMode === 'email-code'"
+            (click)="setCommentAuthMode('login')">
+            Sign In
+          </button>
+          <button
+            type="button"
+            [class.active]="commentAuthMode === 'register'"
+            (click)="setCommentAuthMode('register')">
+            Register
+          </button>
+          <button
+            type="button"
+            [class.active]="commentAuthMode === 'confirm'"
+            (click)="setCommentAuthMode('confirm')">
+            Verify
+          </button>
+        </div>
+
+        <p class="comment-auth-hint" *ngIf="commentAuthMode === 'login'">
+          Sign in with a one-time code sent to your email.
+        </p>
+        <p class="comment-auth-hint" *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'">
+          Enter the code sent to {{ commentAuthEmail || 'your email' }}.
+          <span *ngIf="commentAuthCodeCountdown">Expires in {{ commentAuthCodeCountdown }}.</span>
+        </p>
+
+        <div class="comment-auth-grid">
+          <label *ngIf="commentAuthMode === 'register'">
+            Display Name
+            <input
+              pInputText
+              type="text"
+              name="commentAuthDisplayName"
+              [(ngModel)]="commentAuthDisplayName"
+              autocomplete="name" />
+          </label>
+          <label>
+            Email
+            <input
+              pInputText
+              type="email"
+              name="commentAuthEmail"
+              [(ngModel)]="commentAuthEmail"
+              autocomplete="email" />
+          </label>
+          <label *ngIf="commentAuthMode === 'register'">
+            Password
+            <input
+              pInputText
+              type="password"
+              name="commentAuthPassword"
+              [(ngModel)]="commentAuthPassword"
+              autocomplete="new-password" />
+          </label>
+          <label *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'">
+            Verification Code
+            <input
+              pInputText
+              type="text"
+              name="commentAuthCode"
+              [(ngModel)]="commentAuthCode"
+              autocomplete="one-time-code" />
+          </label>
+        </div>
+
+        <div class="comment-auth-actions">
+          <button type="submit" class="comment-action-btn" [disabled]="commentAuthBusy">
+            <i
+              class="pi"
+              [ngClass]="commentAuthMode === 'login' ? 'pi-envelope' : 'pi-check'"
+              aria-hidden="true"></i>
+            {{ getCommentAuthSubmitLabel() }}
+          </button>
+          <button
+            type="button"
+            class="comment-action-btn secondary"
+            *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'"
+            [disabled]="commentAuthBusy || !commentAuthEmail"
+            (click)="resendCommentAuthCode()">
+            <i class="pi pi-refresh" aria-hidden="true"></i>
+            Resend Code
+          </button>
+          <button type="button" class="comment-action-btn secondary" (click)="closeCommentAccount()">
+            <i class="pi pi-times" aria-hidden="true"></i>
+            Cancel
+          </button>
+        </div>
+      </form>
+
+      <div class="comment-composer">
+        <textarea
+          name="newCommentBody"
+          [(ngModel)]="newCommentBody"
+          rows="4"
+          maxlength="3000"
+          [disabled]="!siteUser || savingComment"
+          [placeholder]="siteUser ? 'Share your thoughts...' : 'Sign in to leave a comment'">
+        </textarea>
+        <div class="comment-composer-actions">
+          <span>{{ newCommentBody.length || 0 }}/3000</span>
+          <button
+            type="button"
+            class="comment-action-btn"
+            [disabled]="savingComment || !siteUser"
+            (click)="submitComment()">
+            <i class="pi pi-send" aria-hidden="true"></i>
+            Post Comment
+          </button>
+        </div>
+      </div>
+
+      <div class="comments-status" *ngIf="commentsLoading">Loading comments...</div>
+      <div class="comments-status error" *ngIf="!commentsLoading && commentsLoadFailed">
+        <span>Comments could not be loaded.</span>
+        <button type="button" class="comment-link-btn" (click)="refreshComments()">Try Again</button>
+      </div>
+      <div class="comments-status" *ngIf="!commentsLoading && !commentsLoadFailed && comments.length === 0">
+        No comments yet.
+      </div>
+
+      <ng-template #commentThread let-comment let-depth="depth">
+        <article
+          class="comment-item"
+          [class.author-comment]="comment.authorRole === 'author'"
+          [class.deleted-comment]="comment.deleted"
+          [style.--comment-depth]="depth">
+          <div class="comment-main">
+            <div class="comment-meta">
+              <strong>{{ comment.authorName }}</strong>
+              <span class="author-badge" *ngIf="comment.authorRole === 'author'">Author</span>
+              <span *ngIf="comment.createdAt">{{ comment.createdAt | date:'mediumDate' }}</span>
+            </div>
+            <p class="comment-body" *ngIf="!comment.deleted">{{ comment.body }}</p>
+            <p class="comment-body deleted-copy" *ngIf="comment.deleted">This comment was deleted.</p>
+            <div class="comment-tools" *ngIf="!comment.deleted">
+              <button
+                type="button"
+                class="comment-tool-btn"
+                [class.active]="comment.likedByViewer"
+                [disabled]="likingCommentId === comment.commentId"
+                (click)="toggleLike(comment)">
+                <i class="pi" [ngClass]="comment.likedByViewer ? 'pi-heart-fill' : 'pi-heart'" aria-hidden="true"></i>
+                {{ comment.likeCount }}
+              </button>
+              <button type="button" class="comment-tool-btn" (click)="toggleReply(comment)">
+                <i class="pi pi-reply" aria-hidden="true"></i>
+                Reply
+              </button>
+              <button
+                type="button"
+                class="comment-tool-btn danger"
+                *ngIf="comment.viewerCanDelete"
+                [disabled]="deletingCommentId === comment.commentId"
+                (click)="deleteComment(comment)">
+                <i class="pi pi-trash" aria-hidden="true"></i>
+                Delete
+              </button>
+            </div>
+
+            <div class="reply-composer" *ngIf="replyingToCommentId === comment.commentId">
+              <textarea
+                [name]="'replyDraft-' + comment.commentId"
+                [(ngModel)]="replyDrafts[comment.commentId]"
+                rows="3"
+                maxlength="3000"
+                placeholder="Write a reply...">
+              </textarea>
+              <div class="comment-composer-actions">
+                <button
+                  type="button"
+                  class="comment-action-btn secondary"
+                  (click)="replyingToCommentId = null">
+                  <i class="pi pi-times" aria-hidden="true"></i>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="comment-action-btn"
+                  [disabled]="savingReplyFor === comment.commentId"
+                  (click)="submitReply(comment)">
+                  <i class="pi pi-send" aria-hidden="true"></i>
+                  Reply
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="comment-replies" *ngIf="comment.replies?.length">
+            <ng-container *ngFor="let reply of comment.replies; trackBy: trackByComment">
+              <ng-container
+                *ngTemplateOutlet="commentThread; context: { $implicit: reply, depth: depth + 1 }">
+              </ng-container>
+            </ng-container>
+          </div>
+        </article>
+      </ng-template>
+
+      <div class="comments-list" *ngIf="!commentsLoading && !commentsLoadFailed && comments.length > 0">
+        <ng-container *ngFor="let comment of comments; trackBy: trackByComment">
+          <ng-container
+            *ngTemplateOutlet="commentThread; context: { $implicit: comment, depth: 0 }">
+          </ng-container>
+        </ng-container>
+      </div>
+    </section>
 
     <!-- Recent Posts Section -->
     <section *ngIf="recentPosts.length > 0" class="recent-posts-section">

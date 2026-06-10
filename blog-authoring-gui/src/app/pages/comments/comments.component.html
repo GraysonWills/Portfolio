@@ -1,0 +1,148 @@
+<div class="comments-container">
+  <div class="comments-header">
+    <div class="header-title">
+      <h1>Comment Management</h1>
+      <p>Review, reply to, and remove blog comments.</p>
+    </div>
+    <div class="header-actions">
+      <p-button
+        label="Dashboard"
+        icon="pi pi-home"
+        styleClass="p-button-outlined"
+        (onClick)="goToDashboard()">
+      </p-button>
+      <p-button
+        label="Site Content"
+        icon="pi pi-sliders-h"
+        styleClass="p-button-outlined"
+        (onClick)="goToContentStudio()">
+      </p-button>
+      <p-button
+        label="Subscribers"
+        icon="pi pi-envelope"
+        styleClass="p-button-outlined"
+        (onClick)="goToSubscribers()">
+      </p-button>
+      <p-button
+        label="Collections"
+        icon="pi pi-folder"
+        styleClass="p-button-outlined"
+        (onClick)="goToCollections()">
+      </p-button>
+      <p-button
+        label="Logout"
+        icon="pi pi-sign-out"
+        styleClass="p-button-outlined"
+        (onClick)="logout()">
+      </p-button>
+    </div>
+  </div>
+
+  <p-card class="comments-card">
+    <div class="card-header">
+      <h3>Comments</h3>
+      <div class="filter-row">
+        <input
+          id="comment-search"
+          pInputText
+          type="text"
+          [(ngModel)]="searchQuery"
+          (input)="onSearchChanged()"
+          placeholder="Search author, post, or comment..." />
+        <input
+          pInputText
+          type="text"
+          [(ngModel)]="postFilter"
+          placeholder="Filter by post ID"
+          (keyup.enter)="loadComments()" />
+        <label class="checkbox-inline">
+          <input type="checkbox" [(ngModel)]="includeDeleted" (change)="loadComments()">
+          Include Deleted
+        </label>
+        <p-button
+          label="Refresh"
+          icon="pi pi-refresh"
+          styleClass="p-button-outlined p-button-sm"
+          [loading]="isLoading"
+          (onClick)="loadComments()">
+        </p-button>
+      </div>
+    </div>
+
+    <div class="loading-row" *ngIf="isLoading">Loading comments...</div>
+    <div class="loading-row" *ngIf="!isLoading && filteredComments.length === 0">No comments found.</div>
+
+    <div class="comment-grid" *ngIf="!isLoading && filteredComments.length > 0">
+      <article
+        class="comment-row"
+        [class.deleted]="comment.deleted"
+        [class.author]="comment.authorRole === 'author'"
+        *ngFor="let comment of filteredComments; trackBy: trackByComment">
+        <div class="comment-main">
+          <div class="comment-title-row">
+            <strong>{{ comment.authorName }}</strong>
+            <p-tag
+              [value]="comment.authorRole === 'author' ? 'AUTHOR' : 'READER'"
+              [severity]="comment.authorRole === 'author' ? 'warning' : 'info'">
+            </p-tag>
+            <p-tag
+              [value]="comment.deleted ? 'DELETED' : 'VISIBLE'"
+              [severity]="comment.deleted ? 'danger' : 'success'">
+            </p-tag>
+          </div>
+          <div class="comment-meta">
+            <span>post: {{ comment.postId }}</span>
+            <span *ngIf="comment.parentId">reply to: {{ comment.parentId }}</span>
+            <span *ngIf="comment.createdAt">{{ comment.createdAt | date:'short' }}</span>
+            <span>{{ comment.likeCount || 0 }} likes</span>
+          </div>
+          <p class="comment-body" *ngIf="!comment.deleted">{{ comment.body }}</p>
+          <p class="comment-body muted" *ngIf="comment.deleted">Deleted comment</p>
+        </div>
+
+        <div class="comment-actions">
+          <p-button
+            label="Reply"
+            icon="pi pi-reply"
+            styleClass="p-button-outlined p-button-sm"
+            [disabled]="comment.deleted"
+            (onClick)="startReply(comment)">
+          </p-button>
+          <p-button
+            label="Delete"
+            icon="pi pi-trash"
+            styleClass="p-button-danger p-button-sm"
+            [disabled]="comment.deleted || isDeleting"
+            (onClick)="deleteComment(comment)">
+          </p-button>
+        </div>
+
+        <div class="reply-editor" *ngIf="replyingToCommentId === comment.commentId">
+          <textarea
+            class="p-inputtext"
+            rows="4"
+            [(ngModel)]="replyDrafts[comment.commentId]"
+            placeholder="Write an author reply...">
+          </textarea>
+          <div class="editor-actions">
+            <p-button
+              label="Save Reply"
+              icon="pi pi-send"
+              styleClass="p-button-sm"
+              [loading]="isSavingReply"
+              (onClick)="saveReply(comment)">
+            </p-button>
+            <p-button
+              label="Cancel"
+              icon="pi pi-times"
+              styleClass="p-button-outlined p-button-sm"
+              (onClick)="cancelReply()">
+            </p-button>
+          </div>
+        </div>
+      </article>
+    </div>
+  </p-card>
+</div>
+
+<p-confirmDialog></p-confirmDialog>

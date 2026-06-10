@@ -35,6 +35,10 @@ Public Angular frontend for `https://www.grayson-wills.com`.
   - in-page subscribe form
   - blog-engagement modal (suppressed for 60 days after first dismissal, disabled after second dismissal)
   - confirm/unsubscribe pages.
+- Blog comments UX:
+  - public comment thread reads under `/blog/:id`
+  - authenticated visitor comments, replies, likes, and own-comment deletion
+  - inline sign-in/register/verify panel backed by a configurable Cognito app client.
 - Session-scoped route view state memory:
   - restores scroll position immediately on route re-entry
   - applies a short post-hydration correction pass for landing, work, projects, and blog
@@ -60,11 +64,18 @@ File: `/Users/grayson/Desktop/Portfolio/portfolio-app/src/environments/environme
 redisApiUrl: 'https://api.grayson-wills.com/api' // prod
 useContentV2Stream: true
 useBlogV2Cards: true
+commentsAuth: {
+  region: 'us-east-2',
+  userPoolId: 'us-east-2_TA0sz2HlV',
+  clientId: '4gdttn5rjq3k3jd47jltik9trd'
+}
 ```
 
 Notes:
 - `mailchimp*` fields still exist in environment files for backward compatibility.
 - Current subscription flow is AWS API/SES-based, not Mailchimp-driven.
+- Comment accounts use the public `GraysonPortfolioReaders` Cognito pool with SES email sending from `grayson-wills.com`.
+- Sign-in uses Cognito `EMAIL_OTP` challenges with a 10-minute app-client auth session.
 
 ## Analytics + Metrics
 

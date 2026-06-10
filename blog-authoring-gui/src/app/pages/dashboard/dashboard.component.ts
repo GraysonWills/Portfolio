@@ -287,6 +287,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.router.navigate(['/subscribers']);
   }
 
+  goToComments(): void {
+    this.router.navigate(['/comments']);
+  }
+
   goToCollections(): void {
     this.router.navigate(['/collections']);
   }
@@ -303,7 +307,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       rejectLabel: 'Cancel',
       accept: () => {
         this.resolvePostGroup(view, (post) => {
-        const textItem = post.items.find(item => item.Text);
+        const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text)
+          || post.items.find(item => item.Text);
         const textRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text) || textItem;
         const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage && !!item.Photo) || post.items.find(item => item.Photo);
         const metadata = post.metadata as any;
@@ -313,6 +318,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           title: metadata?.title || '',
           summary: metadata?.summary || textRecord?.Text?.substring(0, 150) || '',
           content: this.getEditableContent(post),
+          roughDraft: this.getRoughDraftContent(post),
           image: imageItem?.Photo || null,
           tags: metadata?.tags || [],
           privateSeoTags: metadata?.privateSeoTags || [],
@@ -329,6 +335,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           blogItemId: post.items.find((item) => item.PageContentID === PageContentID.BlogItem)?.ID || null,
           blogTextId: post.items.find((item) => item.PageContentID === PageContentID.BlogText)?.ID || null,
           blogBodyId: post.items.find((item) => item.PageContentID === PageContentID.BlogBody)?.ID || null,
+          blogRoughDraftId: post.items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft)?.ID || null,
           blogImageId: post.items.find((item) => item.PageContentID === PageContentID.BlogImage)?.ID || null
         };
 
@@ -384,6 +391,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     } catch {
       return rawBody;
     }
+  }
+
+  private getRoughDraftContent(post: ContentGroup): string {
+    const roughDraftRecord = post.items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft && !!item.Text);
+    return String(roughDraftRecord?.Text || '');
   }
 
   /**
@@ -470,6 +482,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const blogItem = post.items.find((item) => item.PageContentID === PageContentID.BlogItem);
     const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText);
     const bodyItem = post.items.find((item) => item.PageContentID === PageContentID.BlogBody);
+    const roughDraftItem = post.items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft);
     const imageItem = post.items.find((item) => item.PageContentID === PageContentID.BlogImage);
     const metadata = { ...((post.metadata as any) || {}), previewBypassVisibility: true };
     const nowIso = new Date().toISOString();
@@ -507,6 +520,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
         ListItemID: listItemID,
         Text: bodyItem?.Text || JSON.stringify([{ type: 'paragraph', content: fallbackBody }]),
         Metadata: { previewBypassVisibility: true },
+        UpdatedAt: nowIso as any
+      });
+    }
+
+    if (roughDraftItem?.Text) {
+      upserts.push({
+        ID: roughDraftItem.ID,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogRoughDraft,
+        ListItemID: listItemID,
+        Text: roughDraftItem.Text,
+        Metadata: metadata,
         UpdatedAt: nowIso as any
       });
     }
@@ -778,7 +803,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (metadata?.summary) {
       return metadata.summary;
     }
-    const textItem = post.items.find(item => item.Text);
+    const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text)
+      || post.items.find(item => item.Text);
     return textItem?.Text?.substring(0, 150) || 'No summary available';
   }
 

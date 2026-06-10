@@ -136,6 +136,7 @@ export type BlogPostDetailV3Response = {
   readTimeMinutes: number;
   signature: any | null;
   bodyBlocks: any[];
+  roughDraftHtml?: string;
 };
 
 export type RouteCacheOptions = {
@@ -158,6 +159,7 @@ export class RedisService {
   private readonly pageCacheTtlMs = 5 * 60_000;
   private readonly allContentCacheTtlMs = 2 * 60_000;
   private readonly v2ReadCacheTtlMs = 60_000;
+  private readonly routeCacheMaxAgeMs = 5 * 60_000;
   private readonly mediaItemCacheTtlMs = 10 * 60_000;
   private apiUrl: string;
   private headers: HttpHeaders;
@@ -989,11 +991,20 @@ export class RedisService {
     const now = Date.now();
     const stale = !this.siteChromeV3$ || (now - this.siteChromeV3CachedAt) > this.v2ReadCacheTtlMs;
     if (stale) {
+      const cacheKey = this.buildCacheKey('v3-bootstrap', 'site-chrome', {});
+      const routeCached = this.readRouteCache<SiteChromeV3Response>(cacheKey, this.isSiteChromeV3Response);
+      if (routeCached) {
+        this.siteChromeV3CachedAt = now;
+        this.siteChromeV3$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+        return this.siteChromeV3$;
+      }
+
       this.siteChromeV3CachedAt = now;
       this.siteChromeV3$ = this.readRequest(
         this.http.get<SiteChromeV3Response>(`${this.apiUrl}/content/v3/bootstrap`, { headers: this.headers })
       ).pipe(
         map((payload) => this.normalizeSiteChromePayload(payload)),
+        tap((payload) => this.writeRouteCache(cacheKey, payload)),
         shareReplay({ bufferSize: 1, refCount: false })
       );
     }
@@ -1004,11 +1015,20 @@ export class RedisService {
     const now = Date.now();
     const stale = !this.landingV3$ || (now - this.landingV3CachedAt) > this.v2ReadCacheTtlMs;
     if (stale) {
+      const cacheKey = this.buildCacheKey('v3-landing', 'landing', {});
+      const routeCached = this.readRouteCache<LandingV3Response>(cacheKey, this.isLandingV3Response);
+      if (routeCached) {
+        this.landingV3CachedAt = now;
+        this.landingV3$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+        return this.landingV3$;
+      }
+
       this.landingV3CachedAt = now;
       this.landingV3$ = this.readRequest(
         this.http.get<LandingV3Response>(`${this.apiUrl}/content/v3/landing`, { headers: this.headers })
       ).pipe(
         map((payload) => this.normalizeLandingPayload(payload)),
+        tap((payload) => this.writeRouteCache(cacheKey, payload)),
         shareReplay({ bufferSize: 1, refCount: false })
       );
     }
@@ -1027,6 +1047,13 @@ export class RedisService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<WorkV3Response>(cacheKey, this.isWorkV3Response);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.workV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const params = new URLSearchParams();
     if (request.limit) params.set('limit', String(request.limit));
     if (request.nextToken) params.set('nextToken', request.nextToken);
@@ -1034,6 +1061,7 @@ export class RedisService {
     const stream$ = this.readRequest(
       this.http.get<WorkV3Response>(`${this.apiUrl}/content/v3/work${params.toString() ? `?${params.toString()}` : ''}`, { headers: this.headers })
     ).pipe(
+      tap((payload) => this.writeRouteCache(cacheKey, payload)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.workV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1052,6 +1080,13 @@ export class RedisService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<ProjectsCategoriesV3Response>(cacheKey, this.isProjectsCategoriesV3Response);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.projectsCategoriesV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const params = new URLSearchParams();
     if (request.limit) params.set('limit', String(request.limit));
     if (request.nextToken) params.set('nextToken', request.nextToken);
@@ -1063,6 +1098,7 @@ export class RedisService {
       )
     ).pipe(
       map((payload) => this.normalizeProjectsCategoriesPayload(payload)),
+      tap((payload) => this.writeRouteCache(cacheKey, payload)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.projectsCategoriesV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1081,6 +1117,13 @@ export class RedisService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<Record<string, RedisContent[]>>(cacheKey, this.isListItemsBatchResponse);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.projectItemsV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const stream$ = this.readRequest(
       this.http.post<ProjectsItemsV3Response>(
         `${this.apiUrl}/content/v3/projects/items`,
@@ -1089,6 +1132,7 @@ export class RedisService {
       )
     ).pipe(
       map((response) => response?.itemsByCategoryId || {}),
+      tap((groups) => this.writeRouteCache(cacheKey, groups)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.projectItemsV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1108,6 +1152,13 @@ export class RedisService {
       return cached.stream$;
     }
 
+    const routeCached = this.readRouteCache<BlogPostDetailV3Response>(cacheKey, this.isBlogDetailV3Response);
+    if (routeCached) {
+      const stream$ = of(routeCached).pipe(shareReplay({ bufferSize: 1, refCount: false }));
+      this.blogDetailV3Cache.set(cacheKey, { cachedAt: now, stream$ });
+      return stream$;
+    }
+
     const stream$ = this.readRequest(
       this.http.get<BlogPostDetailV3Response>(
         `${this.apiUrl}/content/v3/blog/${encodeURIComponent(safeListItemId)}`,
@@ -1115,6 +1166,7 @@ export class RedisService {
       )
     ).pipe(
       map((payload) => this.normalizeBlogDetailPayload(payload)),
+      tap((payload) => this.writeRouteCache(cacheKey, payload)),
       shareReplay({ bufferSize: 1, refCount: false })
     );
     this.blogDetailV3Cache.set(cacheKey, { cachedAt: now, stream$ });
@@ -1288,8 +1340,18 @@ export class RedisService {
   private readRequest<T>(request$: Observable<T>): Observable<T> {
     return request$.pipe(
       timeout({ first: this.readTimeoutMs }),
-      retry({ count: 2, delay: (_err, retryCount) => timer(retryCount * 500) })
+      retry({
+        count: 2,
+        delay: (error, retryCount) => this.isRetriableReadError(error)
+          ? timer(retryCount * 500)
+          : throwError(() => error)
+      })
     );
+  }
+
+  private isRetriableReadError(error: unknown): boolean {
+    const status = Number((error as HttpErrorResponse)?.status);
+    return status === 0 || status === 408 || status === 429 || status >= 500;
   }
 
   private persistContentSnapshot(content: RedisContent[]): void {
@@ -1311,18 +1373,99 @@ export class RedisService {
   }
 
   private writeRouteCache(cacheKey: string, data: unknown): void {
-    void cacheKey;
-    void data;
+    const storage = this.getRouteCacheStorage();
+    if (!storage) return;
+
+    const storageKey = `${this.routeCacheStorageKeyPrefix}${cacheKey}`;
+    const entry = JSON.stringify({
+      cachedAt: Date.now(),
+      data
+    });
+
+    try {
+      storage.setItem(storageKey, entry);
+      this.pruneRouteCacheSnapshots(storage);
+    } catch {
+      this.clearRouteCacheSnapshots();
+      try {
+        storage.setItem(storageKey, entry);
+      } catch {
+        // Ignore browser storage failures; network reads still work.
+      }
+    }
   }
 
   private readRouteCache<T>(cacheKey: string, validator: (value: unknown) => value is T): T | null {
-    void cacheKey;
-    void validator;
-    return null;
+    const storage = this.getRouteCacheStorage();
+    if (!storage) return null;
+
+    const storageKey = `${this.routeCacheStorageKeyPrefix}${cacheKey}`;
+    try {
+      const raw = storage.getItem(storageKey);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw) as { cachedAt?: unknown; data?: unknown };
+      const cachedAt = Number(parsed?.cachedAt);
+      if (!Number.isFinite(cachedAt) || Date.now() - cachedAt > this.routeCacheMaxAgeMs || cachedAt > Date.now() + 60_000) {
+        storage.removeItem(storageKey);
+        return null;
+      }
+
+      return validator(parsed.data) ? parsed.data : null;
+    } catch {
+      storage.removeItem(storageKey);
+      return null;
+    }
   }
 
   private clearRouteCacheSnapshots(): void {
-    return;
+    const storage = this.getRouteCacheStorage();
+    if (!storage) return;
+
+    const keys: string[] = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key?.startsWith(this.routeCacheStorageKeyPrefix)) {
+        keys.push(key);
+      }
+    }
+    keys.forEach((key) => storage.removeItem(key));
+  }
+
+  private getRouteCacheStorage(): Storage | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      return window.sessionStorage || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private pruneRouteCacheSnapshots(storage: Storage): void {
+    const entries: Array<{ key: string; cachedAt: number }> = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (!key?.startsWith(this.routeCacheStorageKeyPrefix)) continue;
+
+      try {
+        const raw = storage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) as { cachedAt?: unknown } : null;
+        const cachedAt = Number(parsed?.cachedAt);
+        if (!Number.isFinite(cachedAt) || Date.now() - cachedAt > this.routeCacheMaxAgeMs) {
+          storage.removeItem(key);
+        } else {
+          entries.push({ key, cachedAt });
+        }
+      } catch {
+        storage.removeItem(key);
+      }
+    }
+
+    const maxEntries = 60;
+    entries
+      .sort((a, b) => a.cachedAt - b.cachedAt)
+      .slice(0, Math.max(0, entries.length - maxEntries))
+      .forEach((entry) => storage.removeItem(entry.key));
   }
 
   private isContentPageV2Response(value: unknown): value is ContentV2PageResponse {
@@ -1345,6 +1488,43 @@ export class RedisService {
 
   private isListItemsBatchResponse(value: unknown): value is Record<string, RedisContent[]> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private isSiteChromeV3Response(value: unknown): value is SiteChromeV3Response {
+    const payload = value as SiteChromeV3Response;
+    return !!payload
+      && typeof payload === 'object'
+      && Array.isArray(payload?.header?.items)
+      && Array.isArray(payload?.footer?.items);
+  }
+
+  private isLandingV3Response(value: unknown): value is LandingV3Response {
+    const payload = value as LandingV3Response;
+    return !!payload
+      && typeof payload === 'object'
+      && Array.isArray(payload?.heroSlides);
+  }
+
+  private isWorkV3Response(value: unknown): value is WorkV3Response {
+    const payload = value as WorkV3Response;
+    return !!payload
+      && typeof payload === 'object'
+      && !!payload?.timeline
+      && Array.isArray(payload.timeline.items);
+  }
+
+  private isProjectsCategoriesV3Response(value: unknown): value is ProjectsCategoriesV3Response {
+    const payload = value as ProjectsCategoriesV3Response;
+    return !!payload
+      && typeof payload === 'object'
+      && Array.isArray(payload?.items);
+  }
+
+  private isBlogDetailV3Response(value: unknown): value is BlogPostDetailV3Response {
+    const payload = value as BlogPostDetailV3Response;
+    return !!payload
+      && typeof payload === 'object'
+      && typeof payload?.listItemID === 'string';
   }
 
   private normalizeSiteChromePayload(payload: SiteChromeV3Response): SiteChromeV3Response {
@@ -1381,7 +1561,8 @@ export class RedisService {
   private normalizeBlogDetailPayload(payload: BlogPostDetailV3Response): BlogPostDetailV3Response {
     return {
       ...payload,
-      coverImage: this.normalizeMediaUrl(payload?.coverImage || '')
+      coverImage: this.normalizeMediaUrl(payload?.coverImage || ''),
+      roughDraftHtml: String(payload?.roughDraftHtml || '')
     };
   }
 

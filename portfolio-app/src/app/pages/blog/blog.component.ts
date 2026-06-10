@@ -1,7 +1,7 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { BlogCardV2, RedisService } from '../../services/redis.service';
-import { ContentGroup, BlogPostMetadata } from '../../models/redis-content.model';
+import { ContentGroup, BlogPostMetadata, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
 import { SubscriptionService } from '../../services/subscription.service';
 import { AnalyticsService } from '../../services/analytics.service';
@@ -51,11 +51,11 @@ export class BlogComponent implements OnInit, OnDestroy {
   isSubscribing: boolean = false;
   currentPage: number = 1;
   isPageTransitioning: boolean = false;
-  private readonly pageSize = 10;
+  private readonly pageSize = 12;
   private nextToken: string | null = null;
   private isFetchingNextPage = false;
   private hydratedImages = new Set<string>();
-  private readonly initialFetchLimit = 10;
+  private readonly initialFetchLimit = 12;
   private readonly cardsCacheScope = 'route:/blog:cards';
   private readonly mediaCacheScope = 'route:/blog:media';
   private routePage = 1;
@@ -156,15 +156,6 @@ export class BlogComponent implements OnInit, OnDestroy {
         this.blogCards = cards.map((item) => this.toPostCardFromV2(item));
         this.nextToken = response?.nextToken || null;
         this.rebuildVisibleState();
-        this.analytics.track('cards_rendered_initial', {
-          route: '/blog',
-          page: 'blog',
-          metadata: {
-            returned: this.blogCards.length,
-            visible: this.visiblePosts.length,
-            hasMore: !!this.nextToken
-          }
-        });
         this.hydrateVisibleImages();
         this.isLoading = false;
         void this.syncPageFromRoute();
@@ -232,7 +223,8 @@ export class BlogComponent implements OnInit, OnDestroy {
   }
 
   private toPostCard(post: ContentGroup): BlogPostCard {
-    const textItem = post.items.find(item => item.Text);
+    const textItem = post.items.find((item) => item.PageContentID === PageContentID.BlogText && !!item.Text)
+      || post.items.find(item => item.Text);
     const imageItem = post.items.find(item => item.Photo);
     const metadata = post.metadata as BlogPostMetadata | undefined;
     const content = textItem?.Text || '';
@@ -377,14 +369,10 @@ export class BlogComponent implements OnInit, OnDestroy {
       next: (mediaItems) => {
         if (!Array.isArray(mediaItems) || !mediaItems.length) return;
         const mediaMap = new Map(mediaItems.map((item) => [item.listItemID, item.imageUrl]));
-        let hydratedNow = 0;
 
         this.blogCards.forEach((card) => {
           const imageUrl = mediaMap.get(card.listItemID);
           if (!imageUrl) return;
-          if (!this.hydratedImages.has(card.listItemID)) {
-            hydratedNow += 1;
-          }
           card.image = imageUrl;
           this.hydratedImages.add(card.listItemID);
         });
@@ -398,18 +386,6 @@ export class BlogComponent implements OnInit, OnDestroy {
           const updated = this.blogCards.find((card) => card.listItemID === post.listItemID);
           return updated || post;
         });
-
-        if (hydratedNow > 0) {
-          this.analytics.track('cards_images_hydrated', {
-            route: '/blog',
-            page: 'blog',
-            metadata: {
-              hydratedNow,
-              totalHydrated: this.hydratedImages.size,
-              visible: this.visiblePosts.length
-            }
-          });
-        }
       },
       error: () => {
         // Keep text-first cards visible even when media hydration fails.
@@ -521,17 +497,6 @@ export class BlogComponent implements OnInit, OnDestroy {
         const appended = this.appendIncomingCards(incoming);
         this.rebuildVisibleState(this.currentPage);
         this.hydrateVisibleImages();
-
-        this.analytics.track('cards_next_page_loaded', {
-          route: '/blog',
-          page: 'blog',
-          metadata: {
-            appended,
-            total: this.blogCards.length,
-            visible: this.visiblePosts.length,
-            hasMore: !!this.nextToken
-          }
-        });
 
         return appended > 0 || !!this.nextToken;
       } catch {

@@ -22,26 +22,26 @@ export class LinkedInDataService {
   }> = [
     {
       label: 'AI Systems Architecture',
-      value: 86,
-      level: 'Advanced',
+      value: 72,
+      level: 'Established',
       summary: 'Production design and platform integration across analytics + AI workflows'
     },
     {
       label: 'Data Science Delivery',
-      value: 91,
-      level: 'Advanced',
+      value: 76,
+      level: 'Strong',
       summary: 'Experimentation, KPI translation, and executive-facing dashboard outcomes'
     },
     {
       label: 'Computer Vision',
-      value: 74,
+      value: 61,
       level: 'Developing',
       summary: 'Active in CV pipelines, model experimentation, and edge case tuning'
     },
     {
       label: 'Product + Executive Communication',
-      value: 80,
-      level: 'Strong',
+      value: 70,
+      level: 'Established',
       summary: 'Cross-functional decision support and narrative framing for leadership'
     }
   ];
@@ -136,6 +136,22 @@ export class LinkedInDataService {
         achievements: [
           'Improved job search efficiency for rotational program employees',
           'Implemented job-specific details and contact features'
+        ]
+      },
+      {
+        title: 'Assistant Program Manager',
+        company: 'General Motors',
+        location: 'Warren, Michigan, United States',
+        startDate: 'June 2023',
+        endDate: 'October 2023',
+        description: [
+          'Coordinated the BFT program at General Motors, ensuring proper vehicle build procedures aligned with the 2030 launch target.',
+          'Led strategic planning and project-management efforts with senior stakeholders across the program.'
+        ],
+        achievements: [
+          'Coordinated cross-functional program execution around vehicle build readiness and launch planning',
+          'Facilitated planning discussions with executive stakeholders to keep deliverables aligned and on track',
+          'Strengthened teamwork, communication, and project-management skills inside a fast-moving enterprise environment'
         ]
       },
       {

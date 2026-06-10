@@ -139,12 +139,14 @@ sequenceDiagram
 
 ## 5. Reliability and Guardrails in Code
 
-- request path cache invalidates on write methods.
+- dynamic API GET responses are marked `no-store`; the backend no longer keeps an in-process GET cache.
 - write endpoints are protected by Cognito auth middleware.
 - queue consumers return partial batch failures for safe redrive behavior.
 - notification flow uses send markers and lock windows to reduce duplicate sends.
+- scheduler publish flow suppresses stale executions via active `scheduleName` checks and cleanup paths.
 - health probes expose backend readiness state for DynamoDB and Redis compatibility mode (if enabled).
 - `v2` read endpoints enforce bounded limits, token validation, and filter-hash guardrails.
+- `v3` route-shaped endpoints reduce merge/sort work on the frontend and avoid full-table scans in normal authoring paths.
 - metadata-first + media-batch split lowers payload size on initial list route reads.
 
 ## 6. File-Level Anchors

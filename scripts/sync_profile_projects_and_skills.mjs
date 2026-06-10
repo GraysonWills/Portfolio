@@ -523,8 +523,8 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-ai-ml',
       Text: JSON.stringify({
         label: 'AI & Machine Learning',
-        value: 88,
-        level: 'Advanced',
+        value: 72,
+        level: 'Established',
         summary: 'Applied model design, optimization, and experiment execution across vision and agent systems'
       }),
       PageID: 1,
@@ -536,8 +536,8 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-data-analytics',
       Text: JSON.stringify({
         label: 'Data Engineering & Analytics',
-        value: 90,
-        level: 'Advanced',
+        value: 76,
+        level: 'Strong',
         summary: 'Building reliable data pipelines and analytics products for operational and strategic decisions'
       }),
       PageID: 1,
@@ -549,8 +549,8 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-fullstack-web',
       Text: JSON.stringify({
         label: 'Full-Stack Web Development',
-        value: 85,
-        level: 'Strong',
+        value: 73,
+        level: 'Established',
         summary: 'Shipping maintainable Angular and React experiences backed by practical API design'
       }),
       PageID: 1,
@@ -562,7 +562,7 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-embedded-robotics',
       Text: JSON.stringify({
         label: 'Embedded & Robotics Systems',
-        value: 76,
+        value: 65,
         level: 'Developing',
         summary: 'Hands-on embedded control, robotics prototyping, and concurrent system behavior design'
       }),
@@ -575,8 +575,8 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-computer-vision',
       Text: JSON.stringify({
         label: 'Computer Vision',
-        value: 80,
-        level: 'Strong',
+        value: 61,
+        level: 'Developing',
         summary: 'Designing and evaluating detection workflows across quality, expression, and perception tasks'
       }),
       PageID: 1,
@@ -588,7 +588,7 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-teaching-communication',
       Text: JSON.stringify({
         label: 'Teaching & Technical Communication',
-        value: 84,
+        value: 78,
         level: 'Strong',
         summary: 'Translating complex topics into clear documentation and practical explanations for others'
       }),
@@ -601,8 +601,8 @@ function buildWorkSkillMetrics() {
       ID: 'work-metric-program-leadership',
       Text: JSON.stringify({
         label: 'Program Leadership',
-        value: 79,
-        level: 'Developing',
+        value: 70,
+        level: 'Established',
         summary: 'Coordinating execution across teams, timelines, and evolving technical constraints'
       }),
       PageID: 1,

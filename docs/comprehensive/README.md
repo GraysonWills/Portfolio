@@ -1,6 +1,6 @@
 # Portfolio Platform Documentation Pack
 
-Last updated: 2026-03-04
+Last updated: 2026-03-07
 
 This folder is the central documentation pack for the Portfolio platform. It is organized from high-level architecture down to code-level detail.
 
@@ -33,6 +33,7 @@ This folder is the central documentation pack for the Portfolio platform. It is 
 - Includes route and service flow mapping for `portfolio-app`, `blog-authoring-gui`, and `redis-api-server`.
 - Includes AWS deployment patterns currently used in GitHub Actions and runtime code.
 - Includes extension guidance for future categories/content types and service expansion.
+- Includes the no-cache route-loading rollout, structured Content Studio workspace, unpublish flow, and current analytics/media architecture.
 
 ## Notes
 

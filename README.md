@@ -66,6 +66,7 @@ flowchart LR
 
 - Multi-page experience: Landing, Work, Projects, Blog, Notifications
 - Blog list + full blog detail pages with rich body blocks
+- Blog detail comments with authenticated visitor replies, likes, and own-comment deletion
 - Metadata-first loading with progressive image/body hydration and route-scoped in-memory request reuse
 - Incremental list, category, and timeline loading with explicit or automatic "load more" behavior where appropriate
 - SEO basics (`robots.txt`, `sitemap.xml`, meta tags)
@@ -100,6 +101,7 @@ flowchart LR
 - Blog editor supports editable read-time override metadata
 - Notification controls integrated into publish workflow
 - Scheduled publish controls + immediate notify actions
+- Comment moderation for blog posts (reply as author, delete comments)
 - One-click unpublish action from the editor (published/scheduled -> draft + removed from public portfolio feed)
 - Cloud preview generation against deployed public site using preview sessions
 - Save-time inline image normalization: embedded `data:image/*` content is uploaded and rewritten to URL references before post save to avoid oversized payload failures
@@ -127,6 +129,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - `/api/admin`
   - `/api/subscriptions`
   - `/api/notifications`
+  - `/api/comments`
 - Security middleware stack:
   - `helmet`, CORS allowlist, rate limiting, body size limits
   - write endpoint protection via Cognito JWT middleware

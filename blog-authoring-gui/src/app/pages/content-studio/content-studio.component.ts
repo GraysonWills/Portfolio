@@ -199,7 +199,8 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     [14, 'WorkSkillMetric'],
     [15, 'BlogSignatureSettings'],
     [16, 'CollectionsCategoryRegistry'],
-    [17, 'CollectionsEntry']
+    [17, 'CollectionsEntry'],
+    [18, 'BlogRoughDraft']
   ]);
 
   constructor(
@@ -272,6 +273,10 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
 
   goToCollections(): void {
     this.router.navigate(['/collections']);
+  }
+
+  goToComments(): void {
+    this.router.navigate(['/comments']);
   }
 
   logout(): void {
@@ -1360,7 +1365,8 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
       PageContentID.BlogItem,
       PageContentID.BlogText,
       PageContentID.BlogImage,
-      PageContentID.BlogBody
+      PageContentID.BlogBody,
+      PageContentID.BlogRoughDraft
     ].includes(Number(item.PageContentID))));
 
     const blogEntries = Array.from(blogGroups.entries())

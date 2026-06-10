@@ -64,6 +64,26 @@ export type UpsertSubscriberRequest = {
   status?: 'PENDING' | 'SUBSCRIBED' | 'UNSUBSCRIBED';
 };
 
+export type BlogCommentAdmin = {
+  commentId: string;
+  postId: string;
+  parentId: string | null;
+  body: string;
+  authorName: string;
+  authorRole: 'reader' | 'author';
+  status: 'visible' | 'deleted';
+  deleted: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  likeCount: number;
+  replyCount: number;
+};
+
+export type BlogCommentsAdminResponse = {
+  count: number;
+  comments: BlogCommentAdmin[];
+};
+
 export type CollectionsEntryDraft = {
   id?: string;
   listItemID?: string;
@@ -1182,6 +1202,7 @@ export class BlogApiService {
   createBlogPost(
     title: string,
     content: string,
+    roughDraft: string,
     summary: string,
     tags: string[],
     privateSeoTags: string[] = [],
@@ -1196,6 +1217,7 @@ export class BlogApiService {
   ): Observable<RedisContent[]> {
     const postItems: RedisContent[] = [];
     const itemId = listItemID || `blog-${Date.now()}`;
+    const normalizedRoughDraft = String(roughDraft || '').trim();
     const metadata: BlogPostMetadata = {
       title,
       summary,
@@ -1239,6 +1261,17 @@ export class BlogApiService {
       Metadata: metadata as any
     });
 
+    if (normalizedRoughDraft) {
+      postItems.push({
+        ID: `blog-rough-${itemId}`,
+        Text: roughDraft,
+        PageID: PageID.Blog,
+        PageContentID: PageContentID.BlogRoughDraft,
+        ListItemID: itemId,
+        Metadata: metadata as any
+      });
+    }
+
     // Blog image content (if provided)
     if (image) {
       postItems.push({
@@ -1265,6 +1298,7 @@ export class BlogApiService {
     listItemID: string,
     title: string,
     content: string,
+    roughDraft: string,
     summary: string,
     tags: string[],
     privateSeoTags: string[] = [],
@@ -1276,6 +1310,7 @@ export class BlogApiService {
     signatureId?: string,
     signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
+    const normalizedRoughDraft = String(roughDraft || '').trim();
     const metadata: BlogPostMetadata = {
       title,
       summary,
@@ -1295,6 +1330,7 @@ export class BlogApiService {
         const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
         const blogBody = items.find((item) => item.PageContentID === PageContentID.BlogBody);
         const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
+        const blogRoughDraft = items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft);
 
         const upserts: RedisContent[] = [
           {
@@ -1329,6 +1365,19 @@ export class BlogApiService {
           } as RedisContent
         ];
 
+        if (normalizedRoughDraft) {
+          upserts.push({
+            ...(blogRoughDraft || {}),
+            ID: blogRoughDraft?.ID || `blog-rough-${listItemID}`,
+            Text: roughDraft,
+            PageID: PageID.Blog,
+            PageContentID: PageContentID.BlogRoughDraft,
+            ListItemID: listItemID,
+            Metadata: metadata as any,
+            ...(blogRoughDraft?.CreatedAt ? { CreatedAt: blogRoughDraft.CreatedAt } : {})
+          } as RedisContent);
+        }
+
         if (image && image.trim()) {
           upserts.push({
             ...(blogImage || {}),
@@ -1350,9 +1399,17 @@ export class BlogApiService {
           catchError(this.handleError)
         );
 
+        const deleteIds: string[] = [];
         if ((!image || !image.trim()) && blogImage?.ID) {
+          deleteIds.push(blogImage.ID);
+        }
+        if (!normalizedRoughDraft && blogRoughDraft?.ID) {
+          deleteIds.push(blogRoughDraft.ID);
+        }
+
+        if (deleteIds.length) {
           return batch$.pipe(
-            switchMap(() => this.deleteContent(blogImage.ID)),
+            switchMap(() => forkJoin(deleteIds.map((id) => this.deleteContent(id)))),
             map(() => upserts)
           );
         }
@@ -1523,6 +1580,49 @@ export class BlogApiService {
       { headers: this.headers }
     ).pipe(
       tap(() => this.subscribersCache.clear()),
+      catchError(this.handleError)
+    );
+  }
+
+  getBlogCommentsAdmin(postId: string = '', includeDeleted: boolean = false): Observable<BlogCommentsAdminResponse> {
+    const params = new URLSearchParams({
+      limit: '200',
+      includeDeleted: includeDeleted ? 'true' : 'false'
+    });
+    const safePostId = String(postId || '').trim();
+    if (safePostId) params.set('postId', safePostId);
+
+    return this.readRequest(
+      this.http.get<BlogCommentsAdminResponse>(
+        `${this.apiUrl}/comments/admin/recent?${params.toString()}`,
+        { headers: this.headers }
+      )
+    ).pipe(
+      map((response) => ({
+        ...response,
+        comments: Array.isArray(response?.comments) ? response.comments : []
+      })),
+      catchError(this.handleError)
+    );
+  }
+
+  replyToBlogComment(commentId: string, body: string): Observable<BlogCommentAdmin> {
+    return this.http.post<{ comment: BlogCommentAdmin }>(
+      `${this.apiUrl}/comments/admin/${encodeURIComponent(commentId)}/reply`,
+      { body },
+      { headers: this.headers }
+    ).pipe(
+      map((response) => response.comment),
+      catchError(this.handleError)
+    );
+  }
+
+  deleteBlogCommentAdmin(commentId: string): Observable<BlogCommentAdmin> {
+    return this.http.delete<{ comment: BlogCommentAdmin }>(
+      `${this.apiUrl}/comments/admin/${encodeURIComponent(commentId)}`,
+      { headers: this.headers }
+    ).pipe(
+      map((response) => response.comment),
       catchError(this.handleError)
     );
   }
