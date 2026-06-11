@@ -1,8 +1,9 @@
 <div class="distribution-container">
   <div class="distribution-header">
     <div class="header-title">
-      <h1>Distribution</h1>
-      <p>Blog announcements, channel status, delivery receipts</p>
+      <span class="eyebrow">Blog Authoring</span>
+      <h1>Social Distribution</h1>
+      <p>Account health, post setup, scheduling, and delivery receipts</p>
     </div>
     <div class="header-actions">
       <p-button
@@ -55,15 +56,15 @@
     <article class="summary-tile">
       <span class="tile-icon ready"><i class="pi pi-check"></i></span>
       <div>
-        <strong>{{ readyCount }}</strong>
-        <span>fast-start channels</span>
+        <strong>{{ connectedCount }}</strong>
+        <span>connected accounts</span>
       </div>
     </article>
     <article class="summary-tile">
       <span class="tile-icon review"><i class="pi pi-key"></i></span>
       <div>
-        <strong>{{ reviewCount }}</strong>
-        <span>API or review steps</span>
+        <strong>{{ needsLoginCount }}</strong>
+        <span>need login</span>
       </div>
     </article>
     <article class="summary-tile">
@@ -75,57 +76,190 @@
     </article>
   </section>
 
+  <section class="account-section" aria-labelledby="account-heading">
+    <div class="section-heading">
+      <div>
+        <h2 id="account-heading">Social Accounts</h2>
+        <span>Connection status, token health, reconnects, and disconnects</span>
+      </div>
+      <p-button
+        label="Check Status"
+        icon="pi pi-refresh"
+        styleClass="p-button-outlined p-button-sm"
+        (onClick)="refreshConnections()">
+      </p-button>
+    </div>
+
+    <div class="account-grid">
+      <article
+        class="account-card"
+        *ngFor="let platform of platforms; trackBy: trackByPlatform"
+        [ngClass]="getStateClass(platform)">
+        <div class="account-top">
+          <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
+          <p-tag
+            [value]="platform.connectionLabel"
+            [severity]="getConnectionSeverity(platform.connectionState)">
+          </p-tag>
+        </div>
+        <div class="account-title">
+          <strong>{{ platform.name }}</strong>
+          <span>{{ platform.handle }}</span>
+        </div>
+        <p>{{ platform.connectionDetail }}</p>
+        <div class="account-meta">
+          <span><i class="pi pi-clock"></i>{{ platform.lastChecked }}</span>
+          <span><i class="pi pi-calendar-clock"></i>{{ platform.expiresIn }}</span>
+        </div>
+        <div class="account-actions">
+          <p-button
+            *ngIf="platform.connectionState === 'expired' || platform.connectionState === 'not-connected'"
+            label="Connect"
+            icon="pi pi-link"
+            styleClass="p-button-sm"
+            [disabled]="!!platform.disabled"
+            (onClick)="connectPlatform(platform)">
+          </p-button>
+          <p-button
+            *ngIf="platform.connectionState === 'attention'"
+            label="Reconnect"
+            icon="pi pi-refresh"
+            styleClass="p-button-sm p-button-outlined"
+            (onClick)="connectPlatform(platform)">
+          </p-button>
+          <p-button
+            *ngIf="platformIsConnected(platform)"
+            label="Disconnect"
+            icon="pi pi-times"
+            styleClass="p-button-sm p-button-outlined"
+            (onClick)="disconnectPlatform(platform)">
+          </p-button>
+          <span *ngIf="platform.disabled" class="manual-note">Manual setup</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
   <section class="composer-grid">
-    <p-card class="composer-card">
+    <p-card class="schedule-card">
       <div class="card-heading">
         <div>
-          <h2>Distribution Package</h2>
+          <h2>Post Setup</h2>
           <span>{{ selectedPostTitle }}</span>
         </div>
-        <p-tag value="UI-ready" severity="info"></p-tag>
+        <p-tag value="Draft" severity="info"></p-tag>
       </div>
 
       <div class="form-grid">
         <div class="form-group">
-          <label for="distribution-time">Publish Time</label>
+          <label for="post-title">Blog Post</label>
+          <input
+            id="post-title"
+            pInputText
+            type="text"
+            [(ngModel)]="selectedPostTitle">
+        </div>
+        <div class="form-group">
+          <label for="distribution-time">Schedule Time</label>
           <input
             id="distribution-time"
             pInputText
-            type="text"
+            type="datetime-local"
             [(ngModel)]="publishTime">
         </div>
-        <div class="form-group">
-          <label for="master-caption">Master Caption</label>
+        <div class="form-group full-span">
+          <label for="post-url">Canonical Link</label>
+          <input
+            id="post-url"
+            pInputText
+            type="url"
+            [(ngModel)]="postUrl">
+        </div>
+        <div class="form-group full-span">
+          <label for="master-caption">Caption</label>
           <textarea
             id="master-caption"
             rows="5"
             [(ngModel)]="masterCaption">
           </textarea>
         </div>
+        <div class="form-group">
+          <label for="hashtags">Hashtags</label>
+          <input
+            id="hashtags"
+            pInputText
+            type="text"
+            [(ngModel)]="hashtagText">
+        </div>
+        <div class="form-group">
+          <label for="media-brief">Media</label>
+          <input
+            id="media-brief"
+            pInputText
+            type="text"
+            [(ngModel)]="mediaBrief">
+        </div>
       </div>
 
-      <div class="caption-variants">
-        <article class="variant-row" *ngFor="let platform of selectedPlatforms.slice(0, 4); trackBy: trackByPlatform">
-          <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
-          <div>
-            <strong>{{ platform.name }}</strong>
-            <p>{{ platform.summary }}</p>
+      <div class="target-heading">
+        <div>
+          <h3>Targets</h3>
+          <span>Choose platforms and destination type</span>
+        </div>
+        <strong>{{ selectedPlatforms.length }} selected</strong>
+      </div>
+
+      <div class="target-grid">
+        <article
+          class="target-card"
+          *ngFor="let platform of platforms; trackBy: trackByPlatform"
+          [class.selected]="platform.selected"
+          [class.disabled]="platform.disabled">
+          <div class="target-top">
+            <label class="target-checkbox">
+              <input
+                type="checkbox"
+                [checked]="platform.selected"
+                [disabled]="!!platform.disabled"
+                (change)="togglePlatform(platform)">
+              <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
+              <span>
+                <strong>{{ platform.name }}</strong>
+                <small>{{ getPlatformSummary(platform) }}</small>
+              </span>
+            </label>
+            <p-tag
+              [value]="platform.connectionLabel"
+              [severity]="getConnectionSeverity(platform.connectionState)">
+            </p-tag>
+          </div>
+
+          <label class="destination-select">
+            <span>Post Type</span>
+            <select
+              [(ngModel)]="platform.destination"
+              [disabled]="!!platform.disabled">
+              <option
+                *ngFor="let destination of platform.destinationOptions"
+                [ngValue]="destination.value">
+                {{ destination.label }}
+              </option>
+            </select>
+          </label>
+
+          <div class="target-readiness">
+            <i class="pi" [ngClass]="platformIsConnected(platform) ? 'pi-check-circle' : 'pi-exclamation-triangle'"></i>
+            <span>{{ getTargetReadiness(platform) }}</span>
           </div>
         </article>
       </div>
 
       <div class="action-row">
+        <span class="draft-notice">{{ draftNotice }}</span>
         <p-button
-          label="Preview"
-          icon="pi pi-search"
-          styleClass="p-button-outlined">
-        </p-button>
-        <p-button
-          label="Connector Pending"
-          icon="pi pi-lock"
-          styleClass="p-button-outlined"
-          [disabled]="true"
-          pTooltip="Social connector backend is not wired yet.">
+          label="Schedule Selected"
+          icon="pi pi-calendar-plus"
+          (onClick)="scheduleSelectedTargets()">
         </p-button>
       </div>
     </p-card>
@@ -157,47 +291,16 @@
           </div>
         </div>
         <p>{{ masterCaption }}</p>
+        <p class="hashtag-preview">{{ hashtagText }}</p>
         <div class="link-block">
           <span></span>
           <div>
             <strong>{{ selectedPostTitle }}</strong>
-            <small>grayson-wills.com/blog/expression-not-reaction</small>
+            <small>{{ postUrl }}</small>
           </div>
         </div>
       </div>
     </p-card>
-  </section>
-
-  <section class="platform-section">
-    <div class="section-heading">
-      <div>
-        <h2>Platform Targets</h2>
-        <span>Core channels plus fast media-awareness candidates</span>
-      </div>
-    </div>
-
-    <div class="platform-grid">
-      <button
-        type="button"
-        class="platform-tile"
-        *ngFor="let platform of platforms; trackBy: trackByPlatform"
-        [class.selected]="platform.selected"
-        [class.disabled]="platform.disabled"
-        (click)="togglePlatform(platform)">
-        <div class="platform-top">
-          <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
-          <input
-            type="checkbox"
-            [checked]="platform.selected"
-            [disabled]="platform.disabled"
-            (click)="$event.stopPropagation()"
-            (change)="togglePlatform(platform)">
-        </div>
-        <strong>{{ platform.name }}</strong>
-        <p>{{ platform.summary }}</p>
-        <p-tag [value]="platform.stateLabel" [severity]="getStateSeverity(platform.state)"></p-tag>
-      </button>
-    </div>
   </section>
 
   <section class="queue-section" id="distribution-queue">
@@ -206,19 +309,14 @@
         <h2>Delivery Queue</h2>
         <span>Status, retry, and receipts only</span>
       </div>
-      <p-button
-        label="Refresh"
-        icon="pi pi-refresh"
-        styleClass="p-button-outlined p-button-sm"
-        [disabled]="true"
-        pTooltip="Queue API is not wired yet.">
-      </p-button>
+      <p-tag value="Metrics hidden" severity="secondary"></p-tag>
     </div>
 
     <div class="queue-table">
       <div class="queue-row queue-head">
         <span>Post</span>
         <span>Platform</span>
+        <span>Post Type</span>
         <span>Run At</span>
         <span>Status</span>
         <span>Receipt</span>
@@ -226,6 +324,7 @@
       <div class="queue-row" *ngFor="let item of queueItems; trackBy: trackByQueueItem">
         <span class="post-title">{{ item.postTitle }}</span>
         <span><span class="platform-dot" [ngClass]="item.platformClass"></span>{{ item.platform }}</span>
+        <span>{{ item.destination }}</span>
         <span>{{ item.runAt }}</span>
         <span><p-tag [value]="item.status" [severity]="item.statusClass"></p-tag></span>
         <span>{{ item.receipt }}</span>
