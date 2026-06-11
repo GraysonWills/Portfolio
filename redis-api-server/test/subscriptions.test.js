@@ -157,3 +157,113 @@ test('requestSubscription returns ALREADY_PENDING after a conditional-write conf
     restore();
   }
 });
+
+test('getSubscriptionForEmail returns public subscription state for the signed-in email', async () => {
+  const { subscriptions, restore } = loadSubscriptionsWithStubs({
+    ddbSend: async (command) => {
+      assert.equal(command.constructor.name, 'GetCommand');
+      return {
+        Item: {
+          email: 'test@example.com',
+          status: 'SUBSCRIBED',
+          topics: ['blog_posts', 'major_updates'],
+          source: 'blog-list',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          confirmedAt: '2026-01-02T00:00:00.000Z'
+        }
+      };
+    }
+  });
+
+  try {
+    const result = await subscriptions.getSubscriptionForEmail({ email: ' Test@Example.com ' });
+
+    assert.equal(result.email, 'test@example.com');
+    assert.equal(result.status, 'SUBSCRIBED');
+    assert.deepEqual(result.topics, ['blog_posts', 'major_updates']);
+    assert.equal(result.confirmedAt, '2026-01-02T00:00:00.000Z');
+  } finally {
+    restore();
+  }
+});
+
+test('getSubscriptionForEmail returns NONE when the account has no subscription record', async () => {
+  const { subscriptions, restore } = loadSubscriptionsWithStubs({
+    ddbSend: async (command) => {
+      assert.equal(command.constructor.name, 'GetCommand');
+      return {};
+    }
+  });
+
+  try {
+    const result = await subscriptions.getSubscriptionForEmail({ email: 'none@example.com' });
+
+    assert.equal(result.email, 'none@example.com');
+    assert.equal(result.status, 'NONE');
+    assert.deepEqual(result.topics, []);
+  } finally {
+    restore();
+  }
+});
+
+test('updatePreferencesForEmail only updates existing active subscriptions', async () => {
+  const calls = [];
+  const { subscriptions, restore } = loadSubscriptionsWithStubs({
+    ddbSend: async (command) => {
+      calls.push(command);
+      if (command.constructor.name === 'GetCommand' && calls.length === 1) {
+        return { Item: { email: 'test@example.com', status: 'SUBSCRIBED', topics: ['blog_posts'] } };
+      }
+      if (command.constructor.name === 'UpdateCommand') {
+        assert.deepEqual(command.input.ExpressionAttributeValues[':topics'], ['major_updates']);
+        return {};
+      }
+      if (command.constructor.name === 'GetCommand') {
+        return { Item: { email: 'test@example.com', status: 'SUBSCRIBED', topics: ['major_updates'] } };
+      }
+      throw new Error(`Unexpected command: ${command.constructor.name}`);
+    }
+  });
+
+  try {
+    const result = await subscriptions.updatePreferencesForEmail({
+      email: 'test@example.com',
+      topics: ['major_updates']
+    });
+
+    assert.equal(result.status, 'SUBSCRIBED');
+    assert.deepEqual(result.topics, ['major_updates']);
+    assert.equal(calls[1].constructor.name, 'UpdateCommand');
+  } finally {
+    restore();
+  }
+});
+
+test('unsubscribeEmail marks subscriptions unsubscribed and clears active topics', async () => {
+  const calls = [];
+  const { subscriptions, restore } = loadSubscriptionsWithStubs({
+    ddbSend: async (command) => {
+      calls.push(command);
+      if (command.constructor.name === 'GetCommand') {
+        return { Item: { email: 'test@example.com', status: 'SUBSCRIBED', topics: ['blog_posts'] } };
+      }
+      if (command.constructor.name === 'UpdateCommand') {
+        assert.equal(command.input.ExpressionAttributeValues[':unsub'], 'UNSUBSCRIBED');
+        assert.deepEqual(command.input.ExpressionAttributeValues[':topics'], []);
+        return {};
+      }
+      throw new Error(`Unexpected command: ${command.constructor.name}`);
+    }
+  });
+
+  try {
+    const result = await subscriptions.unsubscribeEmail({ email: 'test@example.com' });
+
+    assert.equal(result.status, 'UNSUBSCRIBED');
+    assert.deepEqual(result.topics, []);
+    assert.equal(calls.length, 2);
+  } finally {
+    restore();
+  }
+});

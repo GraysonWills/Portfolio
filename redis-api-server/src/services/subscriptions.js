@@ -38,6 +38,31 @@ function sanitizeTopics(requested, allowedTopics) {
   return unique.length ? unique : ['blog_posts'];
 }
 
+function normalizeSubscriberStatus(value) {
+  const status = String(value || '').trim().toUpperCase();
+  if (['PENDING', 'SUBSCRIBED', 'UNSUBSCRIBED'].includes(status)) return status;
+  return 'NONE';
+}
+
+function toPublicSubscription(item, fallbackEmail) {
+  const email = normalizeEmail(item?.email || fallbackEmail);
+  const status = normalizeSubscriberStatus(item?.status);
+  const topics = status === 'UNSUBSCRIBED' || status === 'NONE'
+    ? []
+    : (Array.isArray(item?.topics) ? item.topics.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean) : []);
+
+  return {
+    email,
+    status,
+    topics,
+    source: String(item?.source || ''),
+    createdAt: item?.createdAt || null,
+    updatedAt: item?.updatedAt || null,
+    confirmedAt: item?.confirmedAt || null,
+    unsubscribedAt: item?.unsubscribedAt || null
+  };
+}
+
 function isPendingWithinCooldown(updatedAt, cooldownMs) {
   const lastPendingIso = String(updatedAt || '').trim();
   const lastPendingTs = Date.parse(lastPendingIso);
@@ -163,7 +188,7 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
         '#consentVersion = :consentVersion',
         '#consentIp = :consentIp',
         '#consentUserAgent = :consentUa'
-      ].join(', '),
+      ].join(', ') + ' REMOVE #unsubscribedAt',
       ExpressionAttributeNames: {
         '#email': 'email',
         '#status': 'status',
@@ -171,6 +196,7 @@ async function requestSubscription({ email, topics, source, consentIp, consentUs
         '#source': 'source',
         '#updatedAt': 'updatedAt',
         '#createdAt': 'createdAt',
+        '#unsubscribedAt': 'unsubscribedAt',
         '#consentVersion': 'consentVersion',
         '#consentIp': 'consentIp',
         '#consentUserAgent': 'consentUserAgent'
@@ -445,11 +471,136 @@ async function updatePreferences({ token, topics }) {
   return { ok: true };
 }
 
+async function getSubscriptionForEmail({ email }) {
+  const cfg = getConfig();
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    const err = new Error('A verified email address is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const ddb = getDdbDoc();
+  const emailHash = sha256Hex(normalized);
+  const res = await ddb.send(new GetCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash }
+  }));
+
+  return toPublicSubscription(res?.Item, normalized);
+}
+
+async function updatePreferencesForEmail({ email, topics }) {
+  const cfg = getConfig();
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    const err = new Error('A verified email address is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const topicList = sanitizeTopics(topics, cfg.allowedTopics);
+  const ddb = getDdbDoc();
+  const emailHash = sha256Hex(normalized);
+  const existingRes = await ddb.send(new GetCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash }
+  }));
+
+  const existing = existingRes?.Item;
+  const status = normalizeSubscriberStatus(existing?.status);
+  if (!existing || status === 'NONE') {
+    const err = new Error('No subscription exists for this account');
+    err.status = 404;
+    throw err;
+  }
+  if (status === 'UNSUBSCRIBED') {
+    const err = new Error('Subscribe again before changing preferences');
+    err.status = 409;
+    throw err;
+  }
+
+  const nowIso = new Date().toISOString();
+  await ddb.send(new UpdateCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash },
+    UpdateExpression: [
+      'SET #topics = :topics',
+      '#updatedAt = :now'
+    ].join(', '),
+    ExpressionAttributeNames: {
+      '#topics': 'topics',
+      '#updatedAt': 'updatedAt'
+    },
+    ExpressionAttributeValues: {
+      ':topics': topicList,
+      ':now': nowIso
+    }
+  }));
+
+  return getSubscriptionForEmail({ email: normalized });
+}
+
+async function unsubscribeEmail({ email }) {
+  const cfg = getConfig();
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    const err = new Error('A verified email address is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const ddb = getDdbDoc();
+  const emailHash = sha256Hex(normalized);
+  const existingRes = await ddb.send(new GetCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash }
+  }));
+
+  if (!existingRes?.Item) {
+    return toPublicSubscription(null, normalized);
+  }
+
+  const nowIso = new Date().toISOString();
+  await ddb.send(new UpdateCommand({
+    TableName: cfg.subscribersTable,
+    Key: { emailHash },
+    UpdateExpression: [
+      'SET #status = :unsub',
+      '#topics = :topics',
+      '#unsubscribedAt = :now',
+      '#updatedAt = :now'
+    ].join(', '),
+    ExpressionAttributeNames: {
+      '#status': 'status',
+      '#topics': 'topics',
+      '#unsubscribedAt': 'unsubscribedAt',
+      '#updatedAt': 'updatedAt'
+    },
+    ExpressionAttributeValues: {
+      ':unsub': 'UNSUBSCRIBED',
+      ':topics': [],
+      ':now': nowIso
+    }
+  }));
+
+  return {
+    ...toPublicSubscription(existingRes.Item, normalized),
+    status: 'UNSUBSCRIBED',
+    topics: [],
+    updatedAt: nowIso,
+    unsubscribedAt: nowIso
+  };
+}
+
 module.exports = {
   requestSubscription,
   confirmSubscription,
   unsubscribe,
   updatePreferences,
+  getSubscriptionForEmail,
+  updatePreferencesForEmail,
+  unsubscribeEmail,
   listSubscribersAdmin,
   upsertSubscriberAdmin,
   deleteSubscriberAdmin,

@@ -375,6 +375,17 @@ useBlogV2Cards: true
 - `true`: use metadata-first `v2` reads + progressive hydration.
 - `false`: fallback to existing `v1` content reads.
 
+### Public Reader Accounts
+
+- Public account route: `/account`
+- The header shows `Sign In` for anonymous visitors and `Account` after reader auth.
+- Reader auth uses the comments Cognito pool directly from the Angular app for email-code login, profile display-name updates, and self-service account deletion.
+- Account subscription management uses authenticated API routes:
+  - `GET /api/subscriptions/me`
+  - `POST /api/subscriptions/me/preferences`
+  - `POST /api/subscriptions/me/unsubscribe`
+- Those routes use the verified email claim from the reader Cognito ID token and update the existing `portfolio-email-subscribers` table.
+
 ### Save Payload Guidance (Blog Authoring)
 
 - Blog post content should store image URLs, not embedded base64 data URLs.

@@ -43,6 +43,14 @@ const routes: Routes = [
       description: 'Confirm or unsubscribe from email notifications.'
     }
   },
+  {
+    path: 'account',
+    loadChildren: () => import('./pages/account/account.module').then(m => m.AccountModule),
+    data: {
+      title: 'Account',
+      description: 'Manage your reader account, profile, and email subscriptions.'
+    }
+  },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
 

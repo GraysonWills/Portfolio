@@ -5,6 +5,7 @@ import { filter } from 'rxjs/operators';
 import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
+import { SiteAuthService, SiteUser } from '../../services/site-auth.service';
 import { MenuItem } from 'primeng/api';
 
 @Component({
@@ -17,26 +18,33 @@ export class HeaderComponent implements OnInit, OnDestroy {
   headerContent: RedisContent[] = [];
   menuItems: MenuItem[] = [];
   contactInfo: any = {};
+  siteUser: SiteUser | null = null;
   mobileMenuOpen: boolean = false;
   isScrolled: boolean = false;
   private routerSub!: Subscription;
+  private authSub?: Subscription;
 
   constructor(
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
+    private siteAuth: SiteAuthService,
     private router: Router
   ) {}
 
   ngOnInit(): void {
     this.loadHeaderContent();
     this.loadContactInfo();
-    this.setupMenuItems();
+    this.authSub = this.siteAuth.currentUser$.subscribe((user) => {
+      this.siteUser = user;
+      this.setupMenuItems();
+    });
     this.trackActiveRoute();
     this.syncScrolledState();
   }
 
   ngOnDestroy(): void {
     this.routerSub?.unsubscribe();
+    this.authSub?.unsubscribe();
   }
 
   /**
@@ -94,6 +102,12 @@ export class HeaderComponent implements OnInit, OnDestroy {
         label: 'Blog',
         icon: 'pi pi-book',
         routerLink: '/blog',
+        styleClass: ''
+      },
+      {
+        label: this.siteUser ? 'Account' : 'Sign In',
+        icon: this.siteUser ? 'pi pi-user' : 'pi pi-sign-in',
+        routerLink: '/account',
         styleClass: ''
       }
     ];

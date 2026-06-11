@@ -1,0 +1,200 @@
+<main class="account-page">
+  <section class="account-shell container">
+    <header class="account-header">
+      <div>
+        <p class="eyebrow">Reader Account</p>
+        <h1>Account</h1>
+      </div>
+      <button
+        type="button"
+        class="icon-command"
+        *ngIf="siteUser"
+        (click)="loadSubscription()"
+        [disabled]="subscriptionLoading"
+        aria-label="Refresh account">
+        <i class="pi pi-refresh" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <section class="auth-panel" *ngIf="!siteUser; else signedInAccount">
+      <div class="panel-heading">
+        <h2>Sign In</h2>
+        <p>Use the same account for comments and reader settings.</p>
+      </div>
+
+      <form class="account-form" (ngSubmit)="submitAuth()">
+        <div class="segmented-control" role="tablist" aria-label="Account mode">
+          <button
+            type="button"
+            [class.active]="authMode === 'login' || authMode === 'email-code'"
+            (click)="setAuthMode('login')">
+            Sign In
+          </button>
+          <button
+            type="button"
+            [class.active]="authMode === 'register'"
+            (click)="setAuthMode('register')">
+            Register
+          </button>
+          <button
+            type="button"
+            [class.active]="authMode === 'confirm'"
+            (click)="setAuthMode('confirm')">
+            Verify
+          </button>
+        </div>
+
+        <div class="field-grid">
+          <label *ngIf="authMode === 'register'">
+            Display Name
+            <input pInputText type="text" name="authDisplayName" [(ngModel)]="authDisplayName" autocomplete="name" />
+          </label>
+          <label>
+            Email
+            <input pInputText type="email" name="authEmail" [(ngModel)]="authEmail" autocomplete="email" />
+          </label>
+          <label *ngIf="authMode === 'register'">
+            Password
+            <input pInputText type="password" name="authPassword" [(ngModel)]="authPassword" autocomplete="new-password" />
+          </label>
+          <label *ngIf="authMode === 'email-code' || authMode === 'confirm'">
+            Verification Code
+            <input pInputText type="text" name="authCode" [(ngModel)]="authCode" autocomplete="one-time-code" />
+          </label>
+        </div>
+
+        <p class="code-expiry" *ngIf="authCodeCountdown">Code expires in {{ authCodeCountdown }}</p>
+
+        <div class="action-row">
+          <button type="submit" class="account-btn primary" [disabled]="authBusy">
+            <i class="pi" [ngClass]="authMode === 'login' ? 'pi-envelope' : 'pi-check'" aria-hidden="true"></i>
+            {{ authSubmitLabel }}
+          </button>
+          <button
+            type="button"
+            class="account-btn"
+            *ngIf="authMode === 'email-code' || authMode === 'confirm'"
+            [disabled]="authBusy || !authEmail"
+            (click)="resendCode()">
+            <i class="pi pi-refresh" aria-hidden="true"></i>
+            Resend
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <ng-template #signedInAccount>
+      <div class="account-grid">
+        <section class="account-panel profile-panel">
+          <div class="panel-heading">
+            <h2>Profile</h2>
+            <span class="status-pill">Signed in</span>
+          </div>
+
+          <div class="profile-summary">
+            <div class="avatar" aria-hidden="true">{{ (siteUser?.displayName || siteUser?.email || 'A').slice(0, 1).toUpperCase() }}</div>
+            <div>
+              <strong>{{ siteUser?.displayName }}</strong>
+              <span>{{ siteUser?.email }}</span>
+            </div>
+          </div>
+
+          <form class="account-form compact" (ngSubmit)="updateProfile()">
+            <label>
+              Display Name
+              <input pInputText type="text" name="profileDisplayName" [(ngModel)]="profileDisplayName" autocomplete="name" />
+            </label>
+            <button type="submit" class="account-btn primary" [disabled]="profileBusy">
+              <i class="pi pi-save" aria-hidden="true"></i>
+              Save
+            </button>
+          </form>
+        </section>
+
+        <section class="account-panel subscription-panel">
+          <div class="panel-heading">
+            <h2>Subscriptions</h2>
+            <span class="status-pill" [class.active]="subscription?.status === 'SUBSCRIBED'">{{ subscriptionStatusLabel }}</span>
+          </div>
+
+          <div class="topic-list" role="group" aria-label="Email topics">
+            <label class="topic-option" *ngFor="let topic of topicOptions">
+              <input
+                type="checkbox"
+                [checked]="hasTopic(topic.value)"
+                [disabled]="subscriptionBusy"
+                (change)="toggleTopic(topic.value, $any($event.target).checked)" />
+              <span>{{ topic.label }}</span>
+            </label>
+          </div>
+
+          <div class="subscription-meta" *ngIf="subscription">
+            <span *ngIf="subscription.confirmedAt">Confirmed {{ subscription.confirmedAt | date: 'mediumDate' }}</span>
+            <span *ngIf="subscription.unsubscribedAt">Removed {{ subscription.unsubscribedAt | date: 'mediumDate' }}</span>
+            <span *ngIf="subscription.status === 'PENDING'">Waiting for email confirmation</span>
+          </div>
+
+          <div class="action-row">
+            <button
+              type="button"
+              class="account-btn primary"
+              *ngIf="canSavePreferences"
+              [disabled]="subscriptionBusy || !selectedTopics.length"
+              (click)="savePreferences()">
+              <i class="pi pi-save" aria-hidden="true"></i>
+              Save
+            </button>
+            <button
+              type="button"
+              class="account-btn primary"
+              *ngIf="!canSavePreferences"
+              [disabled]="subscriptionBusy"
+              (click)="requestSubscription()">
+              <i class="pi pi-bell" aria-hidden="true"></i>
+              Subscribe
+            </button>
+            <button
+              type="button"
+              class="account-btn danger"
+              *ngIf="subscription?.status === 'SUBSCRIBED' || subscription?.status === 'PENDING'"
+              [disabled]="subscriptionBusy"
+              (click)="unsubscribe()">
+              <i class="pi pi-bell-slash" aria-hidden="true"></i>
+              Remove
+            </button>
+          </div>
+        </section>
+
+        <section class="account-panel settings-panel">
+          <div class="panel-heading">
+            <h2>Settings</h2>
+          </div>
+
+          <div class="settings-actions">
+            <button type="button" class="account-btn" (click)="signOut()">
+              <i class="pi pi-sign-out" aria-hidden="true"></i>
+              Sign Out
+            </button>
+          </div>
+
+          <div class="danger-zone">
+            <h3>Delete Account</h3>
+            <p>Deletes your reader login and removes active email subscriptions.</p>
+            <label>
+              Type DELETE
+              <input pInputText type="text" name="deleteConfirm" [(ngModel)]="deleteConfirm" autocomplete="off" />
+            </label>
+            <button
+              type="button"
+              class="account-btn danger"
+              [disabled]="deleteBusy || deleteConfirm !== 'DELETE'"
+              (click)="deleteAccount()">
+              <i class="pi pi-trash" aria-hidden="true"></i>
+              Delete
+            </button>
+          </div>
+        </section>
+      </div>
+    </ng-template>
+  </section>
+</main>

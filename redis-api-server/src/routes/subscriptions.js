@@ -7,13 +7,21 @@
 const express = require('express');
 const router = express.Router();
 const requirePublicEdgeAccess = require('../middleware/requirePublicEdgeAccess');
+const requireCommentUserAuth = require('../middleware/requireCommentUserAuth');
 
 const {
   requestSubscription,
   confirmSubscription,
   unsubscribe,
-  updatePreferences
+  updatePreferences,
+  getSubscriptionForEmail,
+  updatePreferencesForEmail,
+  unsubscribeEmail
 } = require('../services/subscriptions');
+
+function getAuthenticatedEmail(req) {
+  return String(req.commentUser?.email || '').trim().toLowerCase();
+}
 
 router.post('/request', requirePublicEdgeAccess, async (req, res) => {
   try {
@@ -60,6 +68,37 @@ router.post('/preferences', requirePublicEdgeAccess, async (req, res) => {
     const { token, topics } = req.body || {};
     const result = await updatePreferences({ token, topics });
     res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.get('/me', requireCommentUserAuth, async (req, res) => {
+  try {
+    const result = await getSubscriptionForEmail({ email: getAuthenticatedEmail(req) });
+    res.json({ subscription: result });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/me/preferences', requireCommentUserAuth, async (req, res) => {
+  try {
+    const { topics } = req.body || {};
+    const result = await updatePreferencesForEmail({
+      email: getAuthenticatedEmail(req),
+      topics
+    });
+    res.json({ subscription: result });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/me/unsubscribe', requireCommentUserAuth, async (req, res) => {
+  try {
+    const result = await unsubscribeEmail({ email: getAuthenticatedEmail(req) });
+    res.json({ subscription: result });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

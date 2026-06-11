@@ -5,10 +5,24 @@
 
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, from, throwError } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { SiteAuthService } from './site-auth.service';
 
 export type SubscriptionPromptState = 'requested' | 'subscribed';
+export type AccountSubscriptionStatus = 'NONE' | 'PENDING' | 'SUBSCRIBED' | 'UNSUBSCRIBED';
+
+export type AccountSubscription = {
+  email: string;
+  status: AccountSubscriptionStatus;
+  topics: string[];
+  source?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  confirmedAt?: string | null;
+  unsubscribedAt?: string | null;
+};
 
 type PromptInteractionState = {
   dismissCount: number;
@@ -33,7 +47,10 @@ export class SubscriptionService {
   private readonly promptLastTrackedBlogPathSessionKey = 'portfolio_blog_subscribe_last_blog_path_session_v1';
   private readonly promptCooldownDays = 60;
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private siteAuth: SiteAuthService
+  ) {}
 
   request(email: string, topics: string[] = ['blog_posts'], source: string = 'blog'): Observable<any> {
     return this.http.post(
@@ -62,6 +79,41 @@ export class SubscriptionService {
       `${this.apiUrl}/subscriptions/preferences`,
       { token, topics },
       { headers: this.headers }
+    );
+  }
+
+  getMySubscription(): Observable<AccountSubscription> {
+    return from(this.authHeaders()).pipe(
+      switchMap((headers) => this.http.get<{ subscription: AccountSubscription }>(
+        `${this.apiUrl}/subscriptions/me`,
+        { headers }
+      )),
+      map((response) => this.normalizeAccountSubscription(response?.subscription)),
+      catchError(this.handleAccountError)
+    );
+  }
+
+  updateMyPreferences(topics: string[]): Observable<AccountSubscription> {
+    return from(this.authHeaders()).pipe(
+      switchMap((headers) => this.http.post<{ subscription: AccountSubscription }>(
+        `${this.apiUrl}/subscriptions/me/preferences`,
+        { topics },
+        { headers }
+      )),
+      map((response) => this.normalizeAccountSubscription(response?.subscription)),
+      catchError(this.handleAccountError)
+    );
+  }
+
+  unsubscribeMe(): Observable<AccountSubscription> {
+    return from(this.authHeaders()).pipe(
+      switchMap((headers) => this.http.post<{ subscription: AccountSubscription }>(
+        `${this.apiUrl}/subscriptions/me/unsubscribe`,
+        {},
+        { headers }
+      )),
+      map((response) => this.normalizeAccountSubscription(response?.subscription)),
+      catchError(this.handleAccountError)
     );
   }
 
@@ -187,6 +239,34 @@ export class SubscriptionService {
     if (this.getPromptState()) return true;
     const state = this.readPromptInteractionState();
     return state.permanentlyDismissed || this.isDismissedUntilActive(state.dismissedUntil);
+  }
+
+  private async authHeaders(): Promise<HttpHeaders> {
+    const token = await this.siteAuth.getValidIdToken();
+    if (!token) throw new Error('Sign in to manage subscriptions.');
+    return this.headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  private normalizeAccountSubscription(input?: Partial<AccountSubscription> | null): AccountSubscription {
+    const rawStatus = String(input?.status || 'NONE').toUpperCase();
+    const status: AccountSubscriptionStatus = ['PENDING', 'SUBSCRIBED', 'UNSUBSCRIBED'].includes(rawStatus)
+      ? rawStatus as AccountSubscriptionStatus
+      : 'NONE';
+    return {
+      email: String(input?.email || '').trim().toLowerCase(),
+      status,
+      topics: Array.isArray(input?.topics) ? input.topics.map((topic) => String(topic || '').trim().toLowerCase()).filter(Boolean) : [],
+      source: input?.source || '',
+      createdAt: input?.createdAt || null,
+      updatedAt: input?.updatedAt || null,
+      confirmedAt: input?.confirmedAt || null,
+      unsubscribedAt: input?.unsubscribedAt || null
+    };
+  }
+
+  private handleAccountError(error: any): Observable<never> {
+    const message = error?.error?.error || error?.message || 'Subscription request failed';
+    return throwError(() => new Error(message));
   }
 
   private readPromptInteractionState(): PromptInteractionState {

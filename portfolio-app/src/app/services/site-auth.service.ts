@@ -41,7 +41,9 @@ type CognitoTarget =
   | 'RespondToAuthChallenge'
   | 'SignUp'
   | 'ConfirmSignUp'
-  | 'ResendConfirmationCode';
+  | 'ResendConfirmationCode'
+  | 'UpdateUserAttributes'
+  | 'DeleteUser';
 
 type PendingEmailOtp = {
   email: string;
@@ -328,11 +330,82 @@ export class SiteAuthService {
     return this.session.idToken;
   }
 
+  getAccessToken(): string | null {
+    if (!this.session?.accessToken) return null;
+    if (this.isTokenStale(this.session.expiresAtMs)) return null;
+    return this.session.accessToken;
+  }
+
   async getValidIdToken(): Promise<string | null> {
     const current = this.getIdToken();
     if (current) return current;
     if (!this.session?.refreshToken || !this.session?.username) return null;
     return this.refreshSession();
+  }
+
+  async getValidAccessToken(): Promise<string | null> {
+    const current = this.getAccessToken();
+    if (current) return current;
+    if (!this.session?.refreshToken || !this.session?.username) return null;
+    await this.refreshSession();
+    return this.getAccessToken();
+  }
+
+  updateDisplayName(displayName: string): Observable<SiteUser> {
+    const cleanName = String(displayName || '').trim().replace(/\s+/g, ' ');
+    if (cleanName.length < 2) {
+      return new Observable<SiteUser>((observer) => {
+        observer.error(new Error('Display name must be at least 2 characters.'));
+      });
+    }
+
+    return new Observable<SiteUser>((observer) => {
+      this.getValidAccessToken()
+        .then((accessToken) => {
+          if (!accessToken) throw new Error('Sign in to update your profile.');
+          return this.callCognito('UpdateUserAttributes', {
+            AccessToken: accessToken,
+            UserAttributes: [
+              { Name: 'preferred_username', Value: cleanName },
+              { Name: 'name', Value: cleanName }
+            ]
+          });
+        })
+        .then(() => {
+          if (!this.session) throw new Error('Session was not available.');
+          this.session = {
+            ...this.session,
+            displayName: cleanName
+          };
+          this.persistCurrentSession();
+          this.publishCurrentUser();
+          observer.next(this.getCurrentUser() as SiteUser);
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Could not update profile.'));
+        });
+    });
+  }
+
+  deleteAccount(): Observable<void> {
+    return new Observable<void>((observer) => {
+      this.getValidAccessToken()
+        .then((accessToken) => {
+          if (!accessToken) throw new Error('Sign in to delete your account.');
+          return this.callCognito('DeleteUser', {
+            AccessToken: accessToken
+          });
+        })
+        .then(() => {
+          this.logout();
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Could not delete account.'));
+        });
+    });
   }
 
   private loadSession(): void {
@@ -381,7 +454,7 @@ export class SiteAuthService {
     };
 
     try {
-      localStorage.setItem(this.SESSION_KEY, JSON.stringify(this.session));
+      this.persistCurrentSession();
     } catch {
       // ignore
     }
@@ -435,6 +508,15 @@ export class SiteAuthService {
       email: this.session.email,
       displayName: this.session.displayName || this.session.username
     });
+  }
+
+  private persistCurrentSession(): void {
+    if (!this.session) return;
+    try {
+      localStorage.setItem(this.SESSION_KEY, JSON.stringify(this.session));
+    } catch {
+      // ignore
+    }
   }
 
   private isTokenStale(expiresAtMs: number): boolean {
