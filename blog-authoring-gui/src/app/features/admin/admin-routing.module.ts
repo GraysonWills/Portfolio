@@ -7,6 +7,7 @@ import { ContentStudioComponent } from '../../pages/content-studio/content-studi
 import { SubscribersComponent } from '../../pages/subscribers/subscribers.component';
 import { CollectionsComponent } from '../../pages/collections/collections.component';
 import { CommentsComponent } from '../../pages/comments/comments.component';
+import { DistributionComponent } from '../../pages/distribution/distribution.component';
 
 const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
@@ -14,6 +15,7 @@ const routes: Routes = [
   { path: 'subscribers', component: SubscribersComponent, canActivate: [AuthGuard] },
   { path: 'comments', component: CommentsComponent, canActivate: [AuthGuard] },
   { path: 'collections', component: CollectionsComponent, canActivate: [AuthGuard] },
+  { path: 'distribution', component: DistributionComponent, canActivate: [AuthGuard] },
 ];
 
 @NgModule({

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Social Distribution Studio Mockup</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./shared.css" />
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
+  </head>
+  <body>
+    <main class="mockup-shell">
+      <header class="mockup-header">
+        <div>
+          <p class="eyebrow">Blog Authoring Studio</p>
+          <h1>Social Distribution</h1>
+        </div>
+        <div class="header-actions">
+          <span class="state-chip state-quiet"><i data-lucide="eye-off"></i> Quiet mode locked</span>
+          <span class="state-chip"><i data-lucide="calendar-clock"></i> Uses blog schedule</span>
+        </div>
+      </header>
+
+      <section class="artboard">
+        <div class="artboard-label">
+          <span>SD-01 Composer</span>
+          <span>Desktop frame</span>
+        </div>
+        <div class="studio-frame">
+          <aside class="studio-rail">
+            <div class="brand-row">
+              <div class="brand-mark">GW</div>
+              <div>
+                <strong>Authoring</strong>
+                <span>Distribution</span>
+              </div>
+            </div>
+            <nav class="rail-nav" aria-label="Studio navigation">
+              <a>Posts</a>
+              <a class="active">Distribution</a>
+              <a>Subscribers</a>
+              <a>Comments</a>
+              <a>Settings</a>
+            </nav>
+          </aside>
+
+          <section class="workspace">
+            <div class="toolbar">
+              <div>
+                <p class="eyebrow">Publish package</p>
+                <h2>Announce "Building for expression, not reaction"</h2>
+              </div>
+              <div class="button-row">
+                <button class="icon-button" aria-label="Preview distribution"><i data-lucide="scan-eye"></i></button>
+                <button class="button secondary"><i data-lucide="save"></i> Save draft</button>
+                <button class="button primary"><i data-lucide="send"></i> Schedule</button>
+              </div>
+            </div>
+
+            <div class="content-grid">
+              <section class="panel composer-panel">
+                <div class="panel-title">
+                  <h3>Caption</h3>
+                  <span class="state-chip">14 selected</span>
+                </div>
+                <div class="field-row">
+                  <label for="publish-time">Publish time</label>
+                  <div class="input-look" id="publish-time">Jun 18, 2026 at 9:00 AM</div>
+                </div>
+                <div class="field-row">
+                  <label for="caption">Master caption</label>
+                  <textarea id="caption">New essay is live: building for expression, not reaction. A note on keeping the work honest, shipping publicly, and leaving the metrics outside the room.</textarea>
+                </div>
+                <div class="variant-grid">
+                  <article class="variant-card">
+                    <span class="platform-mark x">X</span>
+                    <div>
+                      <strong>X / Twitter</strong>
+                      <p>Short post with link. No reply monitoring.</p>
+                    </div>
+                  </article>
+                  <article class="variant-card">
+                    <span class="platform-mark in">in</span>
+                    <div>
+                      <strong>LinkedIn</strong>
+                      <p>Professional framing with source link.</p>
+                    </div>
+                  </article>
+                  <article class="variant-card">
+                    <span class="platform-mark ig">IG</span>
+                    <div>
+                      <strong>Instagram</strong>
+                      <p>Square image caption variant.</p>
+                    </div>
+                  </article>
+                  <article class="variant-card">
+                    <span class="platform-mark yt">YT</span>
+                    <div>
+                      <strong>YouTube</strong>
+                      <p>Community-style announcement or Short.</p>
+                    </div>
+                  </article>
+                </div>
+              </section>
+
+              <section class="panel preview-panel">
+                <div class="panel-title">
+                  <h3>Preview</h3>
+                  <span class="state-chip state-success">Delivery only</span>
+                </div>
+                <article class="social-preview">
+                  <div class="preview-head">
+                    <div class="avatar">GW</div>
+                    <div>
+                      <strong>Grayson Wills</strong>
+                      <span>@graysonwills</span>
+                    </div>
+                  </div>
+                  <p>New essay is live: building for expression, not reaction. A note on keeping the work honest, shipping publicly, and leaving the metrics outside the room.</p>
+                  <div class="link-preview">
+                    <div class="link-image"></div>
+                    <div>
+                      <strong>Building for expression, not reaction</strong>
+                      <span>grayson-wills.com/blog/expression-not-reaction</span>
+                    </div>
+                  </div>
+                  <div class="quiet-strip">
+                    <i data-lucide="shield-check"></i>
+                    <span>Comments, likes, reposts, views, and follower deltas are not fetched.</span>
+                  </div>
+                </article>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="artboard-label">
+          <span>SD-02 Platform Automation Matrix</span>
+          <span>Desktop frame</span>
+        </div>
+        <div class="platform-frame">
+          <div class="matrix-head">
+            <div>
+              <p class="eyebrow">Targets</p>
+              <h2>Media awareness channels</h2>
+            </div>
+            <div class="segmented">
+              <button class="active">All</button>
+              <button>Fast</button>
+              <button>Review</button>
+              <button>Media</button>
+            </div>
+          </div>
+
+          <div class="platform-grid">
+            <article class="platform-card">
+              <span class="platform-mark fb">f</span>
+              <h3>Facebook Page</h3>
+              <p>Page announcement posts with link preview.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Connected</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark x">X</span>
+              <h3>X / Twitter</h3>
+              <p>Short link posts, thread later if desired.</p>
+              <div class="card-footer"><span class="state-chip state-warn">API tier</span><span>Ready after key</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark in">in</span>
+              <h3>LinkedIn</h3>
+              <p>Personal or organization post with article link.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>OAuth needed</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark ig">IG</span>
+              <h3>Instagram</h3>
+              <p>Image-first announcement with caption.</p>
+              <div class="card-footer"><span class="state-chip state-warn">Review</span><span>Professional account</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark yt">YT</span>
+              <h3>YouTube</h3>
+              <p>Short, video, or community announcement.</p>
+              <div class="card-footer"><span class="state-chip state-warn">Media</span><span>Best for video</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark th">TH</span>
+              <h3>Threads</h3>
+              <p>Text-first post that mirrors the blog launch.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Meta setup</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark bs">BS</span>
+              <h3>Bluesky</h3>
+              <p>Low-friction public announcement post.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Good first wave</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark ms">M</span>
+              <h3>Mastodon</h3>
+              <p>Instance-aware post with canonical link.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Good first wave</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark pin">P</span>
+              <h3>Pinterest</h3>
+              <p>Pin the blog image to an ideas board.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Image useful</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark tt">TT</span>
+              <h3>TikTok</h3>
+              <p>Photo carousel or short-form video teaser.</p>
+              <div class="card-footer"><span class="state-chip state-warn">Review</span><span>Media required</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark rd">R</span>
+              <h3>Reddit</h3>
+              <p>Only owned or appropriate communities.</p>
+              <div class="card-footer"><span class="state-chip state-danger">Careful</span><span>Rules matter</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark md">M</span>
+              <h3>Medium</h3>
+              <p>Optional canonical mirror or excerpt.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Long-form</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark tb">T</span>
+              <h3>Tumblr</h3>
+              <p>Lightweight cross-post with tags.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Low friction</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark dc">D</span>
+              <h3>Discord</h3>
+              <p>Webhook announcement to a chosen channel.</p>
+              <div class="card-footer"><span class="state-chip state-success">Fast</span><span>Webhook</span></div>
+            </article>
+            <article class="platform-card">
+              <span class="platform-mark ss">S</span>
+              <h3>Substack</h3>
+              <p>Optional note or newsletter mirror.</p>
+              <div class="card-footer"><span class="state-chip state-warn">Manual/API</span><span>Evaluate</span></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="artboard">
+        <div class="artboard-label">
+          <span>SD-03 Quiet Delivery Queue</span>
+          <span>Desktop frame</span>
+        </div>
+        <div class="queue-frame">
+          <div class="queue-summary">
+            <div>
+              <p class="eyebrow">Today</p>
+              <h2>Distribution queue</h2>
+            </div>
+            <div class="summary-metrics">
+              <span><strong>18</strong> queued</span>
+              <span><strong>9</strong> sent</span>
+              <span><strong>1</strong> needs retry</span>
+            </div>
+          </div>
+          <div class="quiet-banner">
+            <i data-lucide="heart-off"></i>
+            <span>Engagement data stays out of this workspace. Delivery receipts only.</span>
+          </div>
+          <div class="queue-table">
+            <div class="queue-row queue-head">
+              <span>Post</span>
+              <span>Platform</span>
+              <span>Run at</span>
+              <span>Status</span>
+              <span>Action</span>
+            </div>
+            <div class="queue-row">
+              <span>Building for expression, not reaction</span>
+              <span><span class="platform-mark bs small">BS</span> Bluesky</span>
+              <span>9:00 AM</span>
+              <span class="state-chip state-success">Sent</span>
+              <button class="icon-button" aria-label="Open delivery receipt"><i data-lucide="receipt-text"></i></button>
+            </div>
+            <div class="queue-row">
+              <span>Building for expression, not reaction</span>
+              <span><span class="platform-mark in small">in</span> LinkedIn</span>
+              <span>9:00 AM</span>
+              <span class="state-chip">Queued</span>
+              <button class="icon-button" aria-label="Cancel queued post"><i data-lucide="x"></i></button>
+            </div>
+            <div class="queue-row">
+              <span>Building for expression, not reaction</span>
+              <span><span class="platform-mark ig small">IG</span> Instagram</span>
+              <span>9:02 AM</span>
+              <span class="state-chip state-warn">Needs media</span>
+              <button class="icon-button" aria-label="Fix media"><i data-lucide="image-plus"></i></button>
+            </div>
+            <div class="queue-row">
+              <span>Building for expression, not reaction</span>
+              <span><span class="platform-mark dc small">D</span> Discord</span>
+              <span>9:04 AM</span>
+              <span class="state-chip state-success">Sent</span>
+              <button class="icon-button" aria-label="Open delivery receipt"><i data-lucide="receipt-text"></i></button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    </script>
+  </body>
+</html>

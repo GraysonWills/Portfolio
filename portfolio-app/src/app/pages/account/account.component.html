@@ -18,7 +18,7 @@
 
     <section class="auth-panel" *ngIf="!siteUser; else signedInAccount">
       <div class="panel-heading">
-        <h2>Sign In</h2>
+        <h2>{{ authHeading }}</h2>
         <p>Use the same account for comments and reader settings.</p>
       </div>
 
@@ -34,32 +34,96 @@
             type="button"
             [class.active]="authMode === 'register'"
             (click)="setAuthMode('register')">
-            Register
+            Create Account
           </button>
           <button
             type="button"
             [class.active]="authMode === 'confirm'"
             (click)="setAuthMode('confirm')">
-            Verify
+            Verify Email
+          </button>
+          <button
+            type="button"
+            [class.active]="authMode === 'reset' || authMode === 'reset-confirm'"
+            (click)="setAuthMode('reset')">
+            Reset Password
+          </button>
+        </div>
+
+        <div class="auth-mode-actions" *ngIf="authMode === 'login' || authMode === 'email-code'">
+          <span>New here?</span>
+          <button type="button" class="inline-action" (click)="setAuthMode('register')">
+            Create a reader account
+          </button>
+          <button type="button" class="inline-action" (click)="setAuthMode('confirm')">
+            Verify an account
+          </button>
+          <button type="button" class="inline-action" (click)="setAuthMode('reset')">
+            Reset password
+          </button>
+        </div>
+
+        <div class="auth-mode-actions" *ngIf="authMode === 'register' || authMode === 'confirm'">
+          <span>Already have an account?</span>
+          <button type="button" class="inline-action" (click)="setAuthMode('login')">
+            Send a sign-in code
+          </button>
+          <button type="button" class="inline-action" (click)="setAuthMode('reset')">
+            Reset password
+          </button>
+        </div>
+
+        <div class="auth-mode-actions" *ngIf="authMode === 'reset' || authMode === 'reset-confirm'">
+          <span>Remembered it?</span>
+          <button type="button" class="inline-action" (click)="setAuthMode('login')">
+            Send a sign-in code
+          </button>
+          <button type="button" class="inline-action" (click)="setAuthMode('register')">
+            Create account
           </button>
         </div>
 
         <div class="field-grid">
-          <label *ngIf="authMode === 'register'">
+          <label *ngIf="showDisplayNameField">
             Display Name
-            <input pInputText type="text" name="authDisplayName" [(ngModel)]="authDisplayName" autocomplete="name" />
+            <input
+              pInputText
+              type="text"
+              name="authDisplayName"
+              [(ngModel)]="authDisplayName"
+              autocomplete="name"
+              placeholder="Your display name" />
           </label>
           <label>
             Email
-            <input pInputText type="email" name="authEmail" [(ngModel)]="authEmail" autocomplete="email" />
+            <input
+              pInputText
+              type="email"
+              name="authEmail"
+              [(ngModel)]="authEmail"
+              autocomplete="email"
+              placeholder="you@example.com" />
           </label>
-          <label *ngIf="authMode === 'register'">
-            Password
-            <input pInputText type="password" name="authPassword" [(ngModel)]="authPassword" autocomplete="new-password" />
+          <label *ngIf="showPasswordField">
+            {{ authPasswordLabel }}
+            <input
+              pInputText
+              type="password"
+              name="authPassword"
+              [(ngModel)]="authPassword"
+              autocomplete="new-password"
+              [placeholder]="authPasswordPlaceholder" />
           </label>
-          <label *ngIf="authMode === 'email-code' || authMode === 'confirm'">
+          <label *ngIf="showCodeField">
             Verification Code
-            <input pInputText type="text" name="authCode" [(ngModel)]="authCode" autocomplete="one-time-code" />
+            <input
+              pInputText
+              type="text"
+              name="authCode"
+              [(ngModel)]="authCode"
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              placeholder="6-digit code" />
           </label>
         </div>
 
@@ -67,13 +131,13 @@
 
         <div class="action-row">
           <button type="submit" class="account-btn primary" [disabled]="authBusy">
-            <i class="pi" [ngClass]="authMode === 'login' ? 'pi-envelope' : 'pi-check'" aria-hidden="true"></i>
+            <i class="pi" [ngClass]="authSubmitIcon" aria-hidden="true"></i>
             {{ authSubmitLabel }}
           </button>
           <button
             type="button"
             class="account-btn"
-            *ngIf="authMode === 'email-code' || authMode === 'confirm'"
+            *ngIf="authMode === 'email-code' || authMode === 'confirm' || authMode === 'reset-confirm'"
             [disabled]="authBusy || !authEmail"
             (click)="resendCode()">
             <i class="pi pi-refresh" aria-hidden="true"></i>

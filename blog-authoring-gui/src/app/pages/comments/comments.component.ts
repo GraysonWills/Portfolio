@@ -185,6 +185,10 @@ export class CommentsComponent implements OnInit, OnDestroy {
     this.router.navigate(['/collections']);
   }
 
+  goToDistribution(): void {
+    this.router.navigate(['/distribution']);
+  }
+
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);

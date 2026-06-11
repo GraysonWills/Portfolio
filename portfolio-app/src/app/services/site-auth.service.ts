@@ -42,6 +42,8 @@ type CognitoTarget =
   | 'SignUp'
   | 'ConfirmSignUp'
   | 'ResendConfirmationCode'
+  | 'ForgotPassword'
+  | 'ConfirmForgotPassword'
   | 'UpdateUserAttributes'
   | 'DeleteUser';
 
@@ -306,6 +308,66 @@ export class SiteAuthService {
     });
   }
 
+  forgotPassword(email: string): Observable<void> {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      return new Observable<void>((observer) => {
+        observer.error(new Error('Email is required'));
+      });
+    }
+
+    return new Observable<void>((observer) => {
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
+
+      this.callCognito('ForgotPassword', {
+        ClientId: environment.commentsAuth.clientId,
+        Username: cleanEmail
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Could not send password reset code.'));
+        });
+    });
+  }
+
+  confirmForgotPassword(email: string, code: string, newPassword: string): Observable<void> {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanCode = String(code || '').trim();
+    const cleanPassword = String(newPassword || '').trim();
+    if (!cleanEmail || !cleanCode || !cleanPassword) {
+      return new Observable<void>((observer) => {
+        observer.error(new Error('Email, verification code, and new password are required'));
+      });
+    }
+
+    return new Observable<void>((observer) => {
+      if (!this.isConfigured()) {
+        observer.error(new Error('Comment accounts are not configured yet.'));
+        return;
+      }
+
+      this.callCognito('ConfirmForgotPassword', {
+        ClientId: environment.commentsAuth.clientId,
+        Username: cleanEmail,
+        ConfirmationCode: cleanCode,
+        Password: cleanPassword
+      })
+        .then(() => {
+          observer.next();
+          observer.complete();
+        })
+        .catch((err) => {
+          observer.error(new Error(this.getCognitoErrorMessage(err) || 'Could not reset password.'));
+        });
+    });
+  }
+
   logout(): void {
     this.session = null;
     this.currentUserSubject.next(null);
@@ -544,17 +606,47 @@ export class SiteAuthService {
     const text = await response.text();
     const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
     if (!response.ok) {
+      const code = this.getCognitoErrorCode(payload);
       const message = typeof payload['message'] === 'string'
         ? payload['message']
-        : (typeof payload['__type'] === 'string' ? payload['__type'] : 'Cognito request failed');
-      throw new Error(message);
+        : (code || 'Cognito request failed');
+      const error = new Error(message);
+      error.name = code || 'CognitoError';
+      throw error;
     }
     return payload as CognitoAuthResponse;
   }
 
   private getCognitoErrorMessage(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    return String(err || '').trim();
+    const name = err instanceof Error ? err.name : '';
+    const message = err instanceof Error ? err.message : String(err || '').trim();
+    const combined = `${name} ${message}`.trim();
+
+    if (/UsernameExistsException|already exists|already.*registered/i.test(combined)) {
+      return 'An account with this email already exists. Sign in with a code, or reset your password if you need to change it.';
+    }
+    if (/UserNotFoundException/i.test(combined)) {
+      return 'No account was found for that email. Create an account first.';
+    }
+    if (/CodeMismatchException|Invalid verification code/i.test(combined)) {
+      return 'That verification code is not correct. Check the email and try again.';
+    }
+    if (/ExpiredCodeException|expired/i.test(combined)) {
+      return 'That code expired. Send a new code and try again.';
+    }
+    if (/InvalidPasswordException|Password did not conform/i.test(combined)) {
+      return 'Choose a stronger password that meets the account password requirements.';
+    }
+    if (/LimitExceededException|TooManyRequestsException|Too many/i.test(combined)) {
+      return 'Too many attempts. Wait a moment, then try again.';
+    }
+
+    return message;
+  }
+
+  private getCognitoErrorCode(payload: Record<string, unknown>): string {
+    const raw = String(payload['__type'] || payload['code'] || '').trim();
+    return raw.split('#').pop() || raw;
   }
 
   private getJwtExpMs(jwt: string): number | null {

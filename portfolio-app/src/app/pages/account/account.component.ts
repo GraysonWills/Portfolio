@@ -5,7 +5,7 @@ import { MessageService } from 'primeng/api';
 import { AccountSubscription, SubscriptionService } from '../../services/subscription.service';
 import { SiteAuthService, SiteUser } from '../../services/site-auth.service';
 
-type AccountAuthMode = 'login' | 'email-code' | 'register' | 'confirm';
+type AccountAuthMode = 'login' | 'email-code' | 'register' | 'confirm' | 'reset' | 'reset-confirm';
 
 type TopicOption = {
   value: string;
@@ -76,8 +76,43 @@ export class AccountComponent implements OnInit, OnDestroy {
   get authSubmitLabel(): string {
     if (this.authMode === 'register') return 'Create account';
     if (this.authMode === 'confirm') return 'Verify email';
+    if (this.authMode === 'reset') return 'Send reset code';
+    if (this.authMode === 'reset-confirm') return 'Update password';
     if (this.authMode === 'email-code') return 'Verify code';
     return 'Send code';
+  }
+
+  get authHeading(): string {
+    if (this.authMode === 'register') return 'Create Account';
+    if (this.authMode === 'confirm') return 'Verify Email';
+    if (this.authMode === 'reset' || this.authMode === 'reset-confirm') return 'Reset Password';
+    return 'Sign In';
+  }
+
+  get authSubmitIcon(): string {
+    if (this.authMode === 'login' || this.authMode === 'reset') return 'pi-envelope';
+    if (this.authMode === 'register') return 'pi-user-plus';
+    return 'pi-check';
+  }
+
+  get showDisplayNameField(): boolean {
+    return this.authMode === 'register';
+  }
+
+  get showPasswordField(): boolean {
+    return this.authMode === 'register' || this.authMode === 'reset-confirm';
+  }
+
+  get showCodeField(): boolean {
+    return this.authMode === 'email-code' || this.authMode === 'confirm' || this.authMode === 'reset-confirm';
+  }
+
+  get authPasswordLabel(): string {
+    return this.authMode === 'reset-confirm' ? 'New Password' : 'Password';
+  }
+
+  get authPasswordPlaceholder(): string {
+    return this.authMode === 'reset-confirm' ? 'New password' : 'Minimum 8 characters';
   }
 
   get subscriptionStatusLabel(): string {
@@ -95,9 +130,12 @@ export class AccountComponent implements OnInit, OnDestroy {
 
   setAuthMode(mode: AccountAuthMode): void {
     this.authMode = mode;
-    if (mode === 'login' || mode === 'register') {
+    if (mode === 'login' || mode === 'register' || mode === 'reset') {
       this.authCode = '';
       this.clearCodeTimer();
+    }
+    if (mode !== 'register' && mode !== 'reset-confirm') {
+      this.authPassword = '';
     }
   }
 
@@ -126,6 +164,34 @@ export class AccountComponent implements OnInit, OnDestroy {
           this.toast('success', 'Verified', 'Send yourself a sign-in code to continue.');
         },
         error: (err) => this.authError(err, 'Verification failed.')
+      });
+      return;
+    }
+
+    if (this.authMode === 'reset') {
+      this.siteAuth.forgotPassword(this.authEmail).subscribe({
+        next: () => {
+          this.authBusy = false;
+          this.setAuthMode('reset-confirm');
+          this.startCodeTimer();
+          this.toast('success', 'Check Email', 'Enter the reset code and choose a new password.');
+        },
+        error: (err) => this.authError(err, 'Could not send password reset code.')
+      });
+      return;
+    }
+
+    if (this.authMode === 'reset-confirm') {
+      this.siteAuth.confirmForgotPassword(this.authEmail, this.authCode, this.authPassword).subscribe({
+        next: () => {
+          this.authBusy = false;
+          this.authPassword = '';
+          this.authCode = '';
+          this.clearCodeTimer();
+          this.setAuthMode('login');
+          this.toast('success', 'Password Updated', 'Send yourself a sign-in code to continue.');
+        },
+        error: (err) => this.authError(err, 'Could not reset password.')
       });
       return;
     }
@@ -161,12 +227,14 @@ export class AccountComponent implements OnInit, OnDestroy {
 
     const action = this.authMode === 'confirm'
       ? this.siteAuth.resendRegistrationCode(this.authEmail)
-      : this.siteAuth.startEmailCodeLogin(this.authEmail);
+      : this.authMode === 'reset-confirm'
+        ? this.siteAuth.forgotPassword(this.authEmail)
+        : this.siteAuth.startEmailCodeLogin(this.authEmail);
 
     action.subscribe({
       next: () => {
         this.authBusy = false;
-        if (this.authMode !== 'confirm') this.setAuthMode('email-code');
+        if (this.authMode !== 'confirm' && this.authMode !== 'reset-confirm') this.setAuthMode('email-code');
         this.startCodeTimer();
         this.toast('success', 'Code Sent', 'A new code was sent.');
       },
@@ -334,7 +402,7 @@ export class AccountComponent implements OnInit, OnDestroy {
       this.codeTimer = undefined;
     }
     this.codeExpiresAtMs = 0;
-    if (this.authMode === 'login' || this.authMode === 'register') {
+    if (this.authMode === 'login' || this.authMode === 'register' || this.authMode === 'reset') {
       this.authCodeCountdown = '';
     }
   }

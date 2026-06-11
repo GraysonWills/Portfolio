@@ -189,20 +189,48 @@
             type="button"
             [class.active]="commentAuthMode === 'register'"
             (click)="setCommentAuthMode('register')">
-            Register
+            Create Account
           </button>
           <button
             type="button"
             [class.active]="commentAuthMode === 'confirm'"
             (click)="setCommentAuthMode('confirm')">
-            Verify
+            Verify Email
           </button>
+          <button
+            type="button"
+            [class.active]="commentAuthMode === 'reset' || commentAuthMode === 'reset-confirm'"
+            (click)="setCommentAuthMode('reset')">
+            Reset Password
+          </button>
+        </div>
+
+        <div class="comment-auth-switch" *ngIf="commentAuthMode === 'login' || commentAuthMode === 'email-code'">
+          <span>No account yet?</span>
+          <button type="button" (click)="setCommentAuthMode('register')">Create one</button>
+          <button type="button" (click)="setCommentAuthMode('confirm')">Verify email</button>
+          <button type="button" (click)="setCommentAuthMode('reset')">Reset password</button>
+        </div>
+
+        <div class="comment-auth-switch" *ngIf="commentAuthMode === 'register' || commentAuthMode === 'confirm'">
+          <span>Already have an account?</span>
+          <button type="button" (click)="setCommentAuthMode('login')">Send a sign-in code</button>
+          <button type="button" (click)="setCommentAuthMode('reset')">Reset password</button>
+        </div>
+
+        <div class="comment-auth-switch" *ngIf="commentAuthMode === 'reset' || commentAuthMode === 'reset-confirm'">
+          <span>Remembered it?</span>
+          <button type="button" (click)="setCommentAuthMode('login')">Send a sign-in code</button>
+          <button type="button" (click)="setCommentAuthMode('register')">Create one</button>
         </div>
 
         <p class="comment-auth-hint" *ngIf="commentAuthMode === 'login'">
           Sign in with a one-time code sent to your email.
         </p>
-        <p class="comment-auth-hint" *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'">
+        <p class="comment-auth-hint" *ngIf="commentAuthMode === 'reset'">
+          Enter your account email and we will send a password reset code.
+        </p>
+        <p class="comment-auth-hint" *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm' || commentAuthMode === 'reset-confirm'">
           Enter the code sent to {{ commentAuthEmail || 'your email' }}.
           <span *ngIf="commentAuthCodeCountdown">Expires in {{ commentAuthCodeCountdown }}.</span>
         </p>
@@ -215,7 +243,8 @@
               type="text"
               name="commentAuthDisplayName"
               [(ngModel)]="commentAuthDisplayName"
-              autocomplete="name" />
+              autocomplete="name"
+              placeholder="Your display name" />
           </label>
           <label>
             Email
@@ -224,25 +253,29 @@
               type="email"
               name="commentAuthEmail"
               [(ngModel)]="commentAuthEmail"
-              autocomplete="email" />
+              autocomplete="email"
+              placeholder="you@example.com" />
           </label>
-          <label *ngIf="commentAuthMode === 'register'">
-            Password
+          <label *ngIf="commentAuthMode === 'register' || commentAuthMode === 'reset-confirm'">
+            {{ commentAuthMode === 'reset-confirm' ? 'New Password' : 'Password' }}
             <input
               pInputText
               type="password"
               name="commentAuthPassword"
               [(ngModel)]="commentAuthPassword"
-              autocomplete="new-password" />
+              autocomplete="new-password"
+              [placeholder]="commentAuthMode === 'reset-confirm' ? 'New password' : 'Minimum 8 characters'" />
           </label>
-          <label *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'">
+          <label *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm' || commentAuthMode === 'reset-confirm'">
             Verification Code
             <input
               pInputText
               type="text"
               name="commentAuthCode"
               [(ngModel)]="commentAuthCode"
-              autocomplete="one-time-code" />
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              placeholder="6-digit code" />
           </label>
         </div>
 
@@ -250,14 +283,14 @@
           <button type="submit" class="comment-action-btn" [disabled]="commentAuthBusy">
             <i
               class="pi"
-              [ngClass]="commentAuthMode === 'login' ? 'pi-envelope' : 'pi-check'"
+              [ngClass]="commentAuthMode === 'login' || commentAuthMode === 'reset' ? 'pi-envelope' : commentAuthMode === 'register' ? 'pi-user-plus' : 'pi-check'"
               aria-hidden="true"></i>
             {{ getCommentAuthSubmitLabel() }}
           </button>
           <button
             type="button"
             class="comment-action-btn secondary"
-            *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm'"
+            *ngIf="commentAuthMode === 'email-code' || commentAuthMode === 'confirm' || commentAuthMode === 'reset-confirm'"
             [disabled]="commentAuthBusy || !commentAuthEmail"
             (click)="resendCommentAuthCode()">
             <i class="pi pi-refresh" aria-hidden="true"></i>

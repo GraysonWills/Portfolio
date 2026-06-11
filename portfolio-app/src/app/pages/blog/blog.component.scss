@@ -318,7 +318,8 @@
 /* ── Blog Footer (tags + read more) ── */
 .blog-footer {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   justify-content: space-between;
   padding-top: 0.75rem;
   border-top: 1px solid var(--bg-tertiary);
@@ -329,18 +330,27 @@
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .blog-tag {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 0.25rem 0.75rem;
   font-size: 0.68rem;
   font-weight: 600;
+  line-height: 1.15;
   color: var(--primary);
   background: rgba(11, 79, 159, 0.1);
   border-radius: var(--radius-xl);
   letter-spacing: 0.06em;
+  max-width: 100%;
+  min-height: 1.5rem;
+  overflow-wrap: normal;
+  text-align: center;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .read-more-link {
@@ -353,6 +363,7 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  margin-left: auto;
 
   i {
     font-size: 0.75rem;

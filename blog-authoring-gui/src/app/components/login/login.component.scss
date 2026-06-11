@@ -47,9 +47,24 @@
 
 .form-group input {
   width: 100%;
+  border: 1px solid rgba(49, 92, 139, 0.32);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--ink-900);
   padding: 0.82rem 0.95rem;
   min-height: 44px;
   line-height: 1.4;
+  box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.form-group input::placeholder {
+  color: rgba(71, 85, 105, 0.78);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--accent-700);
+  box-shadow: 0 0 0 3px rgba(47, 111, 173, 0.14);
 }
 
 .error-message {
@@ -101,6 +116,20 @@
 
 .forgot-link:hover {
   color: var(--accent-800);
+}
+
+.account-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.45rem;
+  color: var(--ink-700);
+  font-size: 0.9rem;
+}
+
+.account-options .forgot-link {
+  margin: 0;
 }
 
 ::ng-deep .login-button .p-button {

@@ -27,7 +27,7 @@ interface RecentPostCard {
   readTime: number;
 }
 
-type CommentAuthMode = 'login' | 'email-code' | 'register' | 'confirm';
+type CommentAuthMode = 'login' | 'email-code' | 'register' | 'confirm' | 'reset' | 'reset-confirm';
 
 @Component({
   selector: 'app-blog-detail',
@@ -551,15 +551,20 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   setCommentAuthMode(mode: CommentAuthMode): void {
     this.commentAuthMode = mode;
-    if (mode === 'login' || mode === 'register') {
+    if (mode === 'login' || mode === 'register' || mode === 'reset') {
       this.commentAuthCode = '';
       this.clearCommentCodeExpiry();
+    }
+    if (mode !== 'register' && mode !== 'reset-confirm') {
+      this.commentAuthPassword = '';
     }
   }
 
   getCommentAuthSubmitLabel(): string {
     if (this.commentAuthMode === 'register') return 'Create Account';
     if (this.commentAuthMode === 'confirm') return 'Verify Email';
+    if (this.commentAuthMode === 'reset') return 'Send Reset Code';
+    if (this.commentAuthMode === 'reset-confirm') return 'Update Password';
     if (this.commentAuthMode === 'email-code') return 'Verify Code';
     return 'Send Code';
   }
@@ -606,6 +611,48 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         error: (err) => {
           done();
           this.messageService.add({ severity: 'error', summary: 'Verification Failed', detail: err?.message || 'Could not verify account.' });
+        }
+      });
+      return;
+    }
+
+    if (this.commentAuthMode === 'reset') {
+      this.siteAuth.forgotPassword(this.commentAuthEmail).subscribe({
+        next: () => {
+          done();
+          this.setCommentAuthMode('reset-confirm');
+          this.startCommentCodeExpiry();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Check Email',
+            detail: 'Enter the reset code within 10 minutes and choose a new password.'
+          });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Reset Failed', detail: err?.message || 'Could not send password reset code.' });
+        }
+      });
+      return;
+    }
+
+    if (this.commentAuthMode === 'reset-confirm') {
+      this.siteAuth.confirmForgotPassword(this.commentAuthEmail, this.commentAuthCode, this.commentAuthPassword).subscribe({
+        next: () => {
+          done();
+          this.commentAuthCode = '';
+          this.commentAuthPassword = '';
+          this.clearCommentCodeExpiry();
+          this.setCommentAuthMode('login');
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Password Updated',
+            detail: 'Send yourself a sign-in code to comment.'
+          });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Reset Failed', detail: err?.message || 'Could not reset password.' });
         }
       });
       return;
@@ -666,6 +713,21 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         error: (err) => {
           done();
           this.messageService.add({ severity: 'error', summary: 'Resend Failed', detail: err?.message || 'Could not resend verification code.' });
+        }
+      });
+      return;
+    }
+
+    if (this.commentAuthMode === 'reset-confirm') {
+      this.siteAuth.forgotPassword(this.commentAuthEmail).subscribe({
+        next: () => {
+          done();
+          this.startCommentCodeExpiry();
+          this.messageService.add({ severity: 'success', summary: 'Code Sent', detail: 'A new password reset code was sent.' });
+        },
+        error: (err) => {
+          done();
+          this.messageService.add({ severity: 'error', summary: 'Resend Failed', detail: err?.message || 'Could not send password reset code.' });
         }
       });
       return;

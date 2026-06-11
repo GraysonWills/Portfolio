@@ -5,17 +5,17 @@
     <form *ngIf="!verificationRequired" [formGroup]="registerForm" (ngSubmit)="submitRegistration()" class="login-form">
       <div class="form-group">
         <label for="username">Username</label>
-        <input id="username" type="text" pInputText formControlName="username" placeholder="Choose a username" />
+        <input id="username" type="text" pInputText formControlName="username" autocomplete="username" placeholder="Choose a username" />
       </div>
 
       <div class="form-group">
         <label for="email">Email</label>
-        <input id="email" type="email" pInputText formControlName="email" placeholder="you@example.com" />
+        <input id="email" type="email" pInputText formControlName="email" autocomplete="email" placeholder="you@example.com" />
       </div>
 
       <div class="form-group">
         <label for="password">Password</label>
-        <input id="password" type="password" pInputText formControlName="password" placeholder="Minimum 8 characters" />
+        <input id="password" type="password" pInputText formControlName="password" autocomplete="new-password" placeholder="Minimum 8 characters" />
       </div>
 
       <div *ngIf="errorMessage" class="error-alert">{{ errorMessage }}</div>
@@ -35,7 +35,7 @@
 
       <div class="form-group">
         <label for="code">Verification Code</label>
-        <input id="code" type="text" pInputText formControlName="code" placeholder="6-digit code" />
+        <input id="code" type="text" pInputText formControlName="code" autocomplete="one-time-code" inputmode="numeric" placeholder="6-digit code" />
       </div>
 
       <div *ngIf="errorMessage" class="error-alert">{{ errorMessage }}</div>

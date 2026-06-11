@@ -248,6 +248,10 @@ export class SubscribersComponent implements OnInit, OnDestroy {
     this.router.navigate(['/collections']);
   }
 
+  goToDistribution(): void {
+    this.router.navigate(['/distribution']);
+  }
+
   goToComments(): void {
     this.router.navigate(['/comments']);
   }

@@ -465,6 +465,10 @@ export class CollectionsComponent implements OnInit, OnDestroy {
     this.router.navigate(['/comments']);
   }
 
+  goToDistribution(): void {
+    this.router.navigate(['/distribution']);
+  }
+
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);

@@ -410,17 +410,47 @@ export class AuthService {
     const text = await response.text();
     const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
     if (!response.ok) {
+      const code = this.getCognitoErrorCode(payload);
       const message = typeof payload['message'] === 'string'
         ? payload['message']
-        : (typeof payload['__type'] === 'string' ? payload['__type'] : 'Cognito request failed');
-      throw new Error(message);
+        : (code || 'Cognito request failed');
+      const error = new Error(message);
+      error.name = code || 'CognitoError';
+      throw error;
     }
     return payload as CognitoAuthResponse;
   }
 
   private getCognitoErrorMessage(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    return String(err || '').trim();
+    const name = err instanceof Error ? err.name : '';
+    const message = err instanceof Error ? err.message : String(err || '').trim();
+    const combined = `${name} ${message}`.trim();
+
+    if (/UsernameExistsException|already exists|already.*registered/i.test(combined)) {
+      return 'An account with this username or email already exists. Sign in, or reset the password if needed.';
+    }
+    if (/UserNotFoundException/i.test(combined)) {
+      return 'No account was found for that username.';
+    }
+    if (/CodeMismatchException|Invalid verification code/i.test(combined)) {
+      return 'That verification code is not correct. Check the email and try again.';
+    }
+    if (/ExpiredCodeException|expired/i.test(combined)) {
+      return 'That code expired. Send a new code and try again.';
+    }
+    if (/InvalidPasswordException|Password did not conform/i.test(combined)) {
+      return 'Choose a stronger password that meets the account password requirements.';
+    }
+    if (/LimitExceededException|TooManyRequestsException|Too many/i.test(combined)) {
+      return 'Too many attempts. Wait a moment, then try again.';
+    }
+
+    return message;
+  }
+
+  private getCognitoErrorCode(payload: Record<string, unknown>): string {
+    const raw = String(payload['__type'] || payload['code'] || '').trim();
+    return raw.split('#').pop() || raw;
   }
 
   private isTokenStale(expiresAtMs: number): boolean {

@@ -11,6 +11,7 @@ export type HotkeyContext =
   | 'content'
   | 'subscribers'
   | 'comments'
+  | 'distribution'
   | 'collections';
 
 export type HotkeyDefinition = {
