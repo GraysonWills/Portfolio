@@ -165,7 +165,7 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*"
+            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*" "/account"
 
   deploy_blog_authoring:
     needs: [blog_authoring]
