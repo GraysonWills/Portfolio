@@ -2,9 +2,17 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService, SocialAuthProviderStatus } from '../../services/blog-api.service';
+import {
+  SocialAutomationPreview,
+  SocialAutomationRule,
+  SocialAutomationTrigger,
+  SocialDistributionAutomationService,
+  SocialDistributionTemplate
+} from '../../services/social-distribution-automation.service';
 
 type PlatformConnectionState = 'connected' | 'attention' | 'expired' | 'not-connected' | 'manual';
 type QueueStatusClass = 'success' | 'info' | 'warn' | 'danger' | 'secondary';
+type DistributionWorkspaceTab = 'connections' | 'templates' | 'rules' | 'composer' | 'queue';
 
 type DestinationOption = {
   label: string;
@@ -50,15 +58,38 @@ export class DistributionComponent implements OnInit {
   private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram']);
   private oauthReturnNoticeActive = false;
 
+  activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
   masterCaption = 'New essay is live: building for expression, not reaction. A note on keeping the work honest, shipping publicly, and leaving the metrics outside the room.';
   publishTime = '2026-06-18T09:00';
   selectedPostTitle = 'Building for expression, not reaction';
   postUrl = 'https://www.grayson-wills.com/blog/expression-not-reaction';
   hashtagText = '#writing #creativepractice #buildinpublic';
   mediaBrief = 'Use the blog cover image, cropped square for feeds and vertical for stories.';
+  postCategory = 'Creative Practice';
+  readingTime = '5 min read';
+  coverImageUrl = 'Use blog cover image';
   draftNotice = 'No scheduled changes yet.';
   socialAuthLoading = false;
   socialAuthError = '';
+  automationNotice = 'Automation rules are ready for the next publish event.';
+  automationTemplates: SocialDistributionTemplate[] = [];
+  automationRules: SocialAutomationRule[] = [];
+  selectedTemplateId = '';
+  automationPreviewTrigger: SocialAutomationTrigger = 'blog_published';
+
+  readonly workspaceTabs: { id: DistributionWorkspaceTab; label: string; icon: string }[] = [
+    { id: 'connections', label: 'Connections', icon: 'pi-link' },
+    { id: 'templates', label: 'Templates', icon: 'pi-file-edit' },
+    { id: 'rules', label: 'Rules', icon: 'pi-sitemap' },
+    { id: 'composer', label: 'Composer', icon: 'pi-pencil' },
+    { id: 'queue', label: 'Queue', icon: 'pi-list-check' }
+  ];
+
+  readonly triggerOptions: { label: string; value: SocialAutomationTrigger }[] = [
+    { label: 'Blog is published', value: 'blog_published' },
+    { label: 'Blog is scheduled', value: 'blog_scheduled' },
+    { label: 'Manual review', value: 'manual_review' }
+  ];
 
   platforms: DistributionPlatform[] = [
     {
@@ -384,10 +415,13 @@ export class DistributionComponent implements OnInit {
     private readonly route: ActivatedRoute,
     private readonly router: Router,
     private readonly authService: AuthService,
-    private readonly blogApi: BlogApiService
+    private readonly blogApi: BlogApiService,
+    private readonly automation: SocialDistributionAutomationService
   ) {}
 
   ngOnInit(): void {
+    this.loadAutomationSettings();
+    this.applyWorkspaceTabFromRoute();
     this.initializeConnectionDefaults();
     this.refreshConnections();
     this.applyOAuthReturnNotice();
@@ -407,6 +441,191 @@ export class DistributionComponent implements OnInit {
 
   get mediaCheckCount(): number {
     return this.platforms.filter((platform) => platform.connectionState === 'attention').length;
+  }
+
+  get activeAutomationRules(): SocialAutomationRule[] {
+    return this.automationRules.filter((rule) => rule.enabled);
+  }
+
+  get publishAutomationCount(): number {
+    return this.automationRules
+      .filter((rule) => rule.enabled && rule.trigger === 'blog_published')
+      .reduce((sum, rule) => sum + rule.platformIds.length, 0);
+  }
+
+  get selectedTemplate(): SocialDistributionTemplate | null {
+    return this.automationTemplates.find((template) => template.id === this.selectedTemplateId) || null;
+  }
+
+  get automationVariables(): string[] {
+    return this.automation.templateVariables;
+  }
+
+  setWorkspaceTab(tab: DistributionWorkspaceTab): void {
+    this.activeWorkspaceTab = tab;
+  }
+
+  selectAutomationTemplate(template: SocialDistributionTemplate): void {
+    this.selectedTemplateId = template.id;
+  }
+
+  createAutomationTemplate(): void {
+    const platform = this.platforms.find((candidate) => this.platformCanUseOAuth(candidate)) || this.platforms[0];
+    const template: SocialDistributionTemplate = {
+      id: `template-${Date.now()}`,
+      name: 'New publish template',
+      platformId: platform?.id || 'all',
+      destination: platform ? this.getSelectedDestinationLabel(platform) : 'Feed post',
+      body: 'New post: {{title}}\n\n{{summary}}\n\n{{url}}',
+      hashtags: '{{tags}}',
+      useCoverImage: true
+    };
+
+    this.automationTemplates = [...this.automationTemplates, template];
+    this.selectedTemplateId = template.id;
+    this.automationNotice = 'Template created. Adjust the copy and save automation settings.';
+  }
+
+  duplicateSelectedTemplate(): void {
+    const selected = this.selectedTemplate;
+    if (!selected) return;
+
+    const copy: SocialDistributionTemplate = {
+      ...selected,
+      id: `template-${Date.now()}`,
+      name: `${selected.name} copy`
+    };
+    this.automationTemplates = [...this.automationTemplates, copy];
+    this.selectedTemplateId = copy.id;
+    this.automationNotice = 'Template duplicated. Save when the copy is ready.';
+  }
+
+  saveAutomationSettings(): void {
+    this.automation.saveSettings({
+      templates: this.automationTemplates,
+      rules: this.automationRules
+    });
+    this.automationNotice = 'Automation templates and rules saved.';
+  }
+
+  resetAutomationSettings(): void {
+    const defaults = this.automation.resetSettings();
+    this.automationTemplates = defaults.templates;
+    this.automationRules = defaults.rules;
+    this.selectedTemplateId = this.automationTemplates[0]?.id || '';
+    this.automationNotice = 'Automation templates and rules reset to defaults.';
+  }
+
+  insertTemplateVariable(variable: string): void {
+    const template = this.selectedTemplate;
+    if (!template) return;
+    const token = `{{${variable}}}`;
+    const spacer = template.body.trim() ? '\n' : '';
+    template.body = `${template.body}${spacer}${token}`;
+  }
+
+  addAutomationRule(): void {
+    const templateId = this.selectedTemplateId || this.automationTemplates[0]?.id || '';
+    const rule: SocialAutomationRule = {
+      id: `rule-${Date.now()}`,
+      name: 'New publish rule',
+      trigger: 'blog_published',
+      enabled: true,
+      templateId,
+      platformIds: ['x'],
+      delayMinutes: 0,
+      requiresReview: true,
+      quietMode: true
+    };
+
+    this.automationRules = [...this.automationRules, rule];
+    this.activeWorkspaceTab = 'rules';
+    this.automationNotice = 'Rule created. Choose destinations, timing, and review behavior.';
+  }
+
+  deleteAutomationRule(rule: SocialAutomationRule): void {
+    this.automationRules = this.automationRules.filter((candidate) => candidate.id !== rule.id);
+    this.automationNotice = `${rule.name} removed. Save automation settings to persist the change.`;
+  }
+
+  toggleRulePlatform(rule: SocialAutomationRule, platformId: string): void {
+    const existing = new Set(rule.platformIds);
+    if (existing.has(platformId)) {
+      existing.delete(platformId);
+    } else {
+      existing.add(platformId);
+    }
+    rule.platformIds = Array.from(existing);
+  }
+
+  ruleUsesPlatform(rule: SocialAutomationRule, platformId: string): boolean {
+    return rule.platformIds.includes(platformId);
+  }
+
+  getTemplatePlatformLabel(template: SocialDistributionTemplate): string {
+    if (template.platformId === 'all') return 'All platforms';
+    return this.getPlatformName(template.platformId);
+  }
+
+  getPlatformName(platformId: string): string {
+    return this.platforms.find((platform) => platform.id === platformId)?.name || platformId;
+  }
+
+  getTemplateName(templateId: string): string {
+    return this.automationTemplates.find((template) => template.id === templateId)?.name || 'Missing template';
+  }
+
+  getTriggerLabel(trigger: SocialAutomationTrigger): string {
+    return this.triggerOptions.find((option) => option.value === trigger)?.label || 'Blog is published';
+  }
+
+  getAutomationPreviews(trigger: SocialAutomationTrigger = this.automationPreviewTrigger): SocialAutomationPreview[] {
+    return this.automation.buildPreviews(
+      { templates: this.automationTemplates, rules: this.automationRules },
+      this.buildAutomationContext(),
+      trigger,
+      this.getAutomationBaseDate()
+    );
+  }
+
+  getSelectedTemplatePreview(): string {
+    const template = this.selectedTemplate;
+    if (!template) return '';
+    return this.automation.renderTemplate(template, this.buildAutomationContext());
+  }
+
+  queueAutomationRules(): void {
+    const previews = this.getAutomationPreviews(this.automationPreviewTrigger);
+    if (!previews.length) {
+      this.automationNotice = 'No enabled automation rules match this trigger yet.';
+      return;
+    }
+
+    this.queueItems = previews.map((preview) => {
+      const platform = this.platforms.find((candidate) => candidate.id === preview.platformId);
+      const missingLogin = !platform || platform.connectionState === 'expired' || platform.connectionState === 'not-connected';
+      const manualReview = !platform || platform.connectionState === 'manual' || preview.requiresReview;
+      const missingMedia = preview.usesCoverImage && !this.coverImageUrl.trim();
+      const status = this.getDraftStatus(platform, missingLogin, missingMedia, manualReview);
+
+      return {
+        postTitle: this.selectedPostTitle,
+        platform: platform?.name || preview.platformId,
+        platformClass: platform?.accentClass || 'secondary',
+        destination: preview.destination,
+        runAt: this.formatDateTime(preview.runAt),
+        status: status.label,
+        statusClass: status.severity,
+        receipt: preview.quietMode ? status.receipt : 'Delivery receipt'
+      };
+    });
+
+    this.activeWorkspaceTab = 'queue';
+    this.automationNotice = `${previews.length} automated ${previews.length === 1 ? 'post' : 'posts'} staged from ${this.getTriggerLabel(this.automationPreviewTrigger).toLowerCase()}.`;
+  }
+
+  formatPreviewRunAt(preview: SocialAutomationPreview): string {
+    return this.formatDateTime(preview.runAt);
   }
 
   togglePlatform(platform: DistributionPlatform): void {
@@ -622,8 +841,34 @@ export class DistributionComponent implements OnInit {
     return `${item.postTitle}:${item.platform}:${item.destination}:${index}`;
   }
 
+  trackByTemplate(index: number, template: SocialDistributionTemplate): string {
+    return template.id || `${index}`;
+  }
+
+  trackByRule(index: number, rule: SocialAutomationRule): string {
+    return rule.id || `${index}`;
+  }
+
+  trackByPreview(index: number, preview: SocialAutomationPreview): string {
+    return `${preview.ruleId}:${preview.platformId}:${index}`;
+  }
+
+  private loadAutomationSettings(): void {
+    const settings = this.automation.loadSettings();
+    this.automationTemplates = settings.templates;
+    this.automationRules = settings.rules;
+    this.selectedTemplateId = this.automationTemplates[0]?.id || '';
+  }
+
+  private applyWorkspaceTabFromRoute(): void {
+    const tab = String(this.route.snapshot.queryParamMap.get('distributionTab') || '').trim();
+    if (this.workspaceTabs.some((candidate) => candidate.id === tab)) {
+      this.activeWorkspaceTab = tab as DistributionWorkspaceTab;
+    }
+  }
+
   private getDraftStatus(
-    platform: DistributionPlatform,
+    platform: DistributionPlatform | undefined,
     missingLogin: boolean,
     missingMedia: boolean,
     manualReview: boolean
@@ -640,11 +885,40 @@ export class DistributionComponent implements OnInit {
       return { label: 'Manual draft', severity: 'secondary', receipt: 'Review before posting' };
     }
 
-    if (platform.connectionState === 'attention') {
+    if (platform?.connectionState === 'attention') {
       return { label: 'Review', severity: 'warn', receipt: 'Media/caption check' };
     }
 
     return { label: 'Queued', severity: 'info', receipt: 'Delivery receipt only' };
+  }
+
+  private buildAutomationContext() {
+    const publishDate = this.getAutomationBaseDate();
+    return {
+      title: this.selectedPostTitle,
+      summary: this.masterCaption,
+      url: this.postUrl,
+      category: this.postCategory,
+      tags: this.hashtagText,
+      publishedDate: this.formatDateTime(publishDate),
+      readingTime: this.readingTime,
+      coverImage: this.coverImageUrl
+    };
+  }
+
+  private getAutomationBaseDate(): Date {
+    const date = new Date(this.publishTime);
+    return Number.isNaN(date.getTime()) ? new Date() : date;
+  }
+
+  private formatDateTime(date: Date): string {
+    if (Number.isNaN(date.getTime())) return 'Not scheduled';
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
   }
 
   private formatPublishTime(offsetMinutes: number): string {

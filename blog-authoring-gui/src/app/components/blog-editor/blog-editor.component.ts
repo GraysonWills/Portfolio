@@ -1,8 +1,13 @@
 import { Component, OnDestroy, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { BlogApiService } from '../../services/blog-api.service';
 import { HotkeysService } from '../../services/hotkeys.service';
+import {
+  SocialAutomationTrigger,
+  SocialDistributionAutomationService
+} from '../../services/social-distribution-automation.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import {
@@ -84,10 +89,12 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   constructor(
     private fb: FormBuilder,
     private blogApi: BlogApiService,
+    private socialAutomation: SocialDistributionAutomationService,
     private hotkeys: HotkeysService,
     private txLog: TransactionLogService,
     private messageService: MessageService,
-    private confirmationService: ConfirmationService
+    private confirmationService: ConfirmationService,
+    private router: Router
   ) {
     this.blogForm = this.fb.group({
       title: ['', [Validators.required]],
@@ -166,6 +173,75 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
 
   removePrivateSeoTag(tag: string): void {
     this.privateSeoTags = this.privateSeoTags.filter((t) => t !== tag);
+  }
+
+  getSocialAutomationSummary(): string {
+    const previews = this.getSocialAutomationPreviews();
+    if (!previews.length) return 'No social automations match this publish state.';
+    return `${previews.length} quiet social ${previews.length === 1 ? 'post' : 'posts'} will be staged.`;
+  }
+
+  getSocialAutomationLabels(): string[] {
+    return this.getSocialAutomationPreviews()
+      .slice(0, 4)
+      .map((preview) => `${this.getSocialPlatformLabel(preview.platformId)} · ${preview.templateName}`);
+  }
+
+  goToDistributionRules(): void {
+    this.router.navigate(['/distribution'], { queryParams: { distributionTab: 'rules' } });
+  }
+
+  private getSocialAutomationPreviews() {
+    const formValue = this.blogForm.value || {};
+    const publishDate = formValue.publishDate ? new Date(formValue.publishDate) : new Date();
+    const safePublishDate = Number.isNaN(publishDate.getTime()) ? new Date() : publishDate;
+    const readTime = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
+    const settings = this.socialAutomation.loadSettings();
+    const trigger = this.getSocialAutomationTrigger(formValue.status);
+    const tags = this.publicTags
+      .map((tag) => tag.startsWith('#') ? tag : `#${tag.replace(/^#+/, '')}`)
+      .join(' ');
+
+    return this.socialAutomation.buildPreviews(settings, {
+      title: String(formValue.title || 'Untitled post'),
+      summary: String(formValue.summary || '').trim(),
+      url: this.getCanonicalPreviewUrl(formValue.title),
+      category: String(formValue.category || '').trim(),
+      tags,
+      publishedDate: safePublishDate.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      }),
+      readingTime: readTime ? `${readTime} min read` : 'Auto read time',
+      coverImage: this.uploadedImage || 'Blog cover image'
+    }, trigger, safePublishDate);
+  }
+
+  private getSocialAutomationTrigger(status: string): SocialAutomationTrigger {
+    if (status === 'scheduled') return 'blog_scheduled';
+    if (status === 'published') return 'blog_published';
+    return 'manual_review';
+  }
+
+  private getSocialPlatformLabel(platformId: string): string {
+    const labels: Record<string, string> = {
+      x: 'X / Twitter',
+      linkedin: 'LinkedIn',
+      facebook: 'Facebook Page',
+      instagram: 'Instagram'
+    };
+    return labels[platformId] || platformId;
+  }
+
+  private getCanonicalPreviewUrl(title: string): string {
+    const slug = String(title || 'untitled-post')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      || 'untitled-post';
+    return `${this.blogApi.getPortfolioPreviewUrl().replace(/\/+$/, '')}/blog/${slug}`;
   }
 
   private flushPendingTagInputs(): void {

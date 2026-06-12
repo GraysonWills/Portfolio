@@ -74,9 +74,27 @@
         <span>selected targets</span>
       </div>
     </article>
+    <article class="summary-tile">
+      <span class="tile-icon automate"><i class="pi pi-sitemap"></i></span>
+      <div>
+        <strong>{{ publishAutomationCount }}</strong>
+        <span>publish automations</span>
+      </div>
+    </article>
   </section>
 
-  <section class="account-section" aria-labelledby="account-heading">
+  <nav class="workspace-tabs" aria-label="Distribution workspace">
+    <button
+      type="button"
+      *ngFor="let tab of workspaceTabs"
+      [class.active]="activeWorkspaceTab === tab.id"
+      (click)="setWorkspaceTab(tab.id)">
+      <i class="pi" [ngClass]="tab.icon"></i>
+      <span>{{ tab.label }}</span>
+    </button>
+  </nav>
+
+  <section class="account-section" aria-labelledby="account-heading" *ngIf="activeWorkspaceTab === 'connections'">
     <div class="section-heading">
       <div>
         <h2 id="account-heading">Social Accounts</h2>
@@ -148,7 +166,182 @@
     </div>
   </section>
 
-  <section class="composer-grid">
+  <section class="automation-section" aria-labelledby="templates-heading" *ngIf="activeWorkspaceTab === 'templates'">
+    <div class="section-heading">
+      <div>
+        <h2 id="templates-heading">Post Templates</h2>
+        <span>Reusable copy formats for publish and schedule events</span>
+      </div>
+      <div class="section-actions">
+        <p-button label="New" icon="pi pi-plus" styleClass="p-button-sm" (onClick)="createAutomationTemplate()"></p-button>
+        <p-button label="Duplicate" icon="pi pi-copy" styleClass="p-button-sm p-button-outlined" (onClick)="duplicateSelectedTemplate()"></p-button>
+        <p-button label="Save" icon="pi pi-save" styleClass="p-button-sm p-button-outlined" (onClick)="saveAutomationSettings()"></p-button>
+      </div>
+    </div>
+
+    <div class="automation-grid">
+      <aside class="template-list" aria-label="Saved templates">
+        <button
+          type="button"
+          class="template-row"
+          *ngFor="let template of automationTemplates; trackBy: trackByTemplate"
+          [class.active]="selectedTemplateId === template.id"
+          (click)="selectAutomationTemplate(template)">
+          <strong>{{ template.name }}</strong>
+          <span>{{ getTemplatePlatformLabel(template) }} · {{ template.destination }}</span>
+        </button>
+      </aside>
+
+      <article class="template-editor" *ngIf="selectedTemplate as template">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="template-name">Template Name</label>
+            <input id="template-name" pInputText type="text" [(ngModel)]="template.name">
+          </div>
+          <div class="form-group">
+            <label for="template-platform">Default Platform</label>
+            <select id="template-platform" [(ngModel)]="template.platformId">
+              <option value="all">All platforms</option>
+              <option *ngFor="let platform of platforms" [ngValue]="platform.id">{{ platform.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="template-destination">Post Type</label>
+            <input id="template-destination" pInputText type="text" [(ngModel)]="template.destination">
+          </div>
+          <label class="inline-toggle">
+            <input type="checkbox" [(ngModel)]="template.useCoverImage">
+            <span>Use blog cover image when available</span>
+          </label>
+          <div class="form-group full-span">
+            <label for="template-body">Template Body</label>
+            <textarea id="template-body" rows="8" [(ngModel)]="template.body"></textarea>
+          </div>
+          <div class="form-group full-span">
+            <label for="template-hashtags">Hashtags</label>
+            <input id="template-hashtags" pInputText type="text" [(ngModel)]="template.hashtags">
+          </div>
+        </div>
+
+        <div class="variable-row" aria-label="Template variables">
+          <button type="button" *ngFor="let variable of automationVariables" (click)="insertTemplateVariable(variable)">
+            {{ '{{' + variable + '}}' }}
+          </button>
+        </div>
+
+        <div class="rendered-preview">
+          <span>Preview</span>
+          <p>{{ getSelectedTemplatePreview() }}</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="automation-section" aria-labelledby="rules-heading" *ngIf="activeWorkspaceTab === 'rules'">
+    <div class="section-heading">
+      <div>
+        <h2 id="rules-heading">Automation Rules</h2>
+        <span>Trigger templates from blog events and stage the resulting queue</span>
+      </div>
+      <div class="section-actions">
+        <p-button label="Add Rule" icon="pi pi-plus" styleClass="p-button-sm" (onClick)="addAutomationRule()"></p-button>
+        <p-button label="Save" icon="pi pi-save" styleClass="p-button-sm p-button-outlined" (onClick)="saveAutomationSettings()"></p-button>
+        <p-button label="Reset" icon="pi pi-refresh" styleClass="p-button-sm p-button-outlined" (onClick)="resetAutomationSettings()"></p-button>
+      </div>
+    </div>
+
+    <div class="automation-notice">
+      <i class="pi pi-info-circle"></i>
+      <span>{{ automationNotice }}</span>
+    </div>
+
+    <div class="rules-layout">
+      <div class="rules-list">
+        <article class="rule-card" *ngFor="let rule of automationRules; trackBy: trackByRule">
+          <div class="rule-top">
+            <label class="inline-toggle strong">
+              <input type="checkbox" [(ngModel)]="rule.enabled">
+              <span>{{ rule.enabled ? 'Enabled' : 'Paused' }}</span>
+            </label>
+            <p-button icon="pi pi-trash" styleClass="p-button-sm p-button-text p-button-danger" (onClick)="deleteAutomationRule(rule)"></p-button>
+          </div>
+
+          <div class="form-grid compact">
+            <div class="form-group">
+              <label>Rule Name</label>
+              <input pInputText type="text" [(ngModel)]="rule.name">
+            </div>
+            <div class="form-group">
+              <label>Trigger</label>
+              <select [(ngModel)]="rule.trigger">
+                <option *ngFor="let trigger of triggerOptions" [ngValue]="trigger.value">{{ trigger.label }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Template</label>
+              <select [(ngModel)]="rule.templateId">
+                <option *ngFor="let template of automationTemplates" [ngValue]="template.id">{{ template.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Delay Minutes</label>
+              <input pInputText type="number" min="0" max="240" [(ngModel)]="rule.delayMinutes">
+            </div>
+          </div>
+
+          <div class="platform-checks" aria-label="Rule destinations">
+            <label *ngFor="let platform of platforms" [class.disabled]="platform.disabled">
+              <input
+                type="checkbox"
+                [checked]="ruleUsesPlatform(rule, platform.id)"
+                [disabled]="!!platform.disabled"
+                (change)="toggleRulePlatform(rule, platform.id)">
+              <span class="platform-dot" [ngClass]="platform.accentClass"></span>
+              {{ platform.name }}
+            </label>
+          </div>
+
+          <div class="rule-flags">
+            <label class="inline-toggle">
+              <input type="checkbox" [(ngModel)]="rule.requiresReview">
+              <span>Require review before posting</span>
+            </label>
+            <label class="inline-toggle">
+              <input type="checkbox" [(ngModel)]="rule.quietMode">
+              <span>Quiet receipts only</span>
+            </label>
+          </div>
+        </article>
+      </div>
+
+      <aside class="automation-preview">
+        <div class="preview-controls">
+          <label>
+            Preview Trigger
+            <select [(ngModel)]="automationPreviewTrigger">
+              <option *ngFor="let trigger of triggerOptions" [ngValue]="trigger.value">{{ trigger.label }}</option>
+            </select>
+          </label>
+          <p-button label="Stage Queue" icon="pi pi-calendar-plus" styleClass="p-button-sm" (onClick)="queueAutomationRules()"></p-button>
+        </div>
+
+        <article class="automation-preview-card" *ngFor="let preview of getAutomationPreviews(); trackBy: trackByPreview">
+          <div>
+            <strong>{{ getPlatformName(preview.platformId) }}</strong>
+            <span>{{ preview.templateName }} · {{ formatPreviewRunAt(preview) }}</span>
+          </div>
+          <p>{{ preview.caption }}</p>
+          <small>{{ preview.requiresReview ? 'Review required' : 'Auto-send when connected' }} · {{ preview.quietMode ? 'quiet receipts' : 'delivery receipts' }}</small>
+        </article>
+
+        <div class="empty-preview" *ngIf="!getAutomationPreviews().length">
+          No enabled rules match this trigger.
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="composer-grid" *ngIf="activeWorkspaceTab === 'composer'">
     <p-card class="schedule-card">
       <div class="card-heading">
         <div>
@@ -206,6 +399,30 @@
             pInputText
             type="text"
             [(ngModel)]="mediaBrief">
+        </div>
+        <div class="form-group">
+          <label for="post-category">Category</label>
+          <input
+            id="post-category"
+            pInputText
+            type="text"
+            [(ngModel)]="postCategory">
+        </div>
+        <div class="form-group">
+          <label for="reading-time">Reading Time</label>
+          <input
+            id="reading-time"
+            pInputText
+            type="text"
+            [(ngModel)]="readingTime">
+        </div>
+        <div class="form-group full-span">
+          <label for="cover-image">Cover Image</label>
+          <input
+            id="cover-image"
+            pInputText
+            type="text"
+            [(ngModel)]="coverImageUrl">
         </div>
       </div>
 
@@ -311,7 +528,7 @@
     </p-card>
   </section>
 
-  <section class="queue-section" id="distribution-queue">
+  <section class="queue-section" id="distribution-queue" *ngIf="activeWorkspaceTab === 'queue'">
     <div class="section-heading">
       <div>
         <h2>Delivery Queue</h2>

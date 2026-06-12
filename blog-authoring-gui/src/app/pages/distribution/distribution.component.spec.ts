@@ -2,6 +2,7 @@ import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService, SocialAuthStatusResponse } from '../../services/blog-api.service';
+import { SocialDistributionAutomationService } from '../../services/social-distribution-automation.service';
 import { DistributionComponent } from './distribution.component';
 
 describe('DistributionComponent', () => {
@@ -21,9 +22,11 @@ describe('DistributionComponent', () => {
     const blogApi = {
       getSocialAuthStatus: jasmine.createSpy('getSocialAuthStatus').and.returnValue(status$.asObservable())
     } as unknown as BlogApiService;
+    const automation = new SocialDistributionAutomationService();
+    spyOn(automation, 'loadSettings').and.returnValue(automation.getDefaultSettings());
 
     return {
-      component: new DistributionComponent(route, router, authService, blogApi),
+      component: new DistributionComponent(route, router, authService, blogApi, automation),
       router,
       status$
     };
@@ -54,5 +57,21 @@ describe('DistributionComponent', () => {
       queryParamsHandling: 'merge',
       replaceUrl: true
     }));
+  });
+
+  it('stages enabled publish automation rules into the delivery queue', () => {
+    const { component } = createComponent();
+
+    component.ngOnInit();
+    component.queueAutomationRules();
+
+    expect(component.queueItems.length).toBe(3);
+    expect(component.queueItems.map((item) => item.platform)).toEqual([
+      'X / Twitter',
+      'LinkedIn',
+      'Facebook Page'
+    ]);
+    expect(component.activeWorkspaceTab).toBe('queue');
+    expect(component.automationNotice).toContain('automated posts staged');
   });
 });

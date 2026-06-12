@@ -297,6 +297,23 @@
             </small>
           </div>
 
+          <div class="form-group side-card social-automation-card">
+            <label>Social Automation</label>
+            <div class="automation-summary">
+              <i class="pi pi-sitemap"></i>
+              <span>{{ getSocialAutomationSummary() }}</span>
+            </div>
+            <div class="automation-labels" *ngIf="getSocialAutomationLabels().length">
+              <span *ngFor="let label of getSocialAutomationLabels()">{{ label }}</span>
+            </div>
+            <p-button
+              label="Distribution Rules"
+              icon="pi pi-arrow-right"
+              styleClass="p-button-sm p-button-outlined full-width"
+              (onClick)="goToDistributionRules()">
+            </p-button>
+          </div>
+
           <!-- Category -->
           <div class="form-group side-card">
             <label for="category">Category</label>
