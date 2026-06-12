@@ -93,6 +93,14 @@ The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/facebook/callback`
 - `https://api.grayson-wills.com/api/social-auth/instagram/callback`
 
+Operational flow:
+1. Provider app credentials are configured once on Lambda.
+2. The authoring Distribution tab calls `POST /api/social-auth/:provider/start` when Connect is pressed.
+3. The backend creates a 10-minute state record, builds the provider OAuth URL, and returns it to the browser.
+4. The provider redirects back to `/api/social-auth/:provider/callback` with an authorization code.
+5. The backend exchanges that code for token artifacts, encrypts the raw token payload, stores it in DynamoDB, and redirects back to the authoring Distribution tab.
+6. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, account label, and which credential artifacts were captured.
+
 Unpublish behavior:
 - cancels known active schedule for the post (if present)
 - removes stale schedules for the same `listItemID`
@@ -219,6 +227,21 @@ Provision the baseline DynamoDB table/IAM/env with:
 ```bash
 AWS_PROFILE=grayson-sso scripts/setup_social_auth_stack.sh
 ```
+
+After creating provider apps, install their client IDs/secrets without printing values:
+
+```bash
+SOCIAL_X_CLIENT_ID=... \
+SOCIAL_X_CLIENT_SECRET=... \
+SOCIAL_LINKEDIN_CLIENT_ID=... \
+SOCIAL_LINKEDIN_CLIENT_SECRET=... \
+SOCIAL_META_CLIENT_ID=... \
+SOCIAL_META_CLIENT_SECRET=... \
+AWS_PROFILE=grayson-sso \
+scripts/set_social_provider_credentials.sh
+```
+
+The raw OAuth token payloads produced by user login are never returned to the browser. They remain encrypted in DynamoDB and should be retrieved only by backend posting workers via the social auth service.
 
 ### Optional Redis Compatibility
 

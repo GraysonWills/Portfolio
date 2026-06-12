@@ -65,6 +65,13 @@ const PROVIDER_ALIASES = {
   meta: 'facebook'
 };
 
+const SECRET_TOKEN_FIELDS = new Set([
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'client_secret'
+]);
+
 function getTableName() {
   return String(process.env.SOCIAL_AUTH_TABLE_NAME || DEFAULT_SOCIAL_AUTH_TABLE).trim();
 }
@@ -190,6 +197,44 @@ function encryptJson(payload) {
   };
 }
 
+function decryptJson(envelope) {
+  if (!envelope || envelope.alg !== 'aes-256-gcm' || !envelope.iv || !envelope.tag || !envelope.value) {
+    const err = new Error('Stored social token payload is invalid');
+    err.status = 500;
+    throw err;
+  }
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getTokenSecret(),
+    Buffer.from(envelope.iv, 'base64')
+  );
+  decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(envelope.value, 'base64')),
+    decipher.final()
+  ]);
+
+  return JSON.parse(decrypted.toString('utf8'));
+}
+
+function summarizeTokenPayload(payload = {}, config = {}) {
+  const scope = String(payload.scope || (Array.isArray(config.scopes) ? config.scopes.join(' ') : '')).trim();
+  const expiresInSeconds = Number(payload.expires_in || 0);
+  return {
+    tokenType: String(payload.token_type || 'Bearer'),
+    hasAccessToken: Boolean(payload.access_token),
+    hasRefreshToken: Boolean(payload.refresh_token),
+    hasIdToken: Boolean(payload.id_token),
+    scope,
+    expiresInSeconds: expiresInSeconds > 0 ? expiresInSeconds : null,
+    providerFields: Object.keys(payload)
+      .filter((key) => !SECRET_TOKEN_FIELDS.has(key))
+      .sort()
+  };
+}
+
 function userKey(user) {
   const sub = String(user?.sub || user?.['cognito:username'] || user?.username || '').trim();
   if (!sub) {
@@ -240,7 +285,8 @@ function toConnectionStatus(config, item) {
     updatedAt: item?.updatedAt || null,
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
     accountLabel: item?.accountLabel || '',
-    scope: item?.scope || config.scopes.join(' ')
+    scope: item?.scope || config.scopes.join(' '),
+    credentialArtifacts: item?.credentialArtifacts || null
   };
 }
 
@@ -365,6 +411,7 @@ async function completeOAuth(provider, { code, state }) {
       username: stateItem.username || '',
       accountLabel,
       token: encryptJson(tokenPayload),
+      credentialArtifacts: summarizeTokenPayload(tokenPayload, config),
       scope,
       connectedAt: nowIso(),
       updatedAt: nowIso(),
@@ -380,6 +427,38 @@ async function completeOAuth(provider, { code, state }) {
   return {
     provider: config.id,
     returnUrl: buildReturnUrl(stateItem.returnUrl, config.id, 'connected')
+  };
+}
+
+async function getPostingCredential(provider, user) {
+  const config = getProviderConfig(provider);
+  const res = await getDdbDoc().send(new GetCommand({
+    TableName: getTableName(),
+    Key: connectionKey(userKey(user), config.id),
+    ConsistentRead: true
+  }));
+
+  const item = res?.Item;
+  if (!item?.token) {
+    const err = new Error(`${config.label} is not connected`);
+    err.status = 404;
+    throw err;
+  }
+
+  const expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+  if (expiresAtMs && Date.now() >= expiresAtMs) {
+    const err = new Error(`${config.label} token is expired`);
+    err.status = 409;
+    throw err;
+  }
+
+  return {
+    provider: config.id,
+    family: config.family,
+    accountLabel: item.accountLabel || '',
+    scope: item.scope || '',
+    expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
+    token: decryptJson(item.token)
   };
 }
 
@@ -458,6 +537,31 @@ function buildReturnUrl(returnUrl, provider, status) {
   return url.toString();
 }
 
+async function buildOAuthReturnUrl(provider, { state = '', status = 'error', error = '' } = {}) {
+  const config = getProviderConfig(provider);
+  let returnUrl = '';
+  const safeState = String(state || '').trim();
+
+  if (safeState) {
+    try {
+      const stateResp = await getDdbDoc().send(new GetCommand({
+        TableName: getTableName(),
+        Key: stateKey(safeState),
+        ConsistentRead: true
+      }));
+      const stateItem = stateResp?.Item;
+      if (stateItem?.provider === config.id) returnUrl = stateItem.returnUrl || '';
+    } catch {
+      // Fall back to the default authoring return URL.
+    }
+  }
+
+  const url = new URL(buildReturnUrl(returnUrl, config.id, status));
+  const safeError = String(error || '').trim().slice(0, 180);
+  if (safeError) url.searchParams.set('socialError', safeError);
+  return url.toString();
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const text = await response.text();
@@ -486,6 +590,9 @@ module.exports = {
   startOAuth,
   completeOAuth,
   disconnectProvider,
+  getPostingCredential,
   normalizeReturnUrl,
-  providerPublicConfig
+  providerPublicConfig,
+  summarizeTokenPayload,
+  buildOAuthReturnUrl
 };

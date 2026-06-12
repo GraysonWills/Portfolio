@@ -174,8 +174,9 @@ When adding any new authoring page/route, include hotkeys by default:
 - Social distribution OAuth:
   - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, and Instagram
   - OAuth callback handling with short-lived state records
-  - encrypted provider token storage in DynamoDB
+  - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
+  - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
 
 ## Data Model
 

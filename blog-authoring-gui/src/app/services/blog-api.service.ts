@@ -98,6 +98,15 @@ export type SocialAuthProviderStatus = {
   expiresAt: string | null;
   accountLabel: string;
   scope: string;
+  credentialArtifacts?: {
+    tokenType: string;
+    hasAccessToken: boolean;
+    hasRefreshToken: boolean;
+    hasIdToken: boolean;
+    scope: string;
+    expiresInSeconds: number | null;
+    providerFields: string[];
+  } | null;
 };
 
 export type SocialAuthStatusResponse = {

@@ -48,6 +48,7 @@ type QueueItem = {
 })
 export class DistributionComponent implements OnInit {
   private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram']);
+  private oauthReturnNoticeActive = false;
 
   masterCaption = 'New essay is live: building for expression, not reaction. A note on keeping the work honest, shipping publicly, and leaving the metrics outside the room.';
   publishTime = '2026-06-18T09:00';
@@ -388,8 +389,8 @@ export class DistributionComponent implements OnInit {
 
   ngOnInit(): void {
     this.initializeConnectionDefaults();
-    this.applyOAuthReturnNotice();
     this.refreshConnections();
+    this.applyOAuthReturnNotice();
   }
 
   get selectedPlatforms(): DistributionPlatform[] {
@@ -492,12 +493,20 @@ export class DistributionComponent implements OnInit {
             platform.expiresIn = 'Manual';
           }
         }
-        this.draftNotice = 'Connection statuses refreshed.';
+        if (this.oauthReturnNoticeActive) {
+          this.oauthReturnNoticeActive = false;
+        } else {
+          this.draftNotice = 'Connection statuses refreshed.';
+        }
       },
       error: (err) => {
         this.socialAuthLoading = false;
-        this.socialAuthError = this.extractErrorMessage(err);
         this.applyOAuthStatusFallback();
+        if (this.oauthReturnNoticeActive) {
+          this.oauthReturnNoticeActive = false;
+          return;
+        }
+        this.socialAuthError = this.extractErrorMessage(err);
         this.draftNotice = 'Could not refresh live OAuth status. Showing local setup defaults.';
       }
     });
@@ -697,7 +706,7 @@ export class DistributionComponent implements OnInit {
     if (status.connected) {
       platform.connectionState = 'connected';
       platform.connectionLabel = 'Connected';
-      platform.connectionDetail = `${platform.name} OAuth token is stored and ready for API posting.`;
+      platform.connectionDetail = this.formatCredentialArtifacts(platform.name, status);
       return;
     }
 
@@ -738,17 +747,41 @@ export class DistributionComponent implements OnInit {
     return `${days} ${days === 1 ? 'day' : 'days'}`;
   }
 
+  private formatCredentialArtifacts(platformName: string, status: SocialAuthProviderStatus): string {
+    const artifacts = status.credentialArtifacts;
+    const captured = [
+      artifacts?.hasAccessToken ? 'access token' : '',
+      artifacts?.hasRefreshToken ? 'refresh token' : '',
+      artifacts?.hasIdToken ? 'identity token' : ''
+    ].filter(Boolean);
+
+    if (!captured.length) {
+      return `${platformName} OAuth credential is stored and ready for API posting.`;
+    }
+
+    return `${platformName} login captured ${captured.join(', ')} for backend posting.`;
+  }
+
   private applyOAuthReturnNotice(): void {
     const provider = String(this.route.snapshot.queryParamMap.get('socialProvider') || '').trim();
     const status = String(this.route.snapshot.queryParamMap.get('socialStatus') || '').trim();
+    const error = String(this.route.snapshot.queryParamMap.get('socialError') || '').trim();
     if (!provider || !status) return;
 
-    this.draftNotice = `${provider} ${status === 'connected' ? 'connected' : status}.`;
+    this.oauthReturnNoticeActive = true;
+    if (status === 'error') {
+      this.socialAuthError = error || `${provider} connection failed.`;
+      this.draftNotice = `${provider} connection failed.`;
+    } else {
+      this.draftNotice = `${provider} ${status === 'connected' ? 'connected' : status}.`;
+    }
+
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
         socialProvider: null,
-        socialStatus: null
+        socialStatus: null,
+        socialError: null
       },
       queryParamsHandling: 'merge',
       replaceUrl: true

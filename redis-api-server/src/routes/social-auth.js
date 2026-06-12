@@ -33,12 +33,34 @@ router.delete('/:provider', requireAuth, asyncRoute(async (req, res) => {
   res.json(result);
 }));
 
-router.get('/:provider/callback', asyncRoute(async (req, res) => {
-  const result = await socialAuth.completeOAuth(req.params.provider, {
-    code: req.query.code,
-    state: req.query.state
-  });
-  res.redirect(result.returnUrl);
-}));
+router.get('/:provider/callback', (req, res) => {
+  Promise.resolve()
+    .then(async () => {
+      const providerError = String(req.query.error_description || req.query.error || '').trim();
+      if (providerError) {
+        const returnUrl = await socialAuth.buildOAuthReturnUrl(req.params.provider, {
+          state: req.query.state,
+          status: 'error',
+          error: providerError
+        });
+        res.redirect(returnUrl);
+        return;
+      }
+
+      const result = await socialAuth.completeOAuth(req.params.provider, {
+        code: req.query.code,
+        state: req.query.state
+      });
+      res.redirect(result.returnUrl);
+    })
+    .catch(async (err) => {
+      const returnUrl = await socialAuth.buildOAuthReturnUrl(req.params.provider, {
+        state: req.query.state,
+        status: 'error',
+        error: err?.message || 'Social auth callback failed'
+      });
+      res.redirect(returnUrl);
+    });
+});
 
 module.exports = router;
