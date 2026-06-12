@@ -86,8 +86,14 @@
         label="Check Status"
         icon="pi pi-refresh"
         styleClass="p-button-outlined p-button-sm"
+        [disabled]="socialAuthLoading"
         (onClick)="refreshConnections()">
       </p-button>
+    </div>
+
+    <div *ngIf="socialAuthError" class="auth-alert">
+      <i class="pi pi-exclamation-triangle"></i>
+      <span>{{ socialAuthError }}</span>
     </div>
 
     <div class="account-grid">
@@ -113,28 +119,30 @@
         </div>
         <div class="account-actions">
           <p-button
-            *ngIf="platform.connectionState === 'expired' || platform.connectionState === 'not-connected'"
+            *ngIf="platformCanUseOAuth(platform) && (platform.connectionState === 'expired' || platform.connectionState === 'not-connected')"
             label="Connect"
             icon="pi pi-link"
             styleClass="p-button-sm"
-            [disabled]="!!platform.disabled"
+            [disabled]="!!platform.disabled || socialAuthLoading"
             (onClick)="connectPlatform(platform)">
           </p-button>
           <p-button
-            *ngIf="platform.connectionState === 'attention'"
+            *ngIf="platformCanUseOAuth(platform) && platform.connectionState === 'attention'"
             label="Reconnect"
             icon="pi pi-refresh"
             styleClass="p-button-sm p-button-outlined"
+            [disabled]="socialAuthLoading"
             (onClick)="connectPlatform(platform)">
           </p-button>
           <p-button
-            *ngIf="platformIsConnected(platform)"
+            *ngIf="platformCanUseOAuth(platform) && platformIsConnected(platform)"
             label="Disconnect"
             icon="pi pi-times"
             styleClass="p-button-sm p-button-outlined"
+            [disabled]="socialAuthLoading"
             (onClick)="disconnectPlatform(platform)">
           </p-button>
-          <span *ngIf="platform.disabled" class="manual-note">Manual setup</span>
+          <span *ngIf="platform.disabled || !platformCanUseOAuth(platform)" class="manual-note">Manual setup</span>
         </div>
       </article>
     </div>

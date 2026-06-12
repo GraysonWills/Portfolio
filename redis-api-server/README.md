@@ -75,6 +75,24 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `DELETE /api/notifications/schedule/:scheduleName` (auth)
 - `POST /api/notifications/unpublish` (auth)
 
+### Social Auth
+- `GET /api/social-auth/status` (auth)
+- `POST /api/social-auth/:provider/start` (auth)
+- `DELETE /api/social-auth/:provider` (auth)
+- `GET /api/social-auth/:provider/callback`
+
+Initial provider IDs:
+- `x`
+- `linkedin`
+- `facebook`
+- `instagram`
+
+The callback URLs to register with each provider app are:
+- `https://api.grayson-wills.com/api/social-auth/x/callback`
+- `https://api.grayson-wills.com/api/social-auth/linkedin/callback`
+- `https://api.grayson-wills.com/api/social-auth/facebook/callback`
+- `https://api.grayson-wills.com/api/social-auth/instagram/callback`
+
 Unpublish behavior:
 - cancels known active schedule for the post (if present)
 - removes stale schedules for the same `listItemID`
@@ -182,6 +200,25 @@ Production resources:
 - Cognito user pool: `GraysonPortfolioReaders` (`us-east-2_TA0sz2HlV`)
 - Cognito app client: `portfolio-comments-spa` (`4gdttn5rjq3k3jd47jltik9trd`)
 - DynamoDB comments table: `portfolio-blog-comments`
+
+### Social Distribution OAuth
+
+| Variable | Purpose |
+|---|---|
+| `SOCIAL_AUTH_TABLE_NAME` | DynamoDB table for OAuth state + encrypted connection records |
+| `SOCIAL_AUTH_TOKEN_SECRET` | 32+ character secret used to encrypt stored provider tokens |
+| `SOCIAL_AUTH_PUBLIC_API_BASE_URL` | public API base for callback construction; defaults to `https://api.grayson-wills.com/api` |
+| `SOCIAL_AUTH_DEFAULT_RETURN_URL` | authoring URL after callback; defaults to `https://author.grayson-wills.com/distribution` |
+| `SOCIAL_AUTH_ALLOWED_RETURN_ORIGINS` | optional comma-separated return URL allowlist |
+| `SOCIAL_X_CLIENT_ID` / `SOCIAL_X_CLIENT_SECRET` | X/Twitter OAuth app credentials |
+| `SOCIAL_LINKEDIN_CLIENT_ID` / `SOCIAL_LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth app credentials |
+| `SOCIAL_META_CLIENT_ID` / `SOCIAL_META_CLIENT_SECRET` | Meta app credentials for Facebook + Instagram |
+
+Provision the baseline DynamoDB table/IAM/env with:
+
+```bash
+AWS_PROFILE=grayson-sso scripts/setup_social_auth_stack.sh
+```
 
 ### Optional Redis Compatibility
 

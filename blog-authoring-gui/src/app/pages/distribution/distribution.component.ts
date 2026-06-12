@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, OnInit } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { BlogApiService, SocialAuthProviderStatus } from '../../services/blog-api.service';
 
 type PlatformConnectionState = 'connected' | 'attention' | 'expired' | 'not-connected' | 'manual';
 type QueueStatusClass = 'success' | 'info' | 'warn' | 'danger' | 'secondary';
@@ -45,7 +46,9 @@ type QueueItem = {
   styleUrl: './distribution.component.scss',
   standalone: false
 })
-export class DistributionComponent {
+export class DistributionComponent implements OnInit {
+  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram']);
+
   masterCaption = 'New essay is live: building for expression, not reaction. A note on keeping the work honest, shipping publicly, and leaving the metrics outside the room.';
   publishTime = '2026-06-18T09:00';
   selectedPostTitle = 'Building for expression, not reaction';
@@ -53,6 +56,8 @@ export class DistributionComponent {
   hashtagText = '#writing #creativepractice #buildinpublic';
   mediaBrief = 'Use the blog cover image, cropped square for feeds and vertical for stories.';
   draftNotice = 'No scheduled changes yet.';
+  socialAuthLoading = false;
+  socialAuthError = '';
 
   platforms: DistributionPlatform[] = [
     {
@@ -375,9 +380,17 @@ export class DistributionComponent {
   ];
 
   constructor(
+    private readonly route: ActivatedRoute,
     private readonly router: Router,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    private readonly blogApi: BlogApiService
   ) {}
+
+  ngOnInit(): void {
+    this.initializeConnectionDefaults();
+    this.applyOAuthReturnNotice();
+    this.refreshConnections();
+  }
 
   get selectedPlatforms(): DistributionPlatform[] {
     return this.platforms.filter((platform) => platform.selected && !platform.disabled);
@@ -402,30 +415,92 @@ export class DistributionComponent {
 
   connectPlatform(platform: DistributionPlatform): void {
     if (platform.disabled) return;
-    platform.connectionState = 'connected';
-    platform.connectionLabel = 'Connected';
-    platform.connectionDetail = 'Connection marked healthy for this schedule draft.';
-    platform.lastChecked = 'Just now';
-    platform.expiresIn = 'Pending token sync';
+    if (!this.platformCanUseOAuth(platform)) {
+      this.draftNotice = `${platform.name} does not have an OAuth connector wired yet.`;
+      return;
+    }
+
+    this.socialAuthLoading = true;
+    this.socialAuthError = '';
+    this.blogApi.startSocialAuth(platform.id, window.location.href.split('?')[0]).subscribe({
+      next: (response) => {
+        if (response?.authUrl) {
+          window.location.assign(response.authUrl);
+          return;
+        }
+        this.socialAuthLoading = false;
+        this.socialAuthError = `${platform.name} did not return an authorization URL.`;
+      },
+      error: (err) => {
+        this.socialAuthLoading = false;
+        const message = this.extractErrorMessage(err);
+        this.socialAuthError = message;
+        platform.connectionState = 'not-connected';
+        platform.connectionLabel = 'Setup needed';
+        platform.connectionDetail = message;
+        platform.lastChecked = 'Just now';
+        platform.expiresIn = 'No token';
+      }
+    });
   }
 
   disconnectPlatform(platform: DistributionPlatform): void {
     if (platform.disabled) return;
-    platform.connectionState = 'not-connected';
-    platform.connectionLabel = 'Not connected';
-    platform.connectionDetail = 'Reconnect before this platform can post.';
-    platform.lastChecked = 'Just now';
-    platform.expiresIn = 'No token';
-    platform.selected = false;
+    if (!this.platformCanUseOAuth(platform)) {
+      platform.connectionState = 'manual';
+      platform.connectionLabel = 'Manual';
+      platform.connectionDetail = 'This connector is not wired for OAuth yet.';
+      platform.lastChecked = 'Manual';
+      platform.expiresIn = 'Manual';
+      platform.selected = false;
+      return;
+    }
+
+    this.socialAuthLoading = true;
+    this.socialAuthError = '';
+    this.blogApi.disconnectSocialAuth(platform.id).subscribe({
+      next: () => {
+        this.socialAuthLoading = false;
+        platform.connectionState = 'not-connected';
+        platform.connectionLabel = 'Not connected';
+        platform.connectionDetail = 'Reconnect before this platform can post.';
+        platform.lastChecked = 'Just now';
+        platform.expiresIn = 'No token';
+        platform.selected = false;
+      },
+      error: (err) => {
+        this.socialAuthLoading = false;
+        this.socialAuthError = this.extractErrorMessage(err);
+      }
+    });
   }
 
   refreshConnections(): void {
-    for (const platform of this.platforms) {
-      if (!platform.disabled && platform.connectionState !== 'manual') {
-        platform.lastChecked = 'Just now';
+    this.socialAuthLoading = true;
+    this.socialAuthError = '';
+    this.blogApi.getSocialAuthStatus().subscribe({
+      next: (response) => {
+        this.socialAuthLoading = false;
+        const statuses = response?.providers || [];
+        statuses.forEach((status) => this.applyProviderStatus(status));
+        for (const platform of this.platforms) {
+          if (!this.platformCanUseOAuth(platform) && !platform.disabled) {
+            platform.connectionState = 'manual';
+            platform.connectionLabel = 'Future connector';
+            platform.connectionDetail = 'OAuth is not wired for this platform yet.';
+            platform.lastChecked = 'Manual';
+            platform.expiresIn = 'Manual';
+          }
+        }
+        this.draftNotice = 'Connection statuses refreshed.';
+      },
+      error: (err) => {
+        this.socialAuthLoading = false;
+        this.socialAuthError = this.extractErrorMessage(err);
+        this.applyOAuthStatusFallback();
+        this.draftNotice = 'Could not refresh live OAuth status. Showing local setup defaults.';
       }
-    }
-    this.draftNotice = 'Connection statuses refreshed for this workspace view.';
+    });
   }
 
   scheduleSelectedTargets(): void {
@@ -480,6 +555,7 @@ export class DistributionComponent {
 
   getTargetReadiness(platform: DistributionPlatform): string {
     if (platform.disabled) return 'Connector unavailable';
+    if (!this.platformCanUseOAuth(platform) && platform.connectionState === 'manual') return 'Future connector';
     if (platform.connectionState === 'expired') return 'Reconnect before posting';
     if (platform.connectionState === 'not-connected') return 'Connect before posting';
     if (platform.connectionState === 'manual') return 'Manual draft only';
@@ -498,6 +574,10 @@ export class DistributionComponent {
     if (platform.connectionState === 'expired') return 'Login expired before posting.';
     if (platform.connectionState === 'not-connected') return 'Account is not connected.';
     return 'Manual workflow only.';
+  }
+
+  platformCanUseOAuth(platform: DistributionPlatform): boolean {
+    return this.oauthProviderIds.has(platform.id);
   }
 
   goToDashboard(): void {
@@ -573,5 +653,110 @@ export class DistributionComponent {
 
     if (offsetMinutes <= 0) return this.publishTime;
     return `${this.publishTime} + ${offsetMinutes}m`;
+  }
+
+  private initializeConnectionDefaults(): void {
+    for (const platform of this.platforms) {
+      if (this.platformCanUseOAuth(platform)) {
+        platform.connectionState = 'not-connected';
+        platform.connectionLabel = 'Checking';
+        platform.connectionDetail = `Checking ${platform.name} OAuth status from the backend.`;
+        platform.lastChecked = 'Pending';
+        platform.expiresIn = 'Pending';
+        platform.selected = false;
+        continue;
+      }
+
+      platform.connectionState = 'manual';
+      platform.connectionLabel = platform.disabled ? 'Evaluate' : 'Future connector';
+      platform.connectionDetail = platform.disabled
+        ? 'No official connector is configured yet.'
+        : 'OAuth is not wired for this platform yet.';
+      platform.lastChecked = 'Manual';
+      platform.expiresIn = 'Manual';
+      platform.selected = false;
+    }
+  }
+
+  private applyProviderStatus(status: SocialAuthProviderStatus): void {
+    const platform = this.platforms.find((candidate) => candidate.id === status.provider);
+    if (!platform) return;
+
+    platform.handle = status.accountLabel || platform.handle;
+    platform.lastChecked = 'Just now';
+    platform.expiresIn = this.formatConnectionExpiry(status);
+
+    if (!status.configured) {
+      platform.connectionState = 'not-connected';
+      platform.connectionLabel = 'Setup needed';
+      platform.connectionDetail = `${platform.name} app credentials are not configured in the backend yet.`;
+      platform.selected = false;
+      return;
+    }
+
+    if (status.connected) {
+      platform.connectionState = 'connected';
+      platform.connectionLabel = 'Connected';
+      platform.connectionDetail = `${platform.name} OAuth token is stored and ready for API posting.`;
+      return;
+    }
+
+    if (status.status === 'expired') {
+      platform.connectionState = 'expired';
+      platform.connectionLabel = 'Login needed';
+      platform.connectionDetail = `${platform.name} token expired. Reconnect before scheduling posts.`;
+      platform.selected = false;
+      return;
+    }
+
+    platform.connectionState = 'not-connected';
+    platform.connectionLabel = 'Not connected';
+    platform.connectionDetail = `Connect ${platform.name} to enable API posting.`;
+    platform.selected = false;
+  }
+
+  private applyOAuthStatusFallback(): void {
+    for (const platform of this.platforms) {
+      if (!this.platformCanUseOAuth(platform)) continue;
+      platform.connectionState = 'not-connected';
+      platform.connectionLabel = 'Not connected';
+      platform.connectionDetail = `Could not refresh ${platform.name} status from the backend.`;
+      platform.lastChecked = 'Local fallback';
+      platform.expiresIn = 'Unknown';
+      platform.selected = false;
+    }
+  }
+
+  private formatConnectionExpiry(status: SocialAuthProviderStatus): string {
+    if (!status.configured) return 'Missing app setup';
+    if (!status.expiresAt) return status.connected ? 'No expiry reported' : 'No token';
+    const expiresAt = new Date(status.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) return 'No expiry reported';
+    const diffMs = expiresAt.getTime() - Date.now();
+    if (diffMs <= 0) return 'Expired';
+    const days = Math.max(1, Math.ceil(diffMs / 86_400_000));
+    return `${days} ${days === 1 ? 'day' : 'days'}`;
+  }
+
+  private applyOAuthReturnNotice(): void {
+    const provider = String(this.route.snapshot.queryParamMap.get('socialProvider') || '').trim();
+    const status = String(this.route.snapshot.queryParamMap.get('socialStatus') || '').trim();
+    if (!provider || !status) return;
+
+    this.draftNotice = `${provider} ${status === 'connected' ? 'connected' : status}.`;
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        socialProvider: null,
+        socialStatus: null
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true
+    });
+  }
+
+  private extractErrorMessage(err: unknown): string {
+    const anyErr = err as { error?: { error?: string; message?: string }; message?: string };
+    return anyErr?.error?.error || anyErr?.error?.message || anyErr?.message || 'Social auth request failed.';
   }
 }

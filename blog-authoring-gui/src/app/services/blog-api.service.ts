@@ -84,6 +84,33 @@ export type BlogCommentsAdminResponse = {
   comments: BlogCommentAdmin[];
 };
 
+export type SocialAuthProviderStatus = {
+  provider: 'x' | 'linkedin' | 'facebook' | 'instagram' | string;
+  label: string;
+  family: string;
+  configured: boolean;
+  scopes: string[];
+  redirectUri: string;
+  connected: boolean;
+  status: 'connected' | 'expired' | 'not-connected' | string;
+  connectedAt: string | null;
+  updatedAt: string | null;
+  expiresAt: string | null;
+  accountLabel: string;
+  scope: string;
+};
+
+export type SocialAuthStatusResponse = {
+  providers: SocialAuthProviderStatus[];
+};
+
+export type SocialAuthStartResponse = {
+  provider: string;
+  label: string;
+  authUrl: string;
+  expiresInSeconds: number;
+};
+
 export type CollectionsEntryDraft = {
   id?: string;
   listItemID?: string;
@@ -1627,6 +1654,28 @@ export class BlogApiService {
     );
   }
 
+  getSocialAuthStatus(): Observable<SocialAuthStatusResponse> {
+    return this.http.get<SocialAuthStatusResponse>(
+      `${this.apiUrl}/social-auth/status`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  startSocialAuth(provider: string, returnUrl: string): Observable<SocialAuthStartResponse> {
+    return this.http.post<SocialAuthStartResponse>(
+      `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/start`,
+      { returnUrl },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  disconnectSocialAuth(provider: string): Observable<{ provider: string; disconnected: boolean }> {
+    return this.http.delete<{ provider: string; disconnected: boolean }>(
+      `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
   /**
    * Get all blog posts
    */
@@ -1940,12 +1989,12 @@ export class BlogApiService {
   /**
    * Error handling
    */
-  private handleError(error: any): Observable<never> {
+  private handleError = (error: any): Observable<never> => {
     const errorMessage = this.extractErrorMessage(error);
 
     console.error('Blog API Service Error:', errorMessage);
     return throwError(() => new Error(errorMessage));
-  }
+  };
 
   private extractErrorMessage(error: any): string {
     if (!error) return 'An unknown error occurred';

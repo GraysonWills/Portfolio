@@ -130,6 +130,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - `/api/subscriptions`
   - `/api/notifications`
   - `/api/comments`
+  - `/api/social-auth`
 - Security middleware stack:
   - `helmet`, CORS allowlist, rate limiting, body size limits
   - write endpoint protection via Cognito JWT middleware
@@ -170,6 +171,11 @@ When adding any new authoring page/route, include hotkeys by default:
   - SQS consumer for async SES delivery
   - worker callback endpoint for scheduled jobs
   - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
+- Social distribution OAuth:
+  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, and Instagram
+  - OAuth callback handling with short-lived state records
+  - encrypted provider token storage in DynamoDB
+  - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
 
 ## Data Model
 
