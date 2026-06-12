@@ -108,7 +108,9 @@ jobs:
           set +e
           aws lambda update-function-configuration \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
-            --runtime "${LAMBDA_RUNTIME}"
+            --runtime "${LAMBDA_RUNTIME}" \
+            --query '{FunctionName:FunctionName,Runtime:Runtime,LastModified:LastModified}' \
+            --output json
           UPDATE_EXIT=$?
           if [ "$UPDATE_EXIT" -eq 0 ]; then
             aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}"
@@ -122,7 +124,9 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name "${LAMBDA_FUNCTION_NAME}" \
-            --zip-file "fileb://redis-api-lambda.zip"
+            --zip-file "fileb://redis-api-lambda.zip" \
+            --query '{FunctionName:FunctionName,LastModified:LastModified,Version:Version,RevisionId:RevisionId}' \
+            --output json
           # The GitHub deploy role can update code but does not have the waiter read permissions.
           # Give Lambda a short head start, then let the publish step retry until the update settles.
           sleep 5

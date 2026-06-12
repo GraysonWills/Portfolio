@@ -4,8 +4,8 @@ set -euo pipefail
 PROFILE="${AWS_PROFILE:-grayson-sso}"
 REGION="${AWS_REGION:-us-east-2}"
 LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-portfolio-redis-api}"
-LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-portfolio-redis-api-role}"
-LAMBDA_ROLE_POLICY_NAME="${LAMBDA_ROLE_POLICY_NAME:-portfolio-redis-api-inline}"
+LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-PortfolioRedisApiLambdaRole}"
+LAMBDA_ROLE_POLICY_NAME="${LAMBDA_ROLE_POLICY_NAME:-PortfolioRedisApiLambdaPolicy}"
 SOCIAL_AUTH_TABLE_NAME="${SOCIAL_AUTH_TABLE_NAME:-portfolio-social-auth}"
 
 require_cmd() {
@@ -58,7 +58,7 @@ ensure_table() {
 
   aws --profile "$PROFILE" --region "$REGION" dynamodb update-time-to-live \
     --table-name "$SOCIAL_AUTH_TABLE_NAME" \
-    --time-to-live-specification Enabled=true,AttributeName=expiresAtEpoch >/dev/null || true
+    --time-to-live-specification Enabled=true,AttributeName=expiresAtEpoch >/dev/null 2>&1 || true
 }
 
 ensure_iam() {
@@ -80,22 +80,27 @@ ensure_iam() {
 }
 
 ensure_lambda_env() {
-  local current_vars new_vars
-  current_vars="$(aws --profile "$PROFILE" --region "$REGION" lambda get-function-configuration \
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  aws --profile "$PROFILE" --region "$REGION" lambda get-function-configuration \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --query 'Environment.Variables' \
-    --output json)"
+    --output json > "$tmp_dir/current-env.json"
 
-  new_vars="$(jq -c --arg table "$SOCIAL_AUTH_TABLE_NAME" '
+  jq --arg table "$SOCIAL_AUTH_TABLE_NAME" '
     (. // {}) + {
       SOCIAL_AUTH_TABLE_NAME: $table
     }
-  ' <<<"$current_vars")"
+  ' "$tmp_dir/current-env.json" > "$tmp_dir/new-vars.json"
+  jq -n --slurpfile v "$tmp_dir/new-vars.json" '{Variables: $v[0]}' > "$tmp_dir/env-wrapper.json"
 
   aws --profile "$PROFILE" --region "$REGION" lambda update-function-configuration \
     --function-name "$LAMBDA_FUNCTION_NAME" \
-    --environment "Variables=${new_vars}" >/dev/null
+    --environment "file://$tmp_dir/env-wrapper.json" >/dev/null
   aws --profile "$PROFILE" --region "$REGION" lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
+
+  rm -rf "$tmp_dir"
 }
 
 main() {
