@@ -267,7 +267,7 @@ async function handleInternalEvent(rawEvent) {
   }
 
   if (event.kind === 'publish_blog_post') {
-    const { listItemID, scheduleName, sendEmail, topic } = event;
+    const { listItemID, scheduleName, sendEmail, topic, userSub } = event;
     if (!listItemID) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing listItemID' }) };
     }
@@ -288,7 +288,8 @@ async function handleInternalEvent(rawEvent) {
         listItemID,
         scheduleName: scheduleName || null,
         sendEmail: sendEmail !== false,
-        topic: topic || 'blog_posts'
+        topic: topic || 'blog_posts',
+        userSub: userSub || ''
       })
     });
 
@@ -296,6 +297,25 @@ async function handleInternalEvent(rawEvent) {
     return {
       statusCode: resp.status,
       body: text || JSON.stringify({ ok: resp.ok })
+    };
+  }
+
+  if (event.kind === 'social_distribution_send') {
+    const { userSub, deliveryId } = event;
+    if (!userSub || !deliveryId) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing userSub or deliveryId' }) };
+    }
+
+    // eslint-disable-next-line global-require
+    const { sendDeliveryById } = require('./services/social-distribution');
+    const delivery = await sendDeliveryById({
+      userSub,
+      deliveryId,
+      force: false
+    });
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ ok: true, delivery })
     };
   }
 

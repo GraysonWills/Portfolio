@@ -277,14 +277,17 @@ function providerPublicConfig(config) {
 function toConnectionStatus(config, item) {
   const expiresAtMs = item?.expiresAtMs ? Number(item.expiresAtMs) : null;
   const expired = expiresAtMs ? Date.now() >= expiresAtMs : false;
+  const selectedAccount = item?.selectedAccount || null;
+  const needsSelection = Boolean(item && config.family === 'meta' && !selectedAccount?.id);
   return {
     ...providerPublicConfig(config),
-    connected: Boolean(item && !expired),
-    status: !item ? 'not-connected' : expired ? 'expired' : 'connected',
+    connected: Boolean(item && !expired && !needsSelection),
+    status: !item ? 'not-connected' : expired ? 'expired' : needsSelection ? 'needs-selection' : 'connected',
     connectedAt: item?.connectedAt || null,
     updatedAt: item?.updatedAt || null,
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
-    accountLabel: item?.accountLabel || '',
+    accountLabel: selectedAccount?.label || item?.accountLabel || '',
+    selectedAccount,
     scope: item?.scope || config.scopes.join(' '),
     credentialArtifacts: item?.credentialArtifacts || null
   };
@@ -400,7 +403,9 @@ async function completeOAuth(provider, { code, state }) {
   const expiresInSeconds = Number(tokenPayload?.expires_in || 0);
   const expiresAtMs = expiresInSeconds > 0 ? Date.now() + (expiresInSeconds * 1000) : null;
   const scope = String(tokenPayload?.scope || config.scopes.join(' '));
-  const accountLabel = await fetchAccountLabel(config, tokenPayload?.access_token).catch(() => '');
+  const account = await fetchProviderProfile(config, tokenPayload?.access_token).catch(() => null);
+  const accountLabel = account?.label || await fetchAccountLabel(config, tokenPayload?.access_token).catch(() => '');
+  const shouldAutoSelect = config.family === 'x' || config.family === 'linkedin';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -411,6 +416,7 @@ async function completeOAuth(provider, { code, state }) {
       username: stateItem.username || '',
       accountLabel,
       token: encryptJson(tokenPayload),
+      selectedAccount: shouldAutoSelect ? account : undefined,
       credentialArtifacts: summarizeTokenPayload(tokenPayload, config),
       scope,
       connectedAt: nowIso(),
@@ -452,13 +458,23 @@ async function getPostingCredential(provider, user) {
     throw err;
   }
 
+  const selectedAccount = item.selectedAccount || null;
+  const encryptedToken = item.selectedToken || item.token;
+  if (config.family === 'meta' && !selectedAccount?.id) {
+    const err = new Error(`${config.label} needs a selected account before posting`);
+    err.status = 409;
+    throw err;
+  }
+
   return {
     provider: config.id,
     family: config.family,
-    accountLabel: item.accountLabel || '',
+    accountId: selectedAccount?.id || '',
+    accountLabel: selectedAccount?.label || item.accountLabel || '',
+    account: selectedAccount,
     scope: item.scope || '',
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
-    token: decryptJson(item.token)
+    token: decryptJson(encryptedToken)
   };
 }
 
@@ -519,6 +535,229 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'linkedin') return payload?.name || payload?.email || '';
   if (config.family === 'meta') return payload?.name || '';
   return '';
+}
+
+async function fetchProviderProfile(config, accessToken) {
+  if (!accessToken) return null;
+
+  if (config.family === 'x') {
+    const payload = await fetchJson('https://api.twitter.com/2/users/me?user.fields=username,profile_image_url,name', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const user = payload?.data || {};
+    const username = user.username ? `@${user.username}` : '';
+    return {
+      id: String(user.id || ''),
+      label: username || String(user.name || 'X account'),
+      handle: username,
+      platform: config.id,
+      picture: user.profile_image_url || ''
+    };
+  }
+
+  if (config.family === 'linkedin') {
+    const payload = await fetchJson('https://api.linkedin.com/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    return {
+      id: String(payload?.sub || ''),
+      label: String(payload?.name || payload?.email || 'LinkedIn profile'),
+      handle: payload?.email ? String(payload.email) : '',
+      platform: config.id,
+      picture: payload?.picture || ''
+    };
+  }
+
+  if (config.family === 'meta') {
+    const payload = await fetchJson('https://graph.facebook.com/v22.0/me?fields=id,name', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    return {
+      id: String(payload?.id || ''),
+      label: String(payload?.name || 'Meta account'),
+      handle: '',
+      platform: config.id,
+      picture: ''
+    };
+  }
+
+  return null;
+}
+
+function normalizeGraphPicture(input) {
+  return input?.data?.url || input?.url || '';
+}
+
+async function fetchMetaPages(accessToken) {
+  const pages = [];
+  let url = `https://graph.facebook.com/v22.0/me/accounts?fields=id,name,username,access_token,picture.type(large),instagram_business_account&limit=100&access_token=${encodeURIComponent(accessToken)}`;
+
+  while (url) {
+    const payload = await fetchJson(url);
+    for (const page of payload?.data || []) {
+      if (!page?.id || !page?.access_token) continue;
+      pages.push({
+        id: String(page.id),
+        label: String(page.name || page.username || 'Facebook Page'),
+        handle: page.username ? `@${page.username}` : '',
+        platform: 'facebook',
+        picture: normalizeGraphPicture(page.picture),
+        tokenPayload: {
+          access_token: page.access_token,
+          token_type: 'Bearer'
+        },
+        extra: {
+          instagramBusinessAccountId: page.instagram_business_account?.id || ''
+        }
+      });
+    }
+    url = payload?.paging?.next || '';
+  }
+
+  return pages;
+}
+
+async function fetchInstagramAccounts(accessToken) {
+  const pages = await fetchMetaPages(accessToken);
+  const accounts = [];
+
+  for (const page of pages) {
+    const igId = String(page?.extra?.instagramBusinessAccountId || '').trim();
+    if (!igId) continue;
+
+    let ig = {};
+    try {
+      ig = await fetchJson(
+        `https://graph.facebook.com/v22.0/${encodeURIComponent(igId)}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(page.tokenPayload.access_token)}`
+      );
+    } catch {
+      ig = {};
+    }
+
+    accounts.push({
+      id: igId,
+      label: String(ig.name || ig.username || 'Instagram account'),
+      handle: ig.username ? `@${ig.username}` : '',
+      platform: 'instagram',
+      picture: ig.profile_picture_url || '',
+      tokenPayload: {
+        access_token: page.tokenPayload.access_token,
+        token_type: 'Bearer'
+      },
+      extra: {
+        facebookPageId: page.id,
+        facebookPageLabel: page.label
+      }
+    });
+  }
+
+  return accounts;
+}
+
+async function getConnectedProviderItem(config, user) {
+  const res = await getDdbDoc().send(new GetCommand({
+    TableName: getTableName(),
+    Key: connectionKey(userKey(user), config.id),
+    ConsistentRead: true
+  }));
+
+  const item = res?.Item;
+  if (!item?.token) {
+    const err = new Error(`${config.label} is not connected`);
+    err.status = 404;
+    throw err;
+  }
+
+  const expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+  if (expiresAtMs && Date.now() >= expiresAtMs) {
+    const err = new Error(`${config.label} token is expired`);
+    err.status = 409;
+    throw err;
+  }
+
+  return item;
+}
+
+async function listProviderAccounts(provider, user) {
+  const config = getProviderConfig(provider);
+  const item = await getConnectedProviderItem(config, user);
+  const tokenPayload = decryptJson(item.token);
+  const accessToken = tokenPayload?.access_token;
+  if (!accessToken) {
+    const err = new Error(`${config.label} did not store an access token`);
+    err.status = 409;
+    throw err;
+  }
+
+  let accounts = [];
+  if (config.family === 'x' || config.family === 'linkedin') {
+    const profile = item.selectedAccount || await fetchProviderProfile(config, accessToken);
+    accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
+  } else if (config.id === 'facebook') {
+    accounts = await fetchMetaPages(accessToken);
+  } else if (config.id === 'instagram') {
+    accounts = await fetchInstagramAccounts(accessToken);
+  }
+
+  return {
+    provider: config.id,
+    accounts: accounts.map(({ tokenPayload: _tokenPayload, ...account }) => account),
+    selectedAccount: item.selectedAccount || null
+  };
+}
+
+async function selectProviderAccount(provider, user, { accountId } = {}) {
+  const config = getProviderConfig(provider);
+  const safeAccountId = String(accountId || '').trim();
+  if (!safeAccountId) {
+    const err = new Error('accountId is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const item = await getConnectedProviderItem(config, user);
+  const tokenPayload = decryptJson(item.token);
+  const accessToken = tokenPayload?.access_token;
+  if (!accessToken) {
+    const err = new Error(`${config.label} did not store an access token`);
+    err.status = 409;
+    throw err;
+  }
+
+  let accounts = [];
+  if (config.family === 'x' || config.family === 'linkedin') {
+    const profile = item.selectedAccount || await fetchProviderProfile(config, accessToken);
+    accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
+  } else if (config.id === 'facebook') {
+    accounts = await fetchMetaPages(accessToken);
+  } else if (config.id === 'instagram') {
+    accounts = await fetchInstagramAccounts(accessToken);
+  }
+
+  const selected = accounts.find((account) => String(account.id) === safeAccountId);
+  if (!selected) {
+    const err = new Error('Selected account is not available for this provider');
+    err.status = 404;
+    throw err;
+  }
+
+  const { tokenPayload: selectedTokenPayload, ...selectedAccount } = selected;
+  const selectedToken = selectedTokenPayload ? encryptJson(selectedTokenPayload) : undefined;
+  await getDdbDoc().send(new PutCommand({
+    TableName: getTableName(),
+    Item: {
+      ...item,
+      selectedAccount,
+      selectedToken,
+      accountLabel: selectedAccount.label || item.accountLabel || '',
+      updatedAt: nowIso()
+    }
+  }));
+
+  return {
+    provider: config.id,
+    selectedAccount
+  };
 }
 
 async function disconnectProvider(provider, user) {
@@ -584,12 +823,15 @@ async function fetchJson(url, options = {}) {
 
 module.exports = {
   PROVIDERS,
+  userKey,
   normalizeProviderId,
   getProviderConfig,
   getProviderStatus,
   startOAuth,
   completeOAuth,
   disconnectProvider,
+  listProviderAccounts,
+  selectProviderAccount,
   getPostingCredential,
   normalizeReturnUrl,
   providerPublicConfig,

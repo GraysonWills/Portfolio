@@ -15,12 +15,14 @@ const {
 } = require('../services/subscriptions');
 const {
   sendBlogPostNotification,
+  sendPublishedBlogPostEvents,
   schedulePublish,
   cancelSchedule,
   unpublishBlogPost,
   publishBlogPostNow,
   listSubscribedRecipients
 } = require('../services/notifications');
+const { userKey } = require('../services/social-auth');
 
 function requireSchedulerSecret(req, res, next) {
   const expected = process.env.SCHEDULER_WEBHOOK_SECRET || '';
@@ -35,13 +37,14 @@ function requireSchedulerSecret(req, res, next) {
 // Internal worker endpoint (invoked by scheduler Lambda).
 router.post('/worker/publish', requireSchedulerSecret, async (req, res) => {
   try {
-    const { listItemID, scheduleName, sendEmail, topic } = req.body || {};
+    const { listItemID, scheduleName, sendEmail, topic, userSub } = req.body || {};
     if (!listItemID) return res.status(400).json({ error: 'Missing listItemID' });
     const result = await publishBlogPostNow({
       listItemID,
       scheduleName: scheduleName || null,
       sendEmail: sendEmail !== false,
-      topic: topic || 'blog_posts'
+      topic: topic || 'blog_posts',
+      userSub: userSub || ''
     });
     res.json(result);
   } catch (err) {
@@ -113,12 +116,14 @@ router.delete('/subscribers/:emailHash', async (req, res) => {
 
 router.post('/send-now', async (req, res) => {
   try {
-    const { listItemID, topic, force } = req.body || {};
+    const { listItemID, topic, force, sendEmail } = req.body || {};
     if (!listItemID) return res.status(400).json({ error: 'Missing listItemID' });
-    const result = await sendBlogPostNotification({
+    const result = await sendPublishedBlogPostEvents({
       listItemID,
       topic: topic || 'blog_posts',
-      force: force === true
+      force: force === true,
+      sendEmail: sendEmail !== false,
+      userSub: userKey(req.user)
     });
     res.json(result);
   } catch (err) {
@@ -135,7 +140,8 @@ router.post('/schedule', async (req, res) => {
       listItemID,
       publishAt,
       sendEmail: sendEmail !== false,
-      topic: topic || 'blog_posts'
+      topic: topic || 'blog_posts',
+      userSub: userKey(req.user)
     });
     res.json(result);
   } catch (err) {

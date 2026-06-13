@@ -10,6 +10,7 @@ const { SendMessageBatchCommand } = require('@aws-sdk/client-sqs');
 
 const { getDdbDoc, getSes, getScheduler, getSqs, getAwsRegion } = require('./aws/clients');
 const { isContentDdbEnabled, ddbGetContentById, ddbGetContentByListItemId, ddbPutContent } = require('./content-ddb');
+const socialDistribution = require('./social-distribution');
 const { sha256Hex, randomToken, maskEmail } = require('../utils/crypto');
 const { buildNewPostEmail } = require('./email/templates');
 
@@ -177,6 +178,49 @@ function extractBlogHeroImage(items) {
   if (!url) return null;
   if (!/^https?:\/\//i.test(url)) return null; // don't embed data URLs in email
   return url;
+}
+
+function buildSocialBlogPayload({ listItemID, items, baseDate = new Date() }) {
+  const { meta, title, summary, tags, readTimeMinutes: manualReadTime } = extractBlogMetadata(items);
+  const readTimeMinutes = manualReadTime || estimateReadTimeMinutesFromItems(items);
+  return {
+    title,
+    summary,
+    tags,
+    category: meta?.category || '',
+    readTimeMinutes,
+    coverImage: extractBlogHeroImage(items) || '',
+    imageUrl: extractBlogHeroImage(items) || '',
+    url: `${getConfig().publicSiteUrl}/blog/${encodeURIComponent(String(listItemID || '').trim())}`,
+    publishedDate: baseDate instanceof Date ? baseDate.toISOString() : String(baseDate || '')
+  };
+}
+
+async function runSocialAutomationForBlogPost({ userSub, listItemID, trigger = 'blog_published', baseDate = new Date(), items = null } = {}) {
+  const normalizedUserSub = String(userSub || '').trim();
+  if (!normalizedUserSub) {
+    return { ok: true, skipped: true, reason: 'MISSING_SOCIAL_USER' };
+  }
+
+  const blogItems = items || await assertBlogPostExists(listItemID);
+  const blog = buildSocialBlogPayload({ listItemID, items: blogItems, baseDate });
+  try {
+    return await socialDistribution.processBlogAutomation({
+      userSub: normalizedUserSub,
+      listItemID,
+      trigger,
+      baseDate,
+      blog
+    });
+  } catch (err) {
+    console.error('[social-distribution] Blog automation failed:', {
+      listItemID,
+      trigger,
+      userSub: normalizedUserSub,
+      message: String(err?.message || err)
+    });
+    return { ok: false, failed: true, error: err?.message || 'Social distribution failed' };
+  }
 }
 
 function stripHtml(value) {
@@ -1026,7 +1070,7 @@ async function sendBlogPostNotification({ listItemID, topic = 'blog_posts', forc
   }
 }
 
-async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic = 'blog_posts' }) {
+async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic = 'blog_posts', userSub = '' }) {
   const cfg = getConfig();
   if (!cfg.schedulerInvokeRoleArn) {
     const err = new Error('SCHEDULER_INVOKE_ROLE_ARN not configured');
@@ -1048,6 +1092,7 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
 
   const { meta: existingMeta } = await getBlogMetadataForSchedule(listItemID);
   const notifyTopic = String(topic || existingMeta?.notifyTopic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
+  const socialUserSub = String(userSub || existingMeta?.socialDistributionUserSub || existingMeta?.authorUserSub || '').trim();
 
   // Best-effort cleanup for reschedules.
   try {
@@ -1092,7 +1137,8 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     listItemID,
     scheduleName: name,
     sendEmail: !!sendEmail,
-    topic: notifyTopic
+    topic: notifyTopic,
+    userSub: socialUserSub || undefined
   };
 
   const scheduler = getScheduler();
@@ -1118,6 +1164,7 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     scheduledAt: runAt.toISOString(),
     notifyTopic,
     notifyEmail: !!sendEmail,
+    socialDistributionUserSub: socialUserSub || null,
     lastExecutedScheduleName: null,
     lastExecutedScheduleAt: null,
     emailNotificationSentAt: null,
@@ -1158,7 +1205,16 @@ async function schedulePublish({ listItemID, publishAt, sendEmail = true, topic 
     sendEmail: !!sendEmail
   });
 
-  return { ok: true, scheduleName: name, scheduledFor: runAt.toISOString(), region: getAwsRegion() };
+  const socialScheduled = socialUserSub
+    ? await runSocialAutomationForBlogPost({
+        userSub: socialUserSub,
+        listItemID,
+        trigger: 'blog_scheduled',
+        baseDate: runAt
+      })
+    : { ok: true, skipped: true, reason: 'MISSING_SOCIAL_USER' };
+
+  return { ok: true, scheduleName: name, scheduledFor: runAt.toISOString(), region: getAwsRegion(), socialDistribution: socialScheduled };
 }
 
 async function cancelSchedule({ scheduleName }) {
@@ -1192,6 +1248,7 @@ async function unpublishBlogPost({ listItemID }) {
   const previousStatus = String(existingMeta?.status || 'published').trim().toLowerCase() || 'published';
   const previousScheduleName = String(existingMeta?.scheduleName || '').trim();
   const notifyTopic = String(existingMeta?.notifyTopic || 'blog_posts').trim().toLowerCase() || 'blog_posts';
+  const socialUserSub = String(existingMeta?.socialDistributionUserSub || existingMeta?.authorUserSub || '').trim();
 
   // Best-effort: remove recorded active schedule.
   if (previousScheduleName) {
@@ -1241,6 +1298,26 @@ async function unpublishBlogPost({ listItemID }) {
     });
   }
 
+  if (socialUserSub) {
+    try {
+      const clearedSocial = await socialDistribution.cancelPendingDeliveriesForPost({
+        userSub: socialUserSub,
+        listItemID: normalizedListItemID
+      });
+      if (clearedSocial.deleted > 0) {
+        console.info('[social-distribution] Cleared pending deliveries during unpublish', {
+          listItemID: normalizedListItemID,
+          deletedDeliveries: clearedSocial.deleted
+        });
+      }
+    } catch (err) {
+      console.warn('[social-distribution] Failed to clear pending deliveries during unpublish', {
+        listItemID: normalizedListItemID,
+        message: String(err?.message || err)
+      });
+    }
+  }
+
   const unpublishedAt = new Date().toISOString();
   await updateBlogMetadata(normalizedListItemID, {
     status: 'draft',
@@ -1264,7 +1341,7 @@ async function unpublishBlogPost({ listItemID }) {
   };
 }
 
-async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail = true, topic = 'blog_posts' }) {
+async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail = true, topic = 'blog_posts', userSub = '' }) {
   const incomingScheduleName = String(scheduleName || '').trim();
   console.info('[notifications] Scheduler publish trigger received', {
     listItemID,
@@ -1282,6 +1359,7 @@ async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail =
   const existingStatus = String(existingMeta?.status || '').trim().toLowerCase();
   const scheduledFor = existingMeta?.publishDate ? new Date(existingMeta.publishDate) : null;
   const now = new Date();
+  const socialUserSub = String(userSub || existingMeta?.socialDistributionUserSub || existingMeta?.authorUserSub || '').trim();
 
   const legacyWindowMinutes = 30;
   const isLegacyWindowMatch = Boolean(
@@ -1320,18 +1398,55 @@ async function publishBlogPostNow({ listItemID, scheduleName = null, sendEmail =
   });
 
   if (sendEmail) {
-    return await sendBlogPostNotification({ listItemID, topic });
+    const email = await sendBlogPostNotification({ listItemID, topic });
+    const freshItems = await assertBlogPostExists(listItemID);
+    const social = await runSocialAutomationForBlogPost({
+      userSub: socialUserSub,
+      listItemID,
+      trigger: 'blog_published',
+      baseDate: new Date(nowIso),
+      items: freshItems
+    });
+    return { ...email, socialDistribution: social };
   }
 
-  return { ok: true, published: true, sent: 0, failed: 0 };
+  const freshItems = await assertBlogPostExists(listItemID);
+  const social = await runSocialAutomationForBlogPost({
+    userSub: socialUserSub,
+    listItemID,
+    trigger: 'blog_published',
+    baseDate: new Date(nowIso),
+    items: freshItems
+  });
+
+  return { ok: true, published: true, sent: 0, failed: 0, socialDistribution: social };
+}
+
+async function sendPublishedBlogPostEvents({ listItemID, topic = 'blog_posts', force = false, sendEmail = true, userSub = '' }) {
+  const items = await assertBlogPostExists(listItemID);
+  const { meta } = extractBlogMetadata(items);
+  const socialUserSub = String(userSub || meta?.socialDistributionUserSub || meta?.authorUserSub || '').trim();
+  const email = sendEmail
+    ? await sendBlogPostNotification({ listItemID, topic, force })
+    : { ok: true, skipped: true, reason: 'EMAIL_SEND_SKIPPED', listItemID, topic };
+  const social = await runSocialAutomationForBlogPost({
+    userSub: socialUserSub,
+    listItemID,
+    trigger: 'blog_published',
+    baseDate: new Date(),
+    items
+  });
+  return { ...email, socialDistribution: social };
 }
 
 module.exports = {
   sendBlogPostNotification,
+  sendPublishedBlogPostEvents,
   schedulePublish,
   cancelSchedule,
   unpublishBlogPost,
   publishBlogPostNow,
+  runSocialAutomationForBlogPost,
   processNotificationQueueRecords,
   listSubscribedRecipients,
   getConfig,

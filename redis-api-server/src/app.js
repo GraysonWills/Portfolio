@@ -24,6 +24,7 @@ const mediaRoutes = require('./routes/media');
 const resumeRoutes = require('./routes/resume');
 const commentsRoutes = require('./routes/comments');
 const socialAuthRoutes = require('./routes/social-auth');
+const socialDistributionRoutes = require('./routes/social-distribution');
 
 function createApp() {
   const app = express();
@@ -221,6 +222,7 @@ function createApp() {
   app.use('/api/resume', resumeLimiter, resumeRoutes);
   app.use('/api/comments', commentsRoutes);
   app.use('/api/social-auth', writeLimiter, socialAuthRoutes);
+  app.use('/api/social-distribution', writeLimiter, socialDistributionRoutes);
   app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
@@ -239,6 +241,7 @@ function createApp() {
         resume: '/api/resume/download (public, rate limited)',
         comments: '/api/comments',
         socialAuth: '/api/social-auth/status (requires auth)',
+        socialDistribution: '/api/social-distribution/settings (requires auth)',
         photoAssets: '/api/photo-assets (requires auth)',
         media: '/media/:key (public S3 proxy)'
       }

@@ -1,5 +1,5 @@
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
-import { Subject } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService, SocialAuthStatusResponse } from '../../services/blog-api.service';
 import { SocialDistributionAutomationService } from '../../services/social-distribution-automation.service';
@@ -19,11 +19,14 @@ describe('DistributionComponent', () => {
     const authService = {
       logout: jasmine.createSpy('logout')
     } as unknown as AuthService;
-    const blogApi = {
-      getSocialAuthStatus: jasmine.createSpy('getSocialAuthStatus').and.returnValue(status$.asObservable())
-    } as unknown as BlogApiService;
     const automation = new SocialDistributionAutomationService();
     spyOn(automation, 'loadSettings').and.returnValue(automation.getDefaultSettings());
+    const blogApi = {
+      getSocialAuthStatus: jasmine.createSpy('getSocialAuthStatus').and.returnValue(status$.asObservable()),
+      getSocialDistributionSettings: jasmine.createSpy('getSocialDistributionSettings').and.returnValue(of(automation.getDefaultSettings())),
+      saveSocialDistributionSettings: jasmine.createSpy('saveSocialDistributionSettings').and.callFake((settings) => of(settings)),
+      getSocialDistributionDeliveries: jasmine.createSpy('getSocialDistributionDeliveries').and.returnValue(of({ deliveries: [] }))
+    } as unknown as BlogApiService;
 
     return {
       component: new DistributionComponent(route, router, authService, blogApi, automation),

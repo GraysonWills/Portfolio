@@ -78,8 +78,15 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 ### Social Auth
 - `GET /api/social-auth/status` (auth)
 - `POST /api/social-auth/:provider/start` (auth)
+- `GET /api/social-auth/:provider/accounts` (auth)
+- `POST /api/social-auth/:provider/accounts/select` (auth)
 - `DELETE /api/social-auth/:provider` (auth)
 - `GET /api/social-auth/:provider/callback`
+- `GET /api/social-distribution/settings` (auth)
+- `PUT /api/social-distribution/settings` (auth)
+- `GET /api/social-distribution/deliveries` (auth)
+- `POST /api/social-distribution/deliveries/:deliveryId/send` (auth)
+- `DELETE /api/social-distribution/deliveries/:deliveryId` (auth)
 
 Initial provider IDs:
 - `x`
@@ -99,11 +106,15 @@ Operational flow:
 3. The backend creates a 10-minute state record, builds the provider OAuth URL, and returns it to the browser.
 4. The provider redirects back to `/api/social-auth/:provider/callback` with an authorization code.
 5. The backend exchanges that code for token artifacts, encrypts the raw token payload, stores it in DynamoDB, and redirects back to the authoring Distribution tab.
-6. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, account label, and which credential artifacts were captured.
+6. X and LinkedIn personal posting identities are selected automatically when profile lookup succeeds.
+7. Facebook and Instagram require account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page or page-linked Instagram account.
+8. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, selected account label, and which credential artifacts were captured.
+9. Blog publish/schedule events create social delivery records from saved templates/rules. Zero-delay deliveries send inline, delayed deliveries use the existing EventBridge Scheduler target, and review-required deliveries stay in `needs_review`.
 
 Unpublish behavior:
 - cancels known active schedule for the post (if present)
 - removes stale schedules for the same `listItemID`
+- removes unsent social distribution deliveries for the same `listItemID`
 - sets metadata status to `draft` and clears active `scheduleName`
 
 ### Subscriptions
@@ -214,6 +225,8 @@ Production resources:
 | Variable | Purpose |
 |---|---|
 | `SOCIAL_AUTH_TABLE_NAME` | DynamoDB table for OAuth state + encrypted connection records |
+| `SOCIAL_DISTRIBUTION_TABLE_NAME` | optional override for social settings/deliveries; defaults to `SOCIAL_AUTH_TABLE_NAME` |
+| `SOCIAL_DISTRIBUTION_SCHEDULER_GROUP_NAME` | optional EventBridge Scheduler group override for delayed social sends |
 | `SOCIAL_AUTH_TOKEN_SECRET` | 32+ character secret used to encrypt stored provider tokens |
 | `SOCIAL_AUTH_PUBLIC_API_BASE_URL` | public API base for callback construction; defaults to `https://api.grayson-wills.com/api` |
 | `SOCIAL_AUTH_DEFAULT_RETURN_URL` | authoring URL after callback; defaults to `https://author.grayson-wills.com/distribution` |

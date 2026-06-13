@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { BlogApiService } from '../../services/blog-api.service';
 import { HotkeysService } from '../../services/hotkeys.service';
 import {
+  SocialAutomationSettings,
   SocialAutomationTrigger,
   SocialDistributionAutomationService
 } from '../../services/social-distribution-automation.service';
@@ -85,6 +86,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   private quillEditor: any = null;
   private previewListItemID: string = '';
   private cleanupHotkeys: (() => void) | null = null;
+  private socialAutomationSettings: SocialAutomationSettings | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -117,6 +119,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     }
     this.previewListItemID = this.initialData?.listItemID || `blog-preview-${Date.now()}`;
     this.loadSignatureSettings();
+    this.loadSocialAutomationSettings();
     this.registerHotkeys();
   }
 
@@ -196,7 +199,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     const publishDate = formValue.publishDate ? new Date(formValue.publishDate) : new Date();
     const safePublishDate = Number.isNaN(publishDate.getTime()) ? new Date() : publishDate;
     const readTime = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
-    const settings = this.socialAutomation.loadSettings();
+    const settings = this.socialAutomationSettings || this.socialAutomation.loadSettings();
     const trigger = this.getSocialAutomationTrigger(formValue.status);
     const tags = this.publicTags
       .map((tag) => tag.startsWith('#') ? tag : `#${tag.replace(/^#+/, '')}`)
@@ -233,6 +236,19 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       instagram: 'Instagram'
     };
     return labels[platformId] || platformId;
+  }
+
+  private loadSocialAutomationSettings(): void {
+    this.socialAutomationSettings = this.socialAutomation.loadSettings();
+    this.blogApi.getSocialDistributionSettings().subscribe({
+      next: (settings) => {
+        this.socialAutomationSettings = settings;
+        this.socialAutomation.saveSettings(settings);
+      },
+      error: () => {
+        // Keep local settings available while offline.
+      }
+    });
   }
 
   private getCanonicalPreviewUrl(title: string): string {
@@ -635,12 +651,12 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
             const priorStatus = String(this.initialData?.status || '').toLowerCase();
             const isPublishTransition = !isEdit || priorStatus !== 'published';
 
-            if (formValue.status === 'published' && sendEmailUpdate && isPublishTransition) {
-              this.blogApi.sendNotificationNow(listItemID, 'blog_posts').subscribe({
+            if (formValue.status === 'published' && isPublishTransition) {
+              this.blogApi.sendNotificationNow(listItemID, 'blog_posts', false, sendEmailUpdate).subscribe({
                 next: () => onDone(),
                 error: (err) => {
-                  this.txLog.log('NOTIFY_FAILED', `Failed to send notification for "${formValue.title}" — ${err.message}`);
-                  this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but email notify failed.' });
+                  this.txLog.log('PUBLISH_EVENTS_FAILED', `Failed publish events for "${formValue.title}" — ${err.message}`);
+                  this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but distribution events failed.' });
                   this.isSaving = false;
                   this.saved.emit();
                 }

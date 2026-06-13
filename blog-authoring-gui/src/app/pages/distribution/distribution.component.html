@@ -153,6 +153,14 @@
             (onClick)="connectPlatform(platform)">
           </p-button>
           <p-button
+            *ngIf="platformCanUseOAuth(platform) && platform.connectionState !== 'not-connected' && platform.connectionState !== 'expired'"
+            label="Accounts"
+            icon="pi pi-list"
+            styleClass="p-button-sm p-button-outlined"
+            [disabled]="socialAccountsLoading"
+            (onClick)="loadProviderAccounts(platform)">
+          </p-button>
+          <p-button
             *ngIf="platformCanUseOAuth(platform) && platformIsConnected(platform)"
             label="Disconnect"
             icon="pi pi-times"
@@ -161,6 +169,25 @@
             (onClick)="disconnectPlatform(platform)">
           </p-button>
           <span *ngIf="platform.disabled || !platformCanUseOAuth(platform)" class="manual-note">Manual setup</span>
+        </div>
+
+        <div class="account-picker" *ngIf="accountsByProvider[platform.id]?.length">
+          <label>
+            <span>Posting identity</span>
+            <select [(ngModel)]="selectedAccountIds[platform.id]">
+              <option value="">Choose account</option>
+              <option *ngFor="let account of accountsByProvider[platform.id]" [ngValue]="account.id">
+                {{ account.label }} {{ account.handle ? '(' + account.handle + ')' : '' }}
+              </option>
+            </select>
+          </label>
+          <p-button
+            label="Use Account"
+            icon="pi pi-check"
+            styleClass="p-button-sm"
+            [disabled]="socialAccountsLoading || !selectedAccountIds[platform.id]"
+            (onClick)="selectProviderAccount(platform)">
+          </p-button>
         </div>
       </article>
     </div>
@@ -534,7 +561,21 @@
         <h2>Delivery Queue</h2>
         <span>Status, retry, and receipts only</span>
       </div>
-      <p-tag value="Metrics hidden" severity="secondary"></p-tag>
+      <div class="section-actions">
+        <p-button
+          label="Refresh"
+          icon="pi pi-refresh"
+          styleClass="p-button-sm p-button-outlined"
+          [disabled]="deliveryLoading"
+          (onClick)="refreshDeliveries()">
+        </p-button>
+        <p-tag value="Metrics hidden" severity="secondary"></p-tag>
+      </div>
+    </div>
+
+    <div *ngIf="deliveryError" class="auth-alert">
+      <i class="pi pi-exclamation-triangle"></i>
+      <span>{{ deliveryError }}</span>
     </div>
 
     <div class="queue-table">
@@ -545,6 +586,7 @@
         <span>Run At</span>
         <span>Status</span>
         <span>Receipt</span>
+        <span>Actions</span>
       </div>
       <div class="queue-row" *ngFor="let item of queueItems; trackBy: trackByQueueItem">
         <span class="post-title">{{ item.postTitle }}</span>
@@ -552,8 +594,31 @@
         <span>{{ item.destination }}</span>
         <span>{{ item.runAt }}</span>
         <span><p-tag [value]="item.status" [severity]="item.statusClass"></p-tag></span>
-        <span>{{ item.receipt }}</span>
+        <span>
+          {{ item.receipt }}
+          <small *ngIf="item.error">{{ item.error }}</small>
+        </span>
+        <span class="queue-actions">
+          <p-button
+            *ngIf="item.canSend"
+            icon="pi pi-send"
+            styleClass="p-button-sm p-button-text"
+            [disabled]="deliveryLoading"
+            (onClick)="sendQueuedDelivery(item)">
+          </p-button>
+          <p-button
+            *ngIf="item.canDelete"
+            icon="pi pi-trash"
+            styleClass="p-button-sm p-button-text p-button-danger"
+            [disabled]="deliveryLoading"
+            (onClick)="deleteQueuedDelivery(item)">
+          </p-button>
+        </span>
       </div>
+    </div>
+
+    <div class="empty-preview" *ngIf="!queueItems.length && !deliveryLoading">
+      No delivery records yet. Publish or schedule a post with enabled automation rules to create the first queue entries.
     </div>
   </section>
 </div>

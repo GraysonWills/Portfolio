@@ -15,6 +15,7 @@ import {
   CollectionsEntryMetadata,
   CollectionsEntryType
 } from '../models/redis-content.model';
+import { SocialAutomationSettings } from './social-distribution-automation.service';
 
 export type ApiHealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 
@@ -97,6 +98,7 @@ export type SocialAuthProviderStatus = {
   updatedAt: string | null;
   expiresAt: string | null;
   accountLabel: string;
+  selectedAccount?: SocialAuthAccount | null;
   scope: string;
   credentialArtifacts?: {
     tokenType: string;
@@ -118,6 +120,54 @@ export type SocialAuthStartResponse = {
   label: string;
   authUrl: string;
   expiresInSeconds: number;
+};
+
+export type SocialAuthAccount = {
+  id: string;
+  label: string;
+  handle?: string;
+  platform: string;
+  picture?: string;
+  extra?: Record<string, unknown>;
+};
+
+export type SocialAuthAccountsResponse = {
+  provider: string;
+  accounts: SocialAuthAccount[];
+  selectedAccount: SocialAuthAccount | null;
+};
+
+export type SocialDistributionDelivery = {
+  deliveryId: string;
+  listItemID: string;
+  trigger: string;
+  ruleId: string;
+  ruleName: string;
+  templateId: string;
+  templateName: string;
+  provider: string;
+  accountId: string;
+  accountLabel: string;
+  destination: string;
+  caption: string;
+  mediaUrl: string;
+  postUrl: string;
+  title: string;
+  runAt: string | null;
+  status: 'draft' | 'needs_review' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'skipped' | string;
+  requiresReview: boolean;
+  quietMode: boolean;
+  providerPostId: string;
+  providerPostUrl: string;
+  lastError: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  sentAt: string | null;
+  attemptCount: number;
+};
+
+export type SocialDistributionDeliveriesResponse = {
+  deliveries: SocialDistributionDelivery[];
 };
 
 export type CollectionsEntryDraft = {
@@ -1516,10 +1566,10 @@ export class BlogApiService {
   /**
    * Trigger notification send now for a blog post (admin/auth required).
    */
-  sendNotificationNow(listItemID: string, topic: string = 'blog_posts', force: boolean = false): Observable<any> {
+  sendNotificationNow(listItemID: string, topic: string = 'blog_posts', force: boolean = false, sendEmail: boolean = true): Observable<any> {
     return this.http.post<any>(
       `${this.apiUrl}/notifications/send-now`,
-      { listItemID, topic, force },
+      { listItemID, topic, force, sendEmail },
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }
@@ -1681,6 +1731,58 @@ export class BlogApiService {
   disconnectSocialAuth(provider: string): Observable<{ provider: string; disconnected: boolean }> {
     return this.http.delete<{ provider: string; disconnected: boolean }>(
       `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getSocialAuthAccounts(provider: string): Observable<SocialAuthAccountsResponse> {
+    return this.http.get<SocialAuthAccountsResponse>(
+      `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/accounts`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  selectSocialAuthAccount(provider: string, accountId: string): Observable<{ provider: string; selectedAccount: SocialAuthAccount }> {
+    return this.http.post<{ provider: string; selectedAccount: SocialAuthAccount }>(
+      `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/accounts/select`,
+      { accountId },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getSocialDistributionSettings(): Observable<SocialAutomationSettings> {
+    return this.http.get<SocialAutomationSettings>(
+      `${this.apiUrl}/social-distribution/settings`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  saveSocialDistributionSettings(settings: SocialAutomationSettings): Observable<SocialAutomationSettings> {
+    return this.http.put<SocialAutomationSettings>(
+      `${this.apiUrl}/social-distribution/settings`,
+      settings,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getSocialDistributionDeliveries(limit: number = 100): Observable<SocialDistributionDeliveriesResponse> {
+    return this.http.get<SocialDistributionDeliveriesResponse>(
+      `${this.apiUrl}/social-distribution/deliveries?limit=${encodeURIComponent(String(limit))}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  sendSocialDistributionDelivery(deliveryId: string): Observable<{ delivery: SocialDistributionDelivery }> {
+    return this.http.post<{ delivery: SocialDistributionDelivery }>(
+      `${this.apiUrl}/social-distribution/deliveries/${encodeURIComponent(deliveryId)}/send`,
+      { force: true },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  deleteSocialDistributionDelivery(deliveryId: string): Observable<{ ok: boolean; deliveryId: string }> {
+    return this.http.delete<{ ok: boolean; deliveryId: string }>(
+      `${this.apiUrl}/social-distribution/deliveries/${encodeURIComponent(deliveryId)}`,
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }

@@ -1,7 +1,12 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { BlogApiService, SocialAuthProviderStatus } from '../../services/blog-api.service';
+import {
+  BlogApiService,
+  SocialAuthAccount,
+  SocialAuthProviderStatus,
+  SocialDistributionDelivery
+} from '../../services/blog-api.service';
 import {
   SocialAutomationPreview,
   SocialAutomationRule,
@@ -38,6 +43,7 @@ type DistributionPlatform = {
 };
 
 type QueueItem = {
+  deliveryId?: string;
   postTitle: string;
   platform: string;
   platformClass: string;
@@ -46,6 +52,10 @@ type QueueItem = {
   status: string;
   statusClass: QueueStatusClass;
   receipt: string;
+  caption?: string;
+  error?: string;
+  canSend?: boolean;
+  canDelete?: boolean;
 };
 
 @Component({
@@ -71,11 +81,17 @@ export class DistributionComponent implements OnInit {
   draftNotice = 'No scheduled changes yet.';
   socialAuthLoading = false;
   socialAuthError = '';
+  socialAccountsLoading = false;
+  deliveryLoading = false;
+  deliveryError = '';
   automationNotice = 'Automation rules are ready for the next publish event.';
   automationTemplates: SocialDistributionTemplate[] = [];
   automationRules: SocialAutomationRule[] = [];
   selectedTemplateId = '';
   automationPreviewTrigger: SocialAutomationTrigger = 'blog_published';
+  accountsByProvider: Record<string, SocialAuthAccount[]> = {};
+  selectedAccountIds: Record<string, string> = {};
+  deliveryItems: SocialDistributionDelivery[] = [];
 
   readonly workspaceTabs: { id: DistributionWorkspaceTab; label: string; icon: string }[] = [
     { id: 'connections', label: 'Connections', icon: 'pi-link' },
@@ -368,48 +384,7 @@ export class DistributionComponent implements OnInit {
     }
   ];
 
-  queueItems: QueueItem[] = [
-    {
-      postTitle: 'Building for expression, not reaction',
-      platform: 'Bluesky',
-      platformClass: 'bluesky',
-      destination: 'Post',
-      runAt: 'Jun 18, 9:00 AM',
-      status: 'Ready',
-      statusClass: 'success',
-      receipt: 'Delivery receipt only'
-    },
-    {
-      postTitle: 'Building for expression, not reaction',
-      platform: 'LinkedIn',
-      platformClass: 'linkedin',
-      destination: 'Personal update',
-      runAt: 'Jun 18, 9:01 AM',
-      status: 'Queued',
-      statusClass: 'info',
-      receipt: 'Awaiting connector'
-    },
-    {
-      postTitle: 'Building for expression, not reaction',
-      platform: 'Instagram',
-      platformClass: 'instagram',
-      destination: 'Story',
-      runAt: 'Jun 18, 9:02 AM',
-      status: 'Review',
-      statusClass: 'warn',
-      receipt: 'Media/caption check'
-    },
-    {
-      postTitle: 'Building for expression, not reaction',
-      platform: 'X / Twitter',
-      platformClass: 'x',
-      destination: 'Single post',
-      runAt: 'Jun 18, 9:03 AM',
-      status: 'Needs login',
-      statusClass: 'danger',
-      receipt: 'Reconnect account'
-    }
-  ];
+  queueItems: QueueItem[] = [];
 
   constructor(
     private readonly route: ActivatedRoute,
@@ -424,6 +399,7 @@ export class DistributionComponent implements OnInit {
     this.applyWorkspaceTabFromRoute();
     this.initializeConnectionDefaults();
     this.refreshConnections();
+    this.refreshDeliveries();
     this.applyOAuthReturnNotice();
   }
 
@@ -501,11 +477,22 @@ export class DistributionComponent implements OnInit {
   }
 
   saveAutomationSettings(): void {
-    this.automation.saveSettings({
+    const settings = {
       templates: this.automationTemplates,
       rules: this.automationRules
+    };
+    this.automation.saveSettings(settings);
+    this.blogApi.saveSocialDistributionSettings(settings).subscribe({
+      next: (saved) => {
+        this.automationTemplates = saved.templates;
+        this.automationRules = saved.rules;
+        this.automation.saveSettings(saved);
+        this.automationNotice = 'Automation templates and rules saved to the backend.';
+      },
+      error: (err) => {
+        this.automationNotice = `Saved locally, but backend save failed: ${this.extractErrorMessage(err)}`;
+      }
     });
-    this.automationNotice = 'Automation templates and rules saved.';
   }
 
   resetAutomationSettings(): void {
@@ -513,7 +500,14 @@ export class DistributionComponent implements OnInit {
     this.automationTemplates = defaults.templates;
     this.automationRules = defaults.rules;
     this.selectedTemplateId = this.automationTemplates[0]?.id || '';
-    this.automationNotice = 'Automation templates and rules reset to defaults.';
+    this.blogApi.saveSocialDistributionSettings(defaults).subscribe({
+      next: () => {
+        this.automationNotice = 'Automation templates and rules reset to defaults.';
+      },
+      error: (err) => {
+        this.automationNotice = `Defaults restored locally, but backend save failed: ${this.extractErrorMessage(err)}`;
+      }
+    });
   }
 
   insertTemplateVariable(variable: string): void {
@@ -695,6 +689,53 @@ export class DistributionComponent implements OnInit {
     });
   }
 
+  loadProviderAccounts(platform: DistributionPlatform): void {
+    if (!this.platformCanUseOAuth(platform) || platform.connectionState === 'not-connected' || platform.connectionState === 'expired') return;
+    this.socialAccountsLoading = true;
+    this.blogApi.getSocialAuthAccounts(platform.id).subscribe({
+      next: (response) => {
+        this.socialAccountsLoading = false;
+        this.accountsByProvider[platform.id] = response.accounts || [];
+        if (response.selectedAccount?.id) {
+          this.selectedAccountIds[platform.id] = response.selectedAccount.id;
+        } else if (response.accounts?.length === 1) {
+          this.selectedAccountIds[platform.id] = response.accounts[0].id;
+        }
+      },
+      error: (err) => {
+        this.socialAccountsLoading = false;
+        this.socialAuthError = this.extractErrorMessage(err);
+      }
+    });
+  }
+
+  selectProviderAccount(platform: DistributionPlatform): void {
+    const accountId = this.selectedAccountIds[platform.id];
+    if (!accountId) {
+      this.socialAuthError = `Choose a ${platform.name} account first.`;
+      return;
+    }
+
+    this.socialAccountsLoading = true;
+    this.blogApi.selectSocialAuthAccount(platform.id, accountId).subscribe({
+      next: (response) => {
+        this.socialAccountsLoading = false;
+        const account = response.selectedAccount;
+        platform.handle = account?.handle || account?.label || platform.handle;
+        platform.connectionState = 'connected';
+        platform.connectionLabel = 'Connected';
+        platform.connectionDetail = `${account?.label || platform.name} is selected for API posting.`;
+        platform.lastChecked = 'Just now';
+        this.draftNotice = `${platform.name} posting identity selected.`;
+        this.refreshConnections();
+      },
+      error: (err) => {
+        this.socialAccountsLoading = false;
+        this.socialAuthError = this.extractErrorMessage(err);
+      }
+    });
+  }
+
   refreshConnections(): void {
     this.socialAuthLoading = true;
     this.socialAuthError = '';
@@ -727,6 +768,54 @@ export class DistributionComponent implements OnInit {
         }
         this.socialAuthError = this.extractErrorMessage(err);
         this.draftNotice = 'Could not refresh live OAuth status. Showing local setup defaults.';
+      }
+    });
+  }
+
+  refreshDeliveries(): void {
+    this.deliveryLoading = true;
+    this.deliveryError = '';
+    this.blogApi.getSocialDistributionDeliveries().subscribe({
+      next: (response) => {
+        this.deliveryLoading = false;
+        this.deliveryItems = response.deliveries || [];
+        this.queueItems = this.deliveryItems.map((delivery) => this.mapDeliveryToQueueItem(delivery));
+      },
+      error: (err) => {
+        this.deliveryLoading = false;
+        this.deliveryError = this.extractErrorMessage(err);
+      }
+    });
+  }
+
+  sendQueuedDelivery(item: QueueItem): void {
+    if (!item.deliveryId) return;
+    this.deliveryLoading = true;
+    this.blogApi.sendSocialDistributionDelivery(item.deliveryId).subscribe({
+      next: () => {
+        this.deliveryLoading = false;
+        this.draftNotice = 'Delivery sent.';
+        this.refreshDeliveries();
+      },
+      error: (err) => {
+        this.deliveryLoading = false;
+        this.deliveryError = this.extractErrorMessage(err);
+      }
+    });
+  }
+
+  deleteQueuedDelivery(item: QueueItem): void {
+    if (!item.deliveryId) return;
+    this.deliveryLoading = true;
+    this.blogApi.deleteSocialDistributionDelivery(item.deliveryId).subscribe({
+      next: () => {
+        this.deliveryLoading = false;
+        this.draftNotice = 'Delivery removed.';
+        this.refreshDeliveries();
+      },
+      error: (err) => {
+        this.deliveryLoading = false;
+        this.deliveryError = this.extractErrorMessage(err);
       }
     });
   }
@@ -853,11 +942,62 @@ export class DistributionComponent implements OnInit {
     return `${preview.ruleId}:${preview.platformId}:${index}`;
   }
 
+  private mapDeliveryToQueueItem(delivery: SocialDistributionDelivery): QueueItem {
+    const platform = this.platforms.find((candidate) => candidate.id === delivery.provider);
+    const status = this.mapDeliveryStatus(delivery);
+    return {
+      deliveryId: delivery.deliveryId,
+      postTitle: delivery.title || delivery.listItemID,
+      platform: platform?.name || delivery.provider,
+      platformClass: platform?.accentClass || 'secondary',
+      destination: delivery.destination || 'Post',
+      runAt: delivery.runAt ? this.formatDateTime(new Date(delivery.runAt)) : 'Not scheduled',
+      status: status.label,
+      statusClass: status.severity,
+      receipt: status.receipt,
+      caption: delivery.caption,
+      error: delivery.lastError,
+      canSend: ['needs_review', 'failed', 'draft'].includes(String(delivery.status || '')),
+      canDelete: String(delivery.status || '') !== 'sent'
+    };
+  }
+
+  private mapDeliveryStatus(delivery: SocialDistributionDelivery): { label: string; severity: QueueStatusClass; receipt: string } {
+    switch (delivery.status) {
+      case 'sent':
+        return { label: 'Sent', severity: 'success', receipt: delivery.providerPostUrl || delivery.providerPostId || 'Delivered' };
+      case 'sending':
+        return { label: 'Sending', severity: 'info', receipt: 'Posting now' };
+      case 'scheduled':
+        return { label: 'Scheduled', severity: 'info', receipt: 'Queued by scheduler' };
+      case 'needs_review':
+        return { label: 'Review', severity: 'warn', receipt: 'Manual approval needed' };
+      case 'failed':
+        return { label: 'Failed', severity: 'danger', receipt: delivery.lastError || 'Posting failed' };
+      case 'skipped':
+        return { label: 'Skipped', severity: 'secondary', receipt: 'Duplicate avoided' };
+      default:
+        return { label: 'Draft', severity: 'secondary', receipt: 'Ready to send' };
+    }
+  }
+
   private loadAutomationSettings(): void {
     const settings = this.automation.loadSettings();
     this.automationTemplates = settings.templates;
     this.automationRules = settings.rules;
     this.selectedTemplateId = this.automationTemplates[0]?.id || '';
+    this.blogApi.getSocialDistributionSettings().subscribe({
+      next: (remote) => {
+        this.automationTemplates = remote.templates;
+        this.automationRules = remote.rules;
+        this.selectedTemplateId = this.selectedTemplateId || this.automationTemplates[0]?.id || '';
+        this.automation.saveSettings(remote);
+        this.automationNotice = 'Automation settings loaded from the backend.';
+      },
+      error: () => {
+        this.automationNotice = 'Using local automation settings until the backend is available.';
+      }
+    });
   }
 
   private applyWorkspaceTabFromRoute(): void {
@@ -968,6 +1108,9 @@ export class DistributionComponent implements OnInit {
     platform.handle = status.accountLabel || platform.handle;
     platform.lastChecked = 'Just now';
     platform.expiresIn = this.formatConnectionExpiry(status);
+    if (status.selectedAccount?.id) {
+      this.selectedAccountIds[platform.id] = status.selectedAccount.id;
+    }
 
     if (!status.configured) {
       platform.connectionState = 'not-connected';
@@ -981,6 +1124,15 @@ export class DistributionComponent implements OnInit {
       platform.connectionState = 'connected';
       platform.connectionLabel = 'Connected';
       platform.connectionDetail = this.formatCredentialArtifacts(platform.name, status);
+      return;
+    }
+
+    if (status.status === 'needs-selection') {
+      platform.connectionState = 'attention';
+      platform.connectionLabel = 'Choose account';
+      platform.connectionDetail = `${platform.name} is authenticated. Select the posting identity before scheduling posts.`;
+      platform.selected = false;
+      this.loadProviderAccounts(platform);
       return;
     }
 

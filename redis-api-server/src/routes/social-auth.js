@@ -28,6 +28,18 @@ router.post('/:provider/start', requireAuth, asyncRoute(async (req, res) => {
   res.json(result);
 }));
 
+router.get('/:provider/accounts', requireAuth, asyncRoute(async (req, res) => {
+  const result = await socialAuth.listProviderAccounts(req.params.provider, req.user);
+  res.json(result);
+}));
+
+router.post('/:provider/accounts/select', requireAuth, asyncRoute(async (req, res) => {
+  const result = await socialAuth.selectProviderAccount(req.params.provider, req.user, {
+    accountId: req.body?.accountId
+  });
+  res.json(result);
+}));
+
 router.delete('/:provider', requireAuth, asyncRoute(async (req, res) => {
   const result = await socialAuth.disconnectProvider(req.params.provider, req.user);
   res.json(result);
