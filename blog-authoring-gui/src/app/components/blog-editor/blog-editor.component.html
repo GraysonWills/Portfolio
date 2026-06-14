@@ -171,8 +171,36 @@
 
           <div class="form-group side-card signature-library-card">
             <label>Signature Library</label>
-            <div class="signature-list" *ngIf="signatureSettings.signatures.length; else noSignatures">
-              <div class="signature-item" *ngFor="let sig of signatureSettings.signatures">
+            <div class="signature-library-browser" *ngIf="signatureSettings.signatures.length; else noSignatures">
+              <p-dropdown
+                [(ngModel)]="librarySignatureId"
+                [ngModelOptions]="{standalone: true}"
+                [options]="getLibrarySignatureOptions()"
+                optionLabel="label"
+                optionValue="value"
+                [filter]="true"
+                filterBy="label,quote,quoteAuthor"
+                placeholder="Find a quote"
+                appendTo="body"
+                styleClass="full-width">
+                <ng-template pTemplate="selectedItem" let-option>
+                  <div class="signature-select-option" *ngIf="option">
+                    <span>{{ option.label }}</span>
+                    <small>{{ option.quoteAuthor }}</small>
+                  </div>
+                </ng-template>
+                <ng-template pTemplate="item" let-option>
+                  <div class="signature-select-option">
+                    <span>
+                      {{ option.label }}
+                      <em *ngIf="option.isDefault">Default</em>
+                    </span>
+                    <small>{{ option.quoteAuthor }}</small>
+                  </div>
+                </ng-template>
+              </p-dropdown>
+
+              <div class="signature-selected-preview" *ngIf="getLibrarySignature() as sig">
                 <div class="signature-item-header">
                   <strong>{{ sig.label }}</strong>
                   <span class="default-pill" *ngIf="isDefaultSignature(sig.id)">Default</span>
@@ -181,6 +209,13 @@
                 <p class="signature-meta">— {{ sig.quoteAuthor }}</p>
                 <p class="signature-signoff">{{ sig.signOffName }}</p>
                 <div class="signature-item-actions">
+                  <p-button
+                    label="Use for Post"
+                    icon="pi pi-check"
+                    (onClick)="useLibrarySignatureForPost(sig.id)"
+                    [disabled]="savingSignatureSettings"
+                    styleClass="p-button-text p-button-sm">
+                  </p-button>
                   <p-button
                     label="Set Default"
                     icon="pi pi-star"

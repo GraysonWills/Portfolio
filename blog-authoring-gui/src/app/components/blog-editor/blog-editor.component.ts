@@ -46,6 +46,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   draftSignatureAuthor: string = '';
   draftSignatureName: string = 'Grayson Wills';
   savingSignatureSettings = false;
+  librarySignatureId: string = '';
   statusOptions = [
     { label: 'Draft', value: 'draft' },
     { label: 'Scheduled', value: 'scheduled' },
@@ -392,6 +393,16 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     return [{ label: 'Use default signature', value: '' }, ...options];
   }
 
+  getLibrarySignatureOptions(): Array<{ label: string; value: string; quote: string; quoteAuthor: string; isDefault: boolean }> {
+    return (this.signatureSettings.signatures || []).map((sig) => ({
+      label: sig.label,
+      value: sig.id,
+      quote: sig.quote,
+      quoteAuthor: sig.quoteAuthor,
+      isDefault: this.isDefaultSignature(sig.id)
+    }));
+  }
+
   getDefaultSignature(): BlogSignature | null {
     const signatures = this.signatureSettings.signatures || [];
     if (!signatures.length) return null;
@@ -412,6 +423,19 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     }
 
     return this.getDefaultSignature();
+  }
+
+  getLibrarySignature(): BlogSignature | null {
+    const signatures = this.signatureSettings.signatures || [];
+    if (!signatures.length) return null;
+
+    const selected = signatures.find((sig) => sig.id === this.librarySignatureId);
+    return selected || this.getDefaultSignature() || signatures[0];
+  }
+
+  useLibrarySignatureForPost(signatureId: string): void {
+    if (!signatureId) return;
+    this.blogForm.patchValue({ signatureId });
   }
 
   addSignaturePreset(): void {
@@ -444,6 +468,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       defaultSignatureId: this.signatureSettings.defaultSignatureId || signature.id
     };
 
+    this.librarySignatureId = signature.id;
     this.persistSignatureSettings(nextSettings, 'Signature added.');
     this.blogForm.patchValue({
       signatureId: signature.id
@@ -467,6 +492,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     const nextDefault = this.signatureSettings.defaultSignatureId === signatureId
       ? signatures[0].id
       : this.signatureSettings.defaultSignatureId;
+
+    if (this.librarySignatureId === signatureId) {
+      this.librarySignatureId = nextDefault || signatures[0]?.id || '';
+    }
 
     const selectedId = String(this.blogForm.get('signatureId')?.value || '').trim();
     if (selectedId === signatureId) {
@@ -888,11 +917,13 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         const nextSelection = existingSelection || initialSelection || defaultSelection;
 
         this.blogForm.patchValue({ signatureId: nextSelection || '' }, { emitEvent: false });
+        this.ensureLibrarySignatureSelection(nextSelection || defaultSelection);
       },
       error: () => {
         this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
         const fallbackSelection = this.signatureSettings.defaultSignatureId || this.signatureSettings.signatures?.[0]?.id || '';
         this.blogForm.patchValue({ signatureId: fallbackSelection }, { emitEvent: false });
+        this.ensureLibrarySignatureSelection(fallbackSelection);
       }
     });
   }
@@ -902,6 +933,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     this.blogApi.saveSignatureSettings(settings).subscribe({
       next: (saved) => {
         this.signatureSettings = saved;
+        this.ensureLibrarySignatureSelection(this.librarySignatureId);
         this.savingSignatureSettings = false;
         this.messageService.add({
           severity: 'success',
@@ -918,6 +950,22 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  private ensureLibrarySignatureSelection(preferredId: string = ''): void {
+    const signatures = this.signatureSettings.signatures || [];
+    if (!signatures.length) {
+      this.librarySignatureId = '';
+      return;
+    }
+
+    const preferred = String(preferredId || '').trim();
+    const current = String(this.librarySignatureId || '').trim();
+    const defaultId = String(this.signatureSettings.defaultSignatureId || '').trim();
+    const next = [preferred, current, defaultId, signatures[0].id]
+      .find((id) => signatures.some((sig) => sig.id === id));
+
+    this.librarySignatureId = next || '';
   }
 
   openPreview(mode: 'card' | 'full' = 'card'): void {
