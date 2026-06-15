@@ -114,6 +114,7 @@ async function handleMcp(req, res) {
     server = buildMcpServer(req.mcpClient);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
+      enableJsonResponse: true,
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
