@@ -177,3 +177,86 @@ test('blog post lookup falls back to deterministic IDs when the list index is st
     }
   }
 });
+
+test('blog post update returns written records instead of a stale list-index read', async () => {
+  const contentDdbPath = require.resolve('../src/services/content-ddb');
+  const blogPostsPath = require.resolve('../src/services/blog-posts');
+  const originalContentDdb = require.cache[contentDdbPath];
+
+  const listItemID = 'mcp-codex-smoke-stale-update';
+  const existingRecords = [
+    {
+      ID: 'blog-item-mcp-codex-smoke-stale-update',
+      PageID: 3,
+      PageContentID: 3,
+      ListItemID: listItemID,
+      Text: 'Stale Update Draft',
+      Metadata: {
+        title: 'Stale Update Draft',
+        summary: 'Original summary',
+        status: 'draft',
+        version: 1,
+      },
+      CreatedAt: '2026-06-15T00:00:00.000Z',
+      UpdatedAt: '2026-06-15T00:00:00.000Z',
+    },
+    {
+      ID: 'blog-text-mcp-codex-smoke-stale-update',
+      PageID: 3,
+      PageContentID: 4,
+      ListItemID: listItemID,
+      Text: '<p>Original body.</p>',
+      Metadata: { version: 1 },
+      CreatedAt: '2026-06-15T00:00:00.000Z',
+      UpdatedAt: '2026-06-15T00:00:00.000Z',
+    },
+    {
+      ID: 'blog-body-mcp-codex-smoke-stale-update',
+      PageID: 3,
+      PageContentID: 13,
+      ListItemID: listItemID,
+      Text: '<p>Original body.</p>',
+      Metadata: { version: 1 },
+      CreatedAt: '2026-06-15T00:00:00.000Z',
+      UpdatedAt: '2026-06-15T00:00:00.000Z',
+    },
+  ];
+
+  require.cache[contentDdbPath] = {
+    id: contentDdbPath,
+    filename: contentDdbPath,
+    loaded: true,
+    exports: {
+      ddbBatchPutContent: async (items) => items,
+      ddbDeleteContentById: async () => {},
+      ddbDeleteContentByListItemId: async () => 0,
+      ddbGetContentById: async () => null,
+      ddbGetContentByListItemId: async () => existingRecords,
+      ddbPutContent: async (item) => item,
+      ddbScanAllContent: async () => [],
+      isContentDdbEnabled: () => true,
+    },
+  };
+  delete require.cache[blogPostsPath];
+
+  try {
+    const blogPosts = require('../src/services/blog-posts');
+    const post = await blogPosts.updatePost(listItemID, {
+      summary: 'Updated summary',
+      contentMarkdown: 'Updated body.',
+      expectedVersion: 1,
+    });
+
+    assert.equal(post.listItemID, listItemID);
+    assert.equal(post.summary, 'Updated summary');
+    assert.equal(post.version, 2);
+    assert.match(post.contentHtml, /Updated body/);
+  } finally {
+    delete require.cache[blogPostsPath];
+    if (originalContentDdb) {
+      require.cache[contentDdbPath] = originalContentDdb;
+    } else {
+      delete require.cache[contentDdbPath];
+    }
+  }
+});

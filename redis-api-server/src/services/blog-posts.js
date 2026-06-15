@@ -605,8 +605,8 @@ async function createPost(input, { actor = {}, source = 'authoring', draftOnly =
     if (existing && existing.length) throw httpError(409, 'A blog post with that listItemID already exists');
   }
   const built = buildRecordsFromInput(normalized, { actor, source });
-  await ddbBatchPutContent(built.records);
-  return getPost(built.listItemID);
+  const written = await ddbBatchPutContent(built.records);
+  return recordsToPost(written, { includeItems: true });
 }
 
 async function updatePost(listItemID, patch, { actor = {}, source = 'authoring', restrictMcpDraftOwner = false } = {}) {
@@ -629,11 +629,11 @@ async function updatePost(listItemID, patch, { actor = {}, source = 'authoring',
     },
     { existingItems, actor, source }
   );
-  await ddbBatchPutContent(built.records);
+  const written = await ddbBatchPutContent(built.records);
   for (const id of built.deleteIds) {
     await ddbDeleteContentByIdSafe(id);
   }
-  return getPost(safeId);
+  return recordsToPost(written, { includeItems: true });
 }
 
 async function ddbDeleteContentByIdSafe(id) {
