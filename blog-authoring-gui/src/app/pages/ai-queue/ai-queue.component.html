@@ -1,0 +1,194 @@
+<div class="ai-container">
+  <div class="ai-header">
+    <div class="header-title">
+      <span class="eyebrow">Blog Authoring</span>
+      <h1>AI Gateway</h1>
+      <p>MCP clients, machine tokens, and approval-required actions</p>
+    </div>
+    <div class="header-actions">
+      <p-button label="Dashboard" icon="pi pi-home" styleClass="p-button-outlined" (onClick)="goToDashboard()"></p-button>
+      <p-button label="Distribution" icon="pi pi-send" styleClass="p-button-outlined" (onClick)="goToDistribution()"></p-button>
+      <p-button label="Logout" icon="pi pi-sign-out" styleClass="p-button-outlined" (onClick)="logout()"></p-button>
+    </div>
+  </div>
+
+  <nav class="workspace-tabs" aria-label="AI workspace">
+    <button type="button" [class.active]="activeTab === 'queue'" (click)="setTab('queue')">
+      <i class="pi pi-list-check"></i>
+      <span>AI Queue</span>
+    </button>
+    <button type="button" [class.active]="activeTab === 'clients'" (click)="setTab('clients')">
+      <i class="pi pi-key"></i>
+      <span>AI Clients</span>
+    </button>
+  </nav>
+
+  <section class="queue-panel" *ngIf="activeTab === 'queue'">
+    <div class="section-heading">
+      <div>
+        <h2>Approval Queue</h2>
+        <span>Publish, schedule, delete, social-send, and moderation requests</span>
+      </div>
+      <div class="section-actions">
+        <select [(ngModel)]="approvalStatus" (change)="loadApprovals()">
+          <option *ngFor="let option of statusOptions" [ngValue]="option.value">{{ option.label }}</option>
+        </select>
+        <p-button
+          label="Refresh"
+          icon="pi pi-refresh"
+          styleClass="p-button-sm p-button-outlined"
+          [disabled]="isLoadingApprovals"
+          (onClick)="loadApprovals()">
+        </p-button>
+      </div>
+    </div>
+
+    <div *ngIf="isLoadingApprovals" class="empty-state">
+      <i class="pi pi-spin pi-spinner"></i>
+      <span>Loading queue...</span>
+    </div>
+
+    <div *ngIf="!isLoadingApprovals && approvals.length === 0" class="empty-state">
+      <i class="pi pi-check-circle"></i>
+      <span>No AI actions in this view.</span>
+    </div>
+
+    <div class="approval-list" *ngIf="!isLoadingApprovals && approvals.length > 0">
+      <article class="approval-row" *ngFor="let approval of approvals; trackBy: trackByApproval">
+        <div class="approval-main">
+          <div class="approval-title">
+            <strong>{{ approval.summary }}</strong>
+            <p-tag [value]="approval.status" [severity]="getStatusSeverity(approval.status)"></p-tag>
+          </div>
+          <div class="approval-meta">
+            <span><i class="pi pi-bolt"></i>{{ approval.action }}</span>
+            <span><i class="pi pi-user"></i>{{ approval.clientName || approval.clientId }}</span>
+            <span><i class="pi pi-clock"></i>{{ approval.createdAt | date:'short' }}</span>
+          </div>
+          <div class="target-list" *ngIf="approval.targetIds.length">
+            <span *ngFor="let target of approval.targetIds">{{ target }}</span>
+          </div>
+          <details *ngIf="approval.diff || approval.payload || approval.lastError">
+            <summary>Details</summary>
+            <pre *ngIf="approval.diff">{{ formatJson(approval.diff) }}</pre>
+            <pre *ngIf="!approval.diff && approval.payload">{{ formatJson(approval.payload) }}</pre>
+            <p *ngIf="approval.lastError" class="error-text">{{ approval.lastError }}</p>
+          </details>
+        </div>
+        <div class="approval-actions">
+          <p-button
+            *ngIf="approval.previewUrl"
+            icon="pi pi-external-link"
+            styleClass="p-button-rounded p-button-outlined"
+            pTooltip="Open preview"
+            (onClick)="openPreview(approval)">
+          </p-button>
+          <p-button
+            *ngIf="approval.status === 'pending'"
+            icon="pi pi-check"
+            styleClass="p-button-rounded"
+            pTooltip="Approve"
+            [disabled]="actionBusyId === approval.approvalId"
+            (onClick)="approve(approval)">
+          </p-button>
+          <p-button
+            *ngIf="approval.status === 'pending'"
+            icon="pi pi-times"
+            styleClass="p-button-rounded p-button-outlined p-button-danger"
+            pTooltip="Reject"
+            [disabled]="actionBusyId === approval.approvalId"
+            (onClick)="reject(approval)">
+          </p-button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="clients-panel" *ngIf="activeTab === 'clients'">
+    <div class="section-heading">
+      <div>
+        <h2>AI Clients</h2>
+        <span>Scoped, revocable machine tokens for authorized MCP clients</span>
+      </div>
+      <p-button
+        label="Refresh"
+        icon="pi pi-refresh"
+        styleClass="p-button-sm p-button-outlined"
+        [disabled]="isLoadingClients"
+        (onClick)="loadClients()">
+      </p-button>
+    </div>
+
+    <div class="client-create">
+      <div class="form-row">
+        <label>
+          <span>Name</span>
+          <input pInputText type="text" [(ngModel)]="newClientName" placeholder="Claude Desktop, local agent, etc.">
+        </label>
+        <label>
+          <span>Expiry</span>
+          <input pInputText type="datetime-local" [(ngModel)]="expiresAt">
+        </label>
+        <p-button
+          label="Create Token"
+          icon="pi pi-key"
+          [disabled]="isCreatingClient"
+          (onClick)="createClient()">
+        </p-button>
+      </div>
+
+      <div class="scope-grid">
+        <label class="scope-option" *ngFor="let scope of availableScopes; trackBy: trackByScope">
+          <input
+            type="checkbox"
+            [checked]="isScopeSelected(scope)"
+            (change)="toggleScope(scope, $any($event.target).checked)">
+          <span>{{ scopeDescriptions[scope] || scope }}</span>
+          <small>{{ scope }}</small>
+        </label>
+      </div>
+    </div>
+
+    <div class="token-reveal" *ngIf="generatedToken">
+      <div>
+        <strong>Token for {{ generatedClient?.name }}</strong>
+        <code>{{ generatedToken }}</code>
+      </div>
+      <div class="token-actions">
+        <p-button icon="pi pi-copy" styleClass="p-button-rounded p-button-outlined" pTooltip="Copy token" (onClick)="copyToken()"></p-button>
+        <p-button icon="pi pi-times" styleClass="p-button-rounded p-button-outlined" pTooltip="Hide token" (onClick)="clearGeneratedToken()"></p-button>
+      </div>
+    </div>
+
+    <div *ngIf="isLoadingClients" class="empty-state">
+      <i class="pi pi-spin pi-spinner"></i>
+      <span>Loading clients...</span>
+    </div>
+
+    <div class="client-list" *ngIf="!isLoadingClients">
+      <article class="client-row" *ngFor="let client of clients; trackBy: trackByClient">
+        <div class="client-main">
+          <div class="client-title">
+            <strong>{{ client.name }}</strong>
+            <p-tag [value]="client.status" [severity]="getStatusSeverity(client.status)"></p-tag>
+          </div>
+          <div class="client-meta">
+            <span><i class="pi pi-calendar"></i>Created {{ client.createdAt | date:'mediumDate' }}</span>
+            <span><i class="pi pi-clock"></i>Last used {{ client.lastUsedAt ? (client.lastUsedAt | date:'short') : 'never' }}</span>
+            <span><i class="pi pi-hourglass"></i>{{ client.expiresAt ? ('Expires ' + (client.expiresAt | date:'short')) : 'No expiry' }}</span>
+          </div>
+          <div class="scope-summary">
+            <span *ngFor="let scope of client.scopes">{{ scope }}</span>
+          </div>
+        </div>
+        <p-button
+          *ngIf="client.status === 'active'"
+          icon="pi pi-ban"
+          styleClass="p-button-rounded p-button-outlined p-button-danger"
+          pTooltip="Revoke"
+          (onClick)="revokeClient(client)">
+        </p-button>
+      </article>
+    </div>
+  </section>
+</div>

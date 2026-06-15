@@ -744,6 +744,78 @@ async function sendDeliveryById({ userSub, deliveryId, force = false }) {
   return sanitizeDelivery(await sendDeliveryRecord(delivery));
 }
 
+async function createDeliveryDraftForUser(user, input = {}) {
+  const userSub = userSubFrom(user);
+  const provider = String(input.provider || input.platformId || '').trim().toLowerCase();
+  const caption = String(input.caption || '').trim();
+  if (!provider) {
+    const err = new Error('provider is required');
+    err.status = 400;
+    throw err;
+  }
+  if (!caption) {
+    const err = new Error('caption is required');
+    err.status = 400;
+    throw err;
+  }
+
+  let credential = null;
+  let lastError = '';
+  try {
+    credential = await socialAuth.getPostingCredential(provider, { sub: userSub });
+  } catch (err) {
+    lastError = err?.message || 'Provider is not connected';
+  }
+
+  const listItemID = String(input.listItemID || 'manual-social-draft').trim();
+  const runAt = input.runAt ? new Date(input.runAt) : new Date();
+  if (Number.isNaN(runAt.getTime())) {
+    const err = new Error('runAt must be a valid date');
+    err.status = 400;
+    throw err;
+  }
+
+  const deliveryId = String(input.deliveryId || '').trim() || getDeliveryId({
+    listItemID,
+    trigger: 'mcp_draft',
+    ruleId: sha256Hex(caption).slice(0, 16),
+    provider,
+    accountId: credential?.accountId || credential?.accountLabel || 'unselected'
+  });
+  const timestamp = nowIso();
+  const delivery = {
+    ...deliveryKey(userSub, deliveryId),
+    type: 'social_delivery',
+    deliveryId,
+    userSub,
+    listItemID,
+    trigger: 'mcp_draft',
+    ruleId: String(input.ruleId || 'mcp-draft').trim(),
+    ruleName: String(input.ruleName || 'MCP delivery draft').trim(),
+    templateId: String(input.templateId || 'mcp-custom').trim(),
+    templateName: String(input.templateName || 'MCP custom draft').trim(),
+    provider,
+    accountId: credential?.accountId || '',
+    accountLabel: credential?.accountLabel || '',
+    destination: String(input.destination || 'Post').trim(),
+    caption,
+    mediaUrl: String(input.mediaUrl || '').trim(),
+    postUrl: String(input.postUrl || '').trim(),
+    title: String(input.title || 'MCP social draft').trim(),
+    runAt: runAt.toISOString(),
+    status: 'draft',
+    requiresReview: true,
+    quietMode: input.quietMode !== false,
+    lastError,
+    attemptCount: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  const saved = await putDeliveryIfAbsent(delivery);
+  return sanitizeDelivery(saved.delivery || delivery);
+}
+
 async function sendDeliveryForUser(user, deliveryId, { force = true } = {}) {
   return sendDeliveryById({
     userSub: userSubFrom(user),
@@ -826,6 +898,7 @@ module.exports = {
   saveSettings,
   listDeliveries,
   processBlogAutomation,
+  createDeliveryDraftForUser,
   sendDeliveryById,
   sendDeliveryForUser,
   deleteDeliveryForUser,

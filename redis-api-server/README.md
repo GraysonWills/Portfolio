@@ -256,6 +256,32 @@ scripts/set_social_provider_credentials.sh
 
 The raw OAuth token payloads produced by user login are never returned to the browser. They remain encrypted in DynamoDB and should be retrieved only by backend posting workers via the social auth service.
 
+### MCP Authoring Gateway
+
+| Variable | Purpose |
+|---|---|
+| `MCP_CONTROL_TABLE_NAME` | DynamoDB table for MCP clients, token indexes, audit records, rate counters, idempotency records, and approvals |
+| `MCP_TOKEN_HASH_SECRET` | optional HMAC secret for machine-token hashing; falls back to `SOCIAL_AUTH_TOKEN_SECRET` / `TOKEN_ENCRYPTION_SECRET` |
+
+Provision the low-cost on-demand control table/IAM/env with:
+
+```bash
+AWS_PROFILE=grayson-sso scripts/setup_mcp_authoring_stack.sh
+```
+
+Remote MCP is mounted at `/api/mcp` using Streamable HTTP and `Authorization: Bearer mcp_...`.
+Normal Cognito authoring auth manages clients and approvals:
+
+- `POST /api/mcp/clients`
+- `GET /api/mcp/clients`
+- `DELETE /api/mcp/clients/:clientId`
+- `GET /api/mcp/approvals`
+- `POST /api/mcp/approvals/:approvalId/approve`
+- `POST /api/mcp/approvals/:approvalId/reject`
+
+Canonical blog APIs are mounted at `/api/blog/posts`, `/api/blog/categories`, and `/api/blog/schedules`.
+MCP clients can create isolated drafts and previews directly; publish, schedule, delete, social send, and comment moderation actions go through the approval queue.
+
 ### Optional Redis Compatibility
 
 | Variable | Purpose |

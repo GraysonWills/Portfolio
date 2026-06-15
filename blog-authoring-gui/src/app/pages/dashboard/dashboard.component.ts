@@ -291,6 +291,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.router.navigate(['/distribution']);
   }
 
+  goToAiQueue(): void {
+    this.router.navigate(['/ai']);
+  }
+
   goToComments(): void {
     this.router.navigate(['/comments']);
   }

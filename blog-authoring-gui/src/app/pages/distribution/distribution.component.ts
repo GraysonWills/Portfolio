@@ -909,6 +909,10 @@ export class DistributionComponent implements OnInit {
     this.router.navigate(['/subscribers']);
   }
 
+  goToAiQueue(): void {
+    this.router.navigate(['/ai']);
+  }
+
   goToCollections(): void {
     this.router.navigate(['/collections']);
   }

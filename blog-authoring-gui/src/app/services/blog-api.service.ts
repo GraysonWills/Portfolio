@@ -170,6 +170,69 @@ export type SocialDistributionDeliveriesResponse = {
   deliveries: SocialDistributionDelivery[];
 };
 
+export type McpClient = {
+  clientId: string;
+  name: string;
+  scopes: string[];
+  status: 'active' | 'revoked' | string;
+  ownerSub: string;
+  createdBy: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  limits: {
+    read: number;
+    draftMutation: number;
+    approvalMutation: number;
+  };
+};
+
+export type McpClientsResponse = {
+  clients: McpClient[];
+  scopes: string[];
+};
+
+export type McpCreateClientRequest = {
+  name: string;
+  scopes: string[];
+  expiresAt?: string | null;
+  limits?: {
+    read?: number;
+    draftMutation?: number;
+    approvalMutation?: number;
+  };
+};
+
+export type McpCreateClientResponse = {
+  client: McpClient;
+  token: string;
+};
+
+export type McpApproval = {
+  approvalId: string;
+  status: 'pending' | 'approved' | 'executed' | 'rejected' | 'failed' | string;
+  action: string;
+  summary: string;
+  targetIds: string[];
+  previewUrl: string;
+  diff: unknown;
+  clientId: string;
+  clientName: string;
+  ownerSub: string;
+  payload: unknown;
+  result: unknown;
+  lastError: string;
+  createdAt: string | null;
+  decidedAt: string | null;
+  expiresAt: string | null;
+};
+
+export type McpApprovalsResponse = {
+  approvals: McpApproval[];
+};
+
 export type CollectionsEntryDraft = {
   id?: string;
   listItemID?: string;
@@ -1783,6 +1846,54 @@ export class BlogApiService {
   deleteSocialDistributionDelivery(deliveryId: string): Observable<{ ok: boolean; deliveryId: string }> {
     return this.http.delete<{ ok: boolean; deliveryId: string }>(
       `${this.apiUrl}/social-distribution/deliveries/${encodeURIComponent(deliveryId)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getMcpClients(): Observable<McpClientsResponse> {
+    return this.http.get<McpClientsResponse>(
+      `${this.apiUrl}/mcp/clients`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  createMcpClient(payload: McpCreateClientRequest): Observable<McpCreateClientResponse> {
+    return this.http.post<McpCreateClientResponse>(
+      `${this.apiUrl}/mcp/clients`,
+      payload,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  revokeMcpClient(clientId: string): Observable<{ ok: boolean; clientId: string; revokedAt: string }> {
+    return this.http.delete<{ ok: boolean; clientId: string; revokedAt: string }>(
+      `${this.apiUrl}/mcp/clients/${encodeURIComponent(clientId)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  getMcpApprovals(status: string = '', limit: number = 100): Observable<McpApprovalsResponse> {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    params.set('limit', String(limit));
+    return this.http.get<McpApprovalsResponse>(
+      `${this.apiUrl}/mcp/approvals?${params.toString()}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  approveMcpApproval(approvalId: string): Observable<{ approval: McpApproval; result: unknown }> {
+    return this.http.post<{ approval: McpApproval; result: unknown }>(
+      `${this.apiUrl}/mcp/approvals/${encodeURIComponent(approvalId)}/approve`,
+      {},
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  rejectMcpApproval(approvalId: string, reason: string = ''): Observable<{ approval: McpApproval }> {
+    return this.http.post<{ approval: McpApproval }>(
+      `${this.apiUrl}/mcp/approvals/${encodeURIComponent(approvalId)}/reject`,
+      { reason },
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }

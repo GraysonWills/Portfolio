@@ -25,6 +25,8 @@ const resumeRoutes = require('./routes/resume');
 const commentsRoutes = require('./routes/comments');
 const socialAuthRoutes = require('./routes/social-auth');
 const socialDistributionRoutes = require('./routes/social-distribution');
+const blogRoutes = require('./routes/blog');
+const mcpRoutes = require('./routes/mcp');
 
 function createApp() {
   const app = express();
@@ -132,7 +134,7 @@ function createApp() {
       return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Idempotency-Key', 'Mcp-Session-Id', 'MCP-Protocol-Version'],
     credentials: true
   }));
 
@@ -223,6 +225,8 @@ function createApp() {
   app.use('/api/comments', commentsRoutes);
   app.use('/api/social-auth', writeLimiter, socialAuthRoutes);
   app.use('/api/social-distribution', writeLimiter, socialDistributionRoutes);
+  app.use('/api/blog', writeLimiter, blogRoutes);
+  app.use('/api/mcp', writeLimiter, mcpRoutes);
   app.use('/media', mediaRoutes);
 
   app.get('/', (req, res) => {
@@ -242,6 +246,8 @@ function createApp() {
         comments: '/api/comments',
         socialAuth: '/api/social-auth/status (requires auth)',
         socialDistribution: '/api/social-distribution/settings (requires auth)',
+        blog: '/api/blog/posts (requires auth)',
+        mcp: '/api/mcp (machine-token MCP Streamable HTTP)',
         photoAssets: '/api/photo-assets (requires auth)',
         media: '/media/:key (public S3 proxy)'
       }
