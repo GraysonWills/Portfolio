@@ -26,6 +26,13 @@ const CATEGORY_REGISTRY_ID = 'blog-category-registry-record';
 const CATEGORY_REGISTRY_LIST_ITEM_ID = 'blog-category-registry';
 const MAX_CONTENT_CHARS = 250_000;
 const VALID_STATUSES = new Set(['draft', 'scheduled', 'published']);
+const BLOG_RECORD_CONTENT_IDS = [
+  BLOG_ITEM_CONTENT_ID,
+  BLOG_TEXT_CONTENT_ID,
+  BLOG_BODY_CONTENT_ID,
+  BLOG_IMAGE_CONTENT_ID,
+  BLOG_ROUGH_DRAFT_CONTENT_ID,
+];
 
 function httpError(status, message, details) {
   const err = new Error(message);
@@ -292,6 +299,29 @@ function getItemByContentId(items, contentId) {
   return (items || []).find((item) => Number(item?.PageContentID) === Number(contentId)) || null;
 }
 
+function deterministicRecordIdsForListItem(listItemID) {
+  return [
+    `blog-item-${listItemID}`,
+    `blog-text-${listItemID}`,
+    `blog-body-${listItemID}`,
+    `blog-image-${listItemID}`,
+    `blog-rough-${listItemID}`,
+  ];
+}
+
+async function getBlogRecordsByListItemId(listItemID) {
+  const items = await ddbGetContentByListItemId(listItemID);
+  if (items && items.length) return items;
+
+  const deterministic = await Promise.all(
+    deterministicRecordIdsForListItem(listItemID).map((id) => ddbGetContentById(id).catch(() => null))
+  );
+  return deterministic
+    .filter(Boolean)
+    .filter((item) => String(item?.ListItemID || '') === String(listItemID))
+    .filter((item) => BLOG_RECORD_CONTENT_IDS.includes(Number(item?.PageContentID)));
+}
+
 function maxUpdatedAt(items) {
   const dates = (items || [])
     .map((item) => item?.UpdatedAt || item?.CreatedAt)
@@ -501,7 +531,7 @@ async function listPosts(filters = {}) {
   for (const item of all || []) {
     if (Number(item?.PageID) !== BLOG_PAGE_ID) continue;
     const contentId = Number(item?.PageContentID);
-    if (![BLOG_ITEM_CONTENT_ID, BLOG_TEXT_CONTENT_ID, BLOG_BODY_CONTENT_ID, BLOG_IMAGE_CONTENT_ID, BLOG_ROUGH_DRAFT_CONTENT_ID].includes(contentId)) continue;
+    if (!BLOG_RECORD_CONTENT_IDS.includes(contentId)) continue;
     const key = String(item?.ListItemID || '').trim();
     if (!key) continue;
     if (!groups.has(key)) groups.set(key, []);
@@ -561,7 +591,7 @@ async function getPost(listItemID, { includeItems = true } = {}) {
   requireContentStore();
   const safeId = normalizeString(listItemID, 180);
   if (!safeId) throw httpError(400, 'listItemID is required');
-  const items = await ddbGetContentByListItemId(safeId);
+  const items = await getBlogRecordsByListItemId(safeId);
   const post = recordsToPost(items, { includeItems });
   if (!post) throw httpError(404, 'Blog post not found');
   return post;
@@ -571,7 +601,7 @@ async function createPost(input, { actor = {}, source = 'authoring', draftOnly =
   requireContentStore();
   const normalized = validateCreateInput(input, { draftOnly });
   if (normalized.listItemID) {
-    const existing = await ddbGetContentByListItemId(normalized.listItemID);
+    const existing = await getBlogRecordsByListItemId(normalized.listItemID);
     if (existing && existing.length) throw httpError(409, 'A blog post with that listItemID already exists');
   }
   const built = buildRecordsFromInput(normalized, { actor, source });
@@ -583,7 +613,7 @@ async function updatePost(listItemID, patch, { actor = {}, source = 'authoring',
   requireContentStore();
   const safeId = normalizeString(listItemID, 180);
   if (!safeId) throw httpError(400, 'listItemID is required');
-  const existingItems = await ddbGetContentByListItemId(safeId);
+  const existingItems = await getBlogRecordsByListItemId(safeId);
   const existingPost = recordsToPost(existingItems, { includeItems: true });
   if (!existingPost) throw httpError(404, 'Blog post not found');
   const normalized = validatePatchInput(patch);
@@ -616,9 +646,15 @@ async function deletePost(listItemID) {
   requireContentStore();
   const safeId = normalizeString(listItemID, 180);
   if (!safeId) throw httpError(400, 'listItemID is required');
-  const existing = await ddbGetContentByListItemId(safeId);
+  const existing = await getBlogRecordsByListItemId(safeId);
   if (!existing || !existing.length) throw httpError(404, 'Blog post not found');
-  const deleted = await ddbDeleteContentByListItemId(safeId);
+  let deleted = await ddbDeleteContentByListItemId(safeId);
+  if (!deleted) {
+    for (const item of existing) {
+      if (item?.ID) await ddbDeleteContentByIdSafe(item.ID);
+    }
+    deleted = existing.length;
+  }
   return { ok: true, listItemID: safeId, deleted };
 }
 
