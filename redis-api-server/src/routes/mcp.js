@@ -79,6 +79,10 @@ router.get('/health', requireAuth, (_req, res) => {
 async function handleMcp(req, res) {
   let server = null;
   try {
+    // API Gateway/CloudFront can normalize or omit Accept in ways that fail the
+    // SDK's strict Streamable HTTP negotiation. This route is already protected
+    // by MCP bearer auth, so make the supported response types explicit.
+    req.headers.accept = 'application/json, text/event-stream';
     server = buildMcpServer(req.mcpClient);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
