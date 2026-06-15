@@ -440,15 +440,16 @@ function registerTool(server, client, name, config, handler) {
     description: config.description,
     inputSchema: config.inputSchema || {},
   }, async (args) => {
-    mcpControl.requireScope(client, config.scope);
-    await mcpControl.consumeRateLimit(client, config.category || 'read');
+    const request = args || {};
     try {
-      const data = await handler(args || {});
+      mcpControl.requireScope(client, config.scope);
+      await mcpControl.consumeRateLimit(client, config.category || 'read');
+      const data = await handler(request);
       await mcpControl.auditToolCall({
         client,
         toolName: name,
-        targetIds: config.targetIds ? config.targetIds(args || {}, data) : [],
-        request: args || {},
+        targetIds: config.targetIds ? config.targetIds(request, data) : [],
+        request,
         status: 'ok',
         approvalId: data?.approvalId || data?.approval?.approvalId || '',
       });
@@ -458,7 +459,7 @@ function registerTool(server, client, name, config, handler) {
         client,
         toolName: name,
         targetIds: [],
-        request: args || {},
+        request,
         status: 'failed',
         error: err?.message || String(err),
       });
