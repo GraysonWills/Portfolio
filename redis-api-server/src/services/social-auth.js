@@ -20,9 +20,9 @@ const PROVIDERS = {
     family: 'x',
     clientIdEnv: ['SOCIAL_X_CLIENT_ID', 'X_CLIENT_ID', 'TWITTER_CLIENT_ID'],
     clientSecretEnv: ['SOCIAL_X_CLIENT_SECRET', 'X_CLIENT_SECRET', 'TWITTER_CLIENT_SECRET'],
-    authUrl: 'https://twitter.com/i/oauth2/authorize',
-    tokenUrl: 'https://api.twitter.com/2/oauth2/token',
-    scopes: ['tweet.read', 'tweet.write', 'users.read', 'media.write', 'offline.access'],
+    authUrl: 'https://x.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.x.com/2/oauth2/token',
+    scopes: ['tweet.read', 'tweet.write', 'users.read', 'dm.read', 'dm.write', 'offline.access'],
     pkce: true
   },
   linkedin: {
@@ -42,6 +42,7 @@ const PROVIDERS = {
     family: 'meta',
     clientIdEnv: ['SOCIAL_META_CLIENT_ID', 'META_CLIENT_ID', 'FACEBOOK_CLIENT_ID'],
     clientSecretEnv: ['SOCIAL_META_CLIENT_SECRET', 'META_CLIENT_SECRET', 'FACEBOOK_CLIENT_SECRET'],
+    configIdEnv: ['SOCIAL_FACEBOOK_CONFIG_ID', 'FACEBOOK_CONFIG_ID', 'SOCIAL_META_FACEBOOK_CONFIG_ID', 'SOCIAL_META_CONFIG_ID'],
     authUrl: 'https://www.facebook.com/v22.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
     scopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
@@ -50,13 +51,33 @@ const PROVIDERS = {
   instagram: {
     id: 'instagram',
     label: 'Instagram',
-    family: 'meta',
-    clientIdEnv: ['SOCIAL_META_CLIENT_ID', 'META_CLIENT_ID', 'FACEBOOK_CLIENT_ID'],
-    clientSecretEnv: ['SOCIAL_META_CLIENT_SECRET', 'META_CLIENT_SECRET', 'FACEBOOK_CLIENT_SECRET'],
-    authUrl: 'https://www.facebook.com/v22.0/dialog/oauth',
-    tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
-    scopes: ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish'],
-    pkce: false
+    family: 'instagram',
+    clientIdEnv: ['SOCIAL_INSTAGRAM_CLIENT_ID', 'SOCIAL_INSTAGRAM_APP_ID', 'INSTAGRAM_CLIENT_ID', 'INSTAGRAM_APP_ID'],
+    clientSecretEnv: ['SOCIAL_INSTAGRAM_CLIENT_SECRET', 'SOCIAL_INSTAGRAM_APP_SECRET', 'INSTAGRAM_CLIENT_SECRET', 'INSTAGRAM_APP_SECRET'],
+    authUrl: 'https://www.instagram.com/oauth/authorize',
+    tokenUrl: 'https://api.instagram.com/oauth/access_token',
+    scopes: [
+      'instagram_business_basic',
+      'instagram_business_manage_messages',
+      'instagram_business_manage_comments',
+      'instagram_business_content_publish',
+      'instagram_business_manage_insights'
+    ],
+    pkce: false,
+    scopeSeparator: ',',
+    forceReauth: true
+  },
+  threads: {
+    id: 'threads',
+    label: 'Threads',
+    family: 'threads',
+    clientIdEnv: ['SOCIAL_THREADS_CLIENT_ID', 'THREADS_CLIENT_ID', 'THREADS_APP_ID'],
+    clientSecretEnv: ['SOCIAL_THREADS_CLIENT_SECRET', 'THREADS_CLIENT_SECRET', 'THREADS_APP_SECRET'],
+    authUrl: 'https://threads.net/oauth/authorize',
+    tokenUrl: 'https://graph.threads.net/oauth/access_token',
+    scopes: ['threads_basic', 'threads_content_publish'],
+    pkce: false,
+    scopeSeparator: ','
   }
 };
 
@@ -102,6 +123,7 @@ function getProviderConfig(provider) {
     ...config,
     clientId: getEnvValue(config.clientIdEnv),
     clientSecret: getEnvValue(config.clientSecretEnv),
+    configId: getEnvValue(config.configIdEnv || []),
     redirectUri: getRedirectUri(id)
   };
 }
@@ -171,6 +193,15 @@ function codeChallenge(verifier) {
     .createHash('sha256')
     .update(verifier)
     .digest('base64url');
+}
+
+function serializeOAuthParams(config, params) {
+  const serialized = params.toString();
+  if (config.family !== 'x') return serialized;
+
+  return serialized.replace(/(^|&)scope=([^&]*)/, (match, prefix, scopeValue) => (
+    `${prefix}scope=${scopeValue.replace(/\+/g, '%20')}`
+  ));
 }
 
 function getTokenSecret() {
@@ -274,15 +305,32 @@ function providerPublicConfig(config) {
   };
 }
 
+function scopeSet(scopeValue = '') {
+  return new Set(String(scopeValue || '')
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean));
+}
+
+function getMissingScopes(config, item) {
+  if (!item) return [];
+  const grantedScopes = scopeSet(item.scope || item.credentialArtifacts?.scope || '');
+  return (config.scopes || []).filter((scope) => !grantedScopes.has(scope));
+}
+
 function toConnectionStatus(config, item) {
   const expiresAtMs = item?.expiresAtMs ? Number(item.expiresAtMs) : null;
   const expired = expiresAtMs ? Date.now() >= expiresAtMs : false;
   const selectedAccount = item?.selectedAccount || null;
-  const needsSelection = Boolean(item && config.family === 'meta' && !selectedAccount?.id);
+  const needsSelection = Boolean(item && ['facebook', 'instagram'].includes(config.id) && !selectedAccount?.id);
+  const missingScopes = getMissingScopes(config, item);
+  const needsReconnect = Boolean(item && !expired && !needsSelection && missingScopes.length);
   return {
     ...providerPublicConfig(config),
-    connected: Boolean(item && !expired && !needsSelection),
-    status: !item ? 'not-connected' : expired ? 'expired' : needsSelection ? 'needs-selection' : 'connected',
+    connected: Boolean(item && !expired && !needsSelection && !needsReconnect),
+    status: !item ? 'not-connected' : expired ? 'expired' : needsSelection ? 'needs-selection' : needsReconnect ? 'needs-reconnect' : 'connected',
+    needsReconnect,
+    missingScopes,
     connectedAt: item?.connectedAt || null,
     updatedAt: item?.updatedAt || null,
     expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
@@ -358,7 +406,12 @@ async function startOAuth(provider, user, { returnUrl = '' } = {}) {
     state
   });
 
-  params.set('scope', config.family === 'meta' ? config.scopes.join(',') : config.scopes.join(' '));
+  if (config.configId) {
+    params.set('config_id', config.configId);
+  } else {
+    params.set('scope', config.scopes.join(config.scopeSeparator || (config.family === 'meta' ? ',' : ' ')));
+  }
+  if (config.forceReauth) params.set('force_reauth', 'true');
 
   if (config.pkce) {
     params.set('code_challenge', codeChallenge(verifier));
@@ -368,7 +421,7 @@ async function startOAuth(provider, user, { returnUrl = '' } = {}) {
   return {
     provider: config.id,
     label: config.label,
-    authUrl: `${config.authUrl}?${params.toString()}`,
+    authUrl: `${config.authUrl}?${serializeOAuthParams(config, params)}`,
     expiresInSeconds: STATE_TTL_SECONDS
   };
 }
@@ -399,13 +452,31 @@ async function completeOAuth(provider, { code, state }) {
   if (config.family === 'meta' && tokenPayload?.access_token && process.env.SOCIAL_META_SKIP_LONG_LIVED_EXCHANGE !== 'true') {
     tokenPayload = await exchangeMetaLongLivedToken(config, tokenPayload.access_token).catch(() => tokenPayload);
   }
+  if (config.family === 'threads' && tokenPayload?.access_token && process.env.SOCIAL_THREADS_SKIP_LONG_LIVED_EXCHANGE !== 'true') {
+    tokenPayload = await exchangeThreadsLongLivedToken(config, tokenPayload.access_token).catch(() => tokenPayload);
+  }
+  if (config.family === 'instagram' && tokenPayload?.access_token && process.env.SOCIAL_INSTAGRAM_SKIP_LONG_LIVED_EXCHANGE !== 'true') {
+    const shortPayload = tokenPayload;
+    tokenPayload = await exchangeInstagramLongLivedToken(config, tokenPayload.access_token)
+      .then((longPayload) => ({
+        ...shortPayload,
+        ...longPayload,
+        user_id: longPayload.user_id || shortPayload.user_id,
+        scope: longPayload.scope || shortPayload.scope || config.scopes.join(' ')
+      }))
+      .catch(() => tokenPayload);
+  }
 
   const expiresInSeconds = Number(tokenPayload?.expires_in || 0);
   const expiresAtMs = expiresInSeconds > 0 ? Date.now() + (expiresInSeconds * 1000) : null;
   const scope = String(tokenPayload?.scope || config.scopes.join(' '));
-  const account = await fetchProviderProfile(config, tokenPayload?.access_token).catch(() => null);
+  const account = await fetchProviderProfile(config, tokenPayload?.access_token).catch(() => null)
+    || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
   const accountLabel = account?.label || await fetchAccountLabel(config, tokenPayload?.access_token).catch(() => '');
-  const shouldAutoSelect = config.family === 'x' || config.family === 'linkedin';
+  const shouldAutoSelect = config.family === 'x'
+    || config.family === 'linkedin'
+    || config.family === 'instagram'
+    || config.family === 'threads';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -460,7 +531,8 @@ async function getPostingCredential(provider, user) {
 
   const selectedAccount = item.selectedAccount || null;
   const encryptedToken = item.selectedToken || item.token;
-  if (config.family === 'meta' && !selectedAccount?.id) {
+  const providerFamily = item.providerFamily || config.family;
+  if (['facebook', 'instagram'].includes(config.id) && !selectedAccount?.id) {
     const err = new Error(`${config.label} needs a selected account before posting`);
     err.status = 409;
     throw err;
@@ -468,7 +540,7 @@ async function getPostingCredential(provider, user) {
 
   return {
     provider: config.id,
-    family: config.family,
+    family: providerFamily,
     accountId: selectedAccount?.id || '',
     accountLabel: selectedAccount?.label || item.accountLabel || '',
     account: selectedAccount,
@@ -488,6 +560,20 @@ async function exchangeCodeForToken(config, code, verifier) {
     return fetchJson(url.toString(), { method: 'GET' });
   }
 
+  if (config.family === 'threads') {
+    return fetchJson(config.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        grant_type: 'authorization_code',
+        redirect_uri: config.redirectUri,
+        code
+      }).toString()
+    });
+  }
+
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -495,7 +581,7 @@ async function exchangeCodeForToken(config, code, verifier) {
     client_id: config.clientId
   });
   if (verifier) params.set('code_verifier', verifier);
-  if (config.family === 'linkedin') params.set('client_secret', config.clientSecret);
+  if (config.family === 'linkedin' || config.family === 'instagram') params.set('client_secret', config.clientSecret);
 
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.family === 'x' && config.clientSecret) {
@@ -519,12 +605,30 @@ async function exchangeMetaLongLivedToken(config, shortToken) {
   return fetchJson(url.toString(), { method: 'GET' });
 }
 
+async function exchangeThreadsLongLivedToken(config, shortToken) {
+  const url = new URL('https://graph.threads.net/access_token');
+  url.searchParams.set('grant_type', 'th_exchange_token');
+  url.searchParams.set('client_secret', config.clientSecret);
+  url.searchParams.set('access_token', shortToken);
+  return fetchJson(url.toString(), { method: 'GET' });
+}
+
+async function exchangeInstagramLongLivedToken(config, shortToken) {
+  const url = new URL('https://graph.instagram.com/access_token');
+  url.searchParams.set('grant_type', 'ig_exchange_token');
+  url.searchParams.set('client_secret', config.clientSecret);
+  url.searchParams.set('access_token', shortToken);
+  return fetchJson(url.toString(), { method: 'GET' });
+}
+
 async function fetchAccountLabel(config, accessToken) {
   if (!accessToken) return '';
   let url = '';
   if (config.family === 'x') url = 'https://api.twitter.com/2/users/me?user.fields=username';
   if (config.family === 'linkedin') url = 'https://api.linkedin.com/v2/userinfo';
   if (config.family === 'meta') url = 'https://graph.facebook.com/v22.0/me?fields=id,name';
+  if (config.family === 'instagram') url = 'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name';
+  if (config.family === 'threads') url = 'https://graph.threads.net/v1.0/me?fields=id,username,name';
   if (!url) return '';
 
   const payload = await fetchJson(url, {
@@ -534,7 +638,39 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'x') return payload?.data?.username ? `@${payload.data.username}` : '';
   if (config.family === 'linkedin') return payload?.name || payload?.email || '';
   if (config.family === 'meta') return payload?.name || '';
+  if (config.family === 'instagram') return payload?.username ? `@${payload.username}` : payload?.name || '';
+  if (config.family === 'threads') return payload?.username ? `@${payload.username}` : payload?.name || '';
   return '';
+}
+
+function instagramProfileFromTokenPayload(tokenPayload = {}) {
+  const id = String(tokenPayload.user_id || tokenPayload.id || '').trim();
+  if (!id) return null;
+  const username = String(tokenPayload.username || '').trim();
+  const handle = username ? `@${username.replace(/^@/, '')}` : '';
+  return {
+    id,
+    label: handle || 'Instagram account',
+    handle,
+    platform: 'instagram',
+    picture: ''
+  };
+}
+
+function instagramProfileFromApiPayload(payload = {}, config = PROVIDERS.instagram) {
+  const id = String(payload?.user_id || payload?.id || '').trim();
+  if (!id) return null;
+  const username = payload?.username ? `@${String(payload.username).replace(/^@/, '')}` : '';
+  return {
+    id,
+    label: username || String(payload?.name || 'Instagram account'),
+    handle: username,
+    platform: config.id,
+    picture: payload?.profile_picture_url || '',
+    extra: {
+      accountType: payload?.account_type || ''
+    }
+  };
 }
 
 async function fetchProviderProfile(config, accessToken) {
@@ -578,6 +714,27 @@ async function fetchProviderProfile(config, accessToken) {
       handle: '',
       platform: config.id,
       picture: ''
+    };
+  }
+
+  if (config.family === 'instagram') {
+    const payload = await fetchJson('https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name,profile_picture_url', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    return instagramProfileFromApiPayload(payload, config);
+  }
+
+  if (config.family === 'threads') {
+    const payload = await fetchJson('https://graph.threads.net/v1.0/me?fields=id,username,name,threads_profile_picture_url', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const username = payload?.username ? `@${payload.username}` : '';
+    return {
+      id: String(payload?.id || ''),
+      label: username || String(payload?.name || 'Threads account'),
+      handle: username,
+      platform: config.id,
+      picture: payload?.threads_profile_picture_url || ''
     };
   }
 
@@ -654,6 +811,82 @@ async function fetchInstagramAccounts(accessToken) {
   return accounts;
 }
 
+async function validateInstagramAccessToken(accessToken, config = PROVIDERS.instagram) {
+  const payload = await fetchJson('https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name,account_type,profile_picture_url', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const account = instagramProfileFromApiPayload(payload, config);
+  if (!account?.id) {
+    const err = new Error('Instagram access token did not return a profile');
+    err.status = 400;
+    throw err;
+  }
+  return { payload, account };
+}
+
+async function refreshImportedInstagramToken(accessToken) {
+  const url = new URL('https://graph.instagram.com/refresh_access_token');
+  url.searchParams.set('grant_type', 'ig_refresh_token');
+  url.searchParams.set('access_token', accessToken);
+  return fetchJson(url.toString(), { method: 'GET' });
+}
+
+async function importProviderToken(provider, user, { accessToken } = {}) {
+  const config = getProviderConfig(provider);
+  if (config.id !== 'instagram') {
+    const err = new Error('Token import is only supported for Instagram');
+    err.status = 400;
+    throw err;
+  }
+
+  const safeAccessToken = String(accessToken || '').trim();
+  if (!safeAccessToken || safeAccessToken.length < 20) {
+    const err = new Error('Instagram access token is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const { account } = await validateInstagramAccessToken(safeAccessToken, config);
+  const refreshed = await refreshImportedInstagramToken(safeAccessToken).catch(() => null);
+  const tokenPayload = {
+    access_token: refreshed?.access_token || safeAccessToken,
+    token_type: String(refreshed?.token_type || 'Bearer'),
+    scope: config.scopes.join(' '),
+    imported: true,
+    ...(refreshed?.expires_in ? { expires_in: refreshed.expires_in } : {})
+  };
+  const expiresInSeconds = Number(tokenPayload.expires_in || 0);
+  const expiresAtMs = expiresInSeconds > 0 ? Date.now() + (expiresInSeconds * 1000) : null;
+  const userSub = userKey(user);
+
+  await getDdbDoc().send(new PutCommand({
+    TableName: getTableName(),
+    Item: {
+      ...connectionKey(userSub, config.id),
+      provider: config.id,
+      providerFamily: config.family,
+      connectionMethod: 'token-import',
+      username: usernameForUser(user),
+      accountLabel: account.label,
+      token: encryptJson(tokenPayload),
+      selectedAccount: account,
+      credentialArtifacts: summarizeTokenPayload(tokenPayload, config),
+      scope: tokenPayload.scope,
+      connectedAt: nowIso(),
+      updatedAt: nowIso(),
+      expiresAtMs: expiresAtMs || undefined
+    }
+  }));
+
+  return {
+    provider: config.id,
+    selectedAccount: account,
+    accountLabel: account.label,
+    expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
+    refreshed: Boolean(refreshed?.access_token)
+  };
+}
+
 async function getConnectedProviderItem(config, user) {
   const res = await getDdbDoc().send(new GetCommand({
     TableName: getTableName(),
@@ -690,8 +923,10 @@ async function listProviderAccounts(provider, user) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin') {
-    const profile = item.selectedAccount || await fetchProviderProfile(config, accessToken);
+  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads') {
+    const profile = item.selectedAccount
+      || await fetchProviderProfile(config, accessToken).catch(() => null)
+      || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
     accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
   } else if (config.id === 'facebook') {
     accounts = await fetchMetaPages(accessToken);
@@ -725,8 +960,10 @@ async function selectProviderAccount(provider, user, { accountId } = {}) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin') {
-    const profile = item.selectedAccount || await fetchProviderProfile(config, accessToken);
+  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads') {
+    const profile = item.selectedAccount
+      || await fetchProviderProfile(config, accessToken).catch(() => null)
+      || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
     accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
   } else if (config.id === 'facebook') {
     accounts = await fetchMetaPages(accessToken);
@@ -829,6 +1066,7 @@ module.exports = {
   getProviderStatus,
   startOAuth,
   completeOAuth,
+  importProviderToken,
   disconnectProvider,
   listProviderAccounts,
   selectProviderAccount,

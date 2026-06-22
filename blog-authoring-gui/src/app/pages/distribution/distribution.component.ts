@@ -65,7 +65,7 @@ type QueueItem = {
   standalone: false
 })
 export class DistributionComponent implements OnInit {
-  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram']);
+  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram', 'threads']);
   private oauthReturnNoticeActive = false;
 
   activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
@@ -82,6 +82,9 @@ export class DistributionComponent implements OnInit {
   socialAuthLoading = false;
   socialAuthError = '';
   socialAccountsLoading = false;
+  tokenImportProviderId = '';
+  tokenImportValue = '';
+  tokenImportLoading = false;
   deliveryLoading = false;
   deliveryError = '';
   automationNotice = 'Automation rules are ready for the next publish event.';
@@ -91,6 +94,7 @@ export class DistributionComponent implements OnInit {
   automationPreviewTrigger: SocialAutomationTrigger = 'blog_published';
   accountsByProvider: Record<string, SocialAuthAccount[]> = {};
   selectedAccountIds: Record<string, string> = {};
+  accountLoadAttemptedByProvider: Record<string, boolean> = {};
   deliveryItems: SocialDistributionDelivery[] = [];
 
   readonly workspaceTabs: { id: DistributionWorkspaceTab; label: string; icon: string }[] = [
@@ -171,8 +175,8 @@ export class DistributionComponent implements OnInit {
       mark: 'IG',
       accentClass: 'instagram',
       connectionState: 'attention',
-      connectionLabel: 'Media check',
-      connectionDetail: 'Connected, but feed/story posts need approved media.',
+      connectionLabel: 'Creator auth',
+      connectionDetail: 'Connect your Instagram creator account directly for API publishing.',
       lastChecked: '5 min ago',
       expiresIn: '31 days',
       destinationOptions: [
@@ -205,20 +209,20 @@ export class DistributionComponent implements OnInit {
     {
       id: 'threads',
       name: 'Threads',
-      handle: '@graysonwills',
+      handle: 'No account selected',
       mark: 'TH',
       accentClass: 'threads',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Text publishing is available.',
-      lastChecked: '2 min ago',
-      expiresIn: '31 days',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect a Threads account after the app credentials are configured.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
         { label: 'Post', value: 'post' },
-        { label: 'Reply chain starter', value: 'reply-chain-starter' }
+        { label: 'Image post', value: 'image-post', requiresMedia: true }
       ],
       destination: 'post',
-      selected: true
+      selected: false
     },
     {
       id: 'bluesky',
@@ -689,12 +693,60 @@ export class DistributionComponent implements OnInit {
     });
   }
 
+  canImportAccessToken(platform: DistributionPlatform): boolean {
+    return platform.id === 'instagram';
+  }
+
+  openTokenImport(platform: DistributionPlatform): void {
+    this.tokenImportProviderId = platform.id;
+    this.tokenImportValue = '';
+    this.socialAuthError = '';
+  }
+
+  cancelTokenImport(): void {
+    this.tokenImportProviderId = '';
+    this.tokenImportValue = '';
+    this.tokenImportLoading = false;
+  }
+
+  importPlatformToken(platform: DistributionPlatform): void {
+    const accessToken = this.tokenImportValue.trim();
+    if (!accessToken) {
+      this.socialAuthError = `Paste a ${platform.name} access token first.`;
+      return;
+    }
+
+    this.tokenImportLoading = true;
+    this.socialAuthError = '';
+    this.blogApi.importSocialAuthToken(platform.id, accessToken).subscribe({
+      next: (response) => {
+        this.tokenImportLoading = false;
+        this.tokenImportProviderId = '';
+        this.tokenImportValue = '';
+        const account = response.selectedAccount;
+        platform.handle = account?.handle || account?.label || platform.handle;
+        platform.connectionState = 'connected';
+        platform.connectionLabel = 'Connected';
+        platform.connectionDetail = `${account?.label || platform.name} is selected from imported token.`;
+        platform.lastChecked = 'Just now';
+        platform.expiresIn = response.expiresAt ? this.formatExpiresAt(response.expiresAt) : 'Token imported';
+        this.draftNotice = `${platform.name} token imported and encrypted.`;
+        this.refreshConnections();
+      },
+      error: (err) => {
+        this.tokenImportLoading = false;
+        this.socialAuthError = this.extractErrorMessage(err);
+      }
+    });
+  }
+
   loadProviderAccounts(platform: DistributionPlatform): void {
     if (!this.platformCanUseOAuth(platform) || platform.connectionState === 'not-connected' || platform.connectionState === 'expired') return;
     this.socialAccountsLoading = true;
     this.blogApi.getSocialAuthAccounts(platform.id).subscribe({
       next: (response) => {
         this.socialAccountsLoading = false;
+        this.accountLoadAttemptedByProvider[platform.id] = true;
         this.accountsByProvider[platform.id] = response.accounts || [];
         if (response.selectedAccount?.id) {
           this.selectedAccountIds[platform.id] = response.selectedAccount.id;
@@ -704,6 +756,7 @@ export class DistributionComponent implements OnInit {
       },
       error: (err) => {
         this.socialAccountsLoading = false;
+        this.accountLoadAttemptedByProvider[platform.id] = true;
         this.socialAuthError = this.extractErrorMessage(err);
       }
     });
@@ -1131,6 +1184,14 @@ export class DistributionComponent implements OnInit {
       return;
     }
 
+    if (status.status === 'needs-reconnect' || status.needsReconnect) {
+      const missingScopes = status.missingScopes?.length ? ` Missing scopes: ${status.missingScopes.join(', ')}.` : '';
+      platform.connectionState = 'attention';
+      platform.connectionLabel = 'Reconnect needed';
+      platform.connectionDetail = `${platform.name} is connected, but needs a fresh login for newly enabled permissions.${missingScopes}`;
+      return;
+    }
+
     if (status.status === 'needs-selection') {
       platform.connectionState = 'attention';
       platform.connectionLabel = 'Choose account';
@@ -1169,7 +1230,11 @@ export class DistributionComponent implements OnInit {
   private formatConnectionExpiry(status: SocialAuthProviderStatus): string {
     if (!status.configured) return 'Missing app setup';
     if (!status.expiresAt) return status.connected ? 'No expiry reported' : 'No token';
-    const expiresAt = new Date(status.expiresAt);
+    return this.formatExpiresAt(status.expiresAt);
+  }
+
+  private formatExpiresAt(value: string): string {
+    const expiresAt = new Date(value);
     if (Number.isNaN(expiresAt.getTime())) return 'No expiry reported';
     const diffMs = expiresAt.getTime() - Date.now();
     if (diffMs <= 0) return 'Expired';

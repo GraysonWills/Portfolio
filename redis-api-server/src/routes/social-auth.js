@@ -40,6 +40,13 @@ router.post('/:provider/accounts/select', requireAuth, asyncRoute(async (req, re
   res.json(result);
 }));
 
+router.post('/:provider/token/import', requireAuth, asyncRoute(async (req, res) => {
+  const result = await socialAuth.importProviderToken(req.params.provider, req.user, {
+    accessToken: req.body?.accessToken
+  });
+  res.json(result);
+}));
+
 router.delete('/:provider', requireAuth, asyncRoute(async (req, res) => {
   const result = await socialAuth.disconnectProvider(req.params.provider, req.user);
   res.json(result);

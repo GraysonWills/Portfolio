@@ -174,7 +174,43 @@
             [disabled]="socialAuthLoading"
             (onClick)="disconnectPlatform(platform)">
           </p-button>
+          <p-button
+            *ngIf="canImportAccessToken(platform)"
+            label="Import Token"
+            icon="pi pi-key"
+            styleClass="p-button-sm p-button-outlined"
+            [disabled]="tokenImportLoading"
+            (onClick)="openTokenImport(platform)">
+          </p-button>
           <span *ngIf="platform.disabled || !platformCanUseOAuth(platform)" class="manual-note">Manual setup</span>
+        </div>
+
+        <div class="token-import" *ngIf="tokenImportProviderId === platform.id">
+          <label>
+            <span>Access token</span>
+            <input
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              [(ngModel)]="tokenImportValue"
+              placeholder="Paste Instagram access token">
+          </label>
+          <div class="token-import-actions">
+            <p-button
+              label="Save Token"
+              icon="pi pi-lock"
+              styleClass="p-button-sm"
+              [disabled]="tokenImportLoading || !tokenImportValue.trim()"
+              (onClick)="importPlatformToken(platform)">
+            </p-button>
+            <p-button
+              label="Cancel"
+              icon="pi pi-times"
+              styleClass="p-button-sm p-button-text"
+              [disabled]="tokenImportLoading"
+              (onClick)="cancelTokenImport()">
+            </p-button>
+          </div>
         </div>
 
         <div class="account-picker" *ngIf="accountsByProvider[platform.id]?.length">
@@ -194,6 +230,12 @@
             [disabled]="socialAccountsLoading || !selectedAccountIds[platform.id]"
             (onClick)="selectProviderAccount(platform)">
           </p-button>
+        </div>
+        <div
+          class="account-empty"
+          *ngIf="accountLoadAttemptedByProvider[platform.id] && !accountsByProvider[platform.id]?.length && platformCanUseOAuth(platform) && platform.connectionState !== 'not-connected' && platform.connectionState !== 'expired'">
+          <i class="pi pi-info-circle"></i>
+          <span>No posting identities were returned for this connection.</span>
         </div>
       </article>
     </div>

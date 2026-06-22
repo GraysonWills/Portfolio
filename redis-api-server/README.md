@@ -80,6 +80,7 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `POST /api/social-auth/:provider/start` (auth)
 - `GET /api/social-auth/:provider/accounts` (auth)
 - `POST /api/social-auth/:provider/accounts/select` (auth)
+- `POST /api/social-auth/:provider/token/import` (auth, Instagram access-token fallback)
 - `DELETE /api/social-auth/:provider` (auth)
 - `GET /api/social-auth/:provider/callback`
 - `GET /api/social-distribution/settings` (auth)
@@ -93,12 +94,20 @@ Initial provider IDs:
 - `linkedin`
 - `facebook`
 - `instagram`
+- `threads`
 
 The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/x/callback`
 - `https://api.grayson-wills.com/api/social-auth/linkedin/callback`
 - `https://api.grayson-wills.com/api/social-auth/facebook/callback`
 - `https://api.grayson-wills.com/api/social-auth/instagram/callback`
+- `https://api.grayson-wills.com/api/social-auth/threads/callback`
+
+X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
+
+Instagram uses Instagram API with Instagram Login. Register the Instagram callback URL in the Instagram product OAuth settings and grant at least `instagram_business_basic` and `instagram_business_content_publish` for creator/business publishing.
+
+When Instagram app credentials are not yet available, an authenticated author can import a generated Instagram access token through `POST /api/social-auth/instagram/token/import`. The backend validates the token against `graph.instagram.com`, refreshes it when the token supports `ig_refresh_token`, encrypts the stored credential, and auto-selects the returned creator/business account. This is a fallback for one-account operation; the preferred long-term path remains normal OAuth through the Connect button once app credentials are available.
 
 Operational flow:
 1. Provider app credentials are configured once on Lambda.
@@ -106,10 +115,15 @@ Operational flow:
 3. The backend creates a 10-minute state record, builds the provider OAuth URL, and returns it to the browser.
 4. The provider redirects back to `/api/social-auth/:provider/callback` with an authorization code.
 5. The backend exchanges that code for token artifacts, encrypts the raw token payload, stores it in DynamoDB, and redirects back to the authoring Distribution tab.
-6. X and LinkedIn personal posting identities are selected automatically when profile lookup succeeds.
-7. Facebook and Instagram require account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page or page-linked Instagram account.
-8. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, selected account label, and which credential artifacts were captured.
+6. X, LinkedIn, Instagram direct-login, and Threads personal posting identities are selected automatically when profile lookup succeeds.
+7. Facebook requires account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page. Instagram now uses direct Instagram Login for professional creator/business accounts instead of page-linked account discovery.
+8. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, selected account label, missing scopes, reconnect requirements, and which credential artifacts were captured.
 9. Blog publish/schedule events create social delivery records from saved templates/rules. Zero-delay deliveries send inline, delayed deliveries use the existing EventBridge Scheduler target, and review-required deliveries stay in `needs_review`.
+
+Scope drift handling:
+- Provider configs are treated as the desired scope set.
+- A stored connection whose token was minted before a newly requested scope is added returns `status: "needs-reconnect"`, `needsReconnect: true`, and `missingScopes`.
+- The old token is not returned to the browser; reconnecting through the provider OAuth flow is the only way to grant the additional scopes.
 
 Unpublish behavior:
 - cancels known active schedule for the post (if present)
@@ -233,7 +247,9 @@ Production resources:
 | `SOCIAL_AUTH_ALLOWED_RETURN_ORIGINS` | optional comma-separated return URL allowlist |
 | `SOCIAL_X_CLIENT_ID` / `SOCIAL_X_CLIENT_SECRET` | X/Twitter OAuth app credentials |
 | `SOCIAL_LINKEDIN_CLIENT_ID` / `SOCIAL_LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth app credentials |
-| `SOCIAL_META_CLIENT_ID` / `SOCIAL_META_CLIENT_SECRET` | Meta app credentials for Facebook + Instagram |
+| `SOCIAL_META_CLIENT_ID` / `SOCIAL_META_CLIENT_SECRET` | Meta app credentials for Facebook Page OAuth |
+| `SOCIAL_INSTAGRAM_CLIENT_ID` / `SOCIAL_INSTAGRAM_CLIENT_SECRET` | Instagram App credentials for direct Instagram Login |
+| `SOCIAL_THREADS_CLIENT_ID` / `SOCIAL_THREADS_CLIENT_SECRET` | Threads OAuth app credentials |
 
 Provision the baseline DynamoDB table/IAM/env with:
 
@@ -250,6 +266,10 @@ SOCIAL_LINKEDIN_CLIENT_ID=... \
 SOCIAL_LINKEDIN_CLIENT_SECRET=... \
 SOCIAL_META_CLIENT_ID=... \
 SOCIAL_META_CLIENT_SECRET=... \
+SOCIAL_INSTAGRAM_CLIENT_ID=... \
+SOCIAL_INSTAGRAM_CLIENT_SECRET=... \
+SOCIAL_THREADS_CLIENT_ID=... \
+SOCIAL_THREADS_CLIENT_SECRET=... \
 AWS_PROFILE=grayson-sso \
 scripts/set_social_provider_credentials.sh
 ```
@@ -269,7 +289,14 @@ Provision the low-cost on-demand control table/IAM/env with:
 AWS_PROFILE=grayson-sso scripts/setup_mcp_authoring_stack.sh
 ```
 
-Remote MCP is mounted at `/api/mcp` using Streamable HTTP and `Authorization: Bearer mcp_...`.
+Remote MCP is mounted at `/api/mcp` using Streamable HTTP and `Authorization: Bearer mcp_...`. Tokens are per-machine credentials created in the authoring GUI and should be stored in Keychain:
+
+```bash
+read -rsp "MCP token: " MCP_TOKEN; echo
+security add-generic-password -a "$(hostname)" -s portfolio-mcp-authoring -w "$MCP_TOKEN" -U
+unset MCP_TOKEN
+```
+
 Normal Cognito authoring auth manages clients and approvals:
 
 - `POST /api/mcp/clients`
@@ -280,7 +307,39 @@ Normal Cognito authoring auth manages clients and approvals:
 - `POST /api/mcp/approvals/:approvalId/reject`
 
 Canonical blog APIs are mounted at `/api/blog/posts`, `/api/blog/categories`, and `/api/blog/schedules`.
-MCP clients can create isolated drafts and previews directly; publish, schedule, delete, social send, and comment moderation actions go through the approval queue.
+MCP clients can create, update, and delete isolated drafts they own, plus create preview sessions directly. Approval-backed actions either enter the human approval queue or auto-execute immediately when the calling client's `autoExecuteActions` allowlist includes that action.
+
+Current MCP tool groups:
+- Read: `site.get_inventory`, `content.list`, `content.get`, `blog.list_posts`, `blog.get_post`, `media.list_assets`, `comments.list_recent`, `comments.get_thread`, `social.get_status`, `social.list_deliveries`.
+- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `social.create_delivery_draft`.
+- Approval-backed: `blog.propose_update`, `blog.request_publish`, `blog.request_schedule`, `blog.request_unpublish`, `blog.request_delete`, `content.propose_update`, `media.request_delete`, `comments.propose_reply`, `comments.request_delete`, `social.propose_settings_update`, `social.request_send_delivery`.
+
+Mutation and approval tools accept optional `idempotencyKey`; replayed requests return the stored result instead of running the mutation again. `blog.delete_mcp_draft` rejects non-owned drafts and supports `expectedVersion` or `expectedUpdatedAt` concurrency checks. `content.propose_update` accepts an optional `route` so reviewers can open a generated preview URL.
+
+Auto-execute policy:
+- Stored per MCP client as `autoExecuteActions`.
+- Recommended actions: `blog.propose_update`, `blog.request_publish`, `blog.request_schedule`, `blog.request_unpublish`, `content.propose_update`, `comments.propose_reply`, `social.propose_settings_update`.
+- Risky actions are opt-in/manual by default: `blog.request_delete`, `media.request_delete`, `comments.request_delete`, `social.request_send_delivery`.
+- Auto-executed actions still create approval records, immediately mark them `executed` or `failed`, and write MCP audit records.
+
+Smoke tests:
+
+```bash
+# Local contract/read smoke.
+node ../scripts/mcp_smoke.mjs --mode local-contract --read-only
+
+# Live read-only smoke.
+MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node ../scripts/mcp_smoke.mjs --mode prod-smoke --read-only
+
+# Live disposable draft create/update/delete smoke.
+MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node ../scripts/mcp_smoke.mjs --mode prod-smoke
+```
+
+Troubleshooting:
+- `401` means the token is missing, invalid, expired, or revoked.
+- `403` means the client lacks the required tool scope.
+- `409` means a concurrency precondition or idempotency payload mismatch failed.
+- The smoke script never prints raw token material and cleans up `mcp-smoke-*` draft records on success or failure.
 
 ### Optional Redis Compatibility
 

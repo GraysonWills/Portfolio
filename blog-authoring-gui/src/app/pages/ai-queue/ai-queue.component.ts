@@ -23,11 +23,16 @@ export class AiQueueComponent implements OnInit {
   clients: McpClient[] = [];
   approvals: McpApproval[] = [];
   availableScopes: string[] = [];
+  availableAutoExecuteActions: string[] = [];
+  recommendedAutoExecuteActions: string[] = [];
+  riskyAutoExecuteActions: string[] = [];
   selectedScopes = new Set<string>();
+  selectedAutoExecuteActions = new Set<string>();
   generatedToken = '';
   generatedClient: McpClient | null = null;
   newClientName = '';
   expiresAt = '';
+  keychainService = 'portfolio-mcp-authoring';
   approvalStatus = 'pending';
   isLoadingClients = false;
   isLoadingApprovals = false;
@@ -48,6 +53,20 @@ export class AiQueueComponent implements OnInit {
     'social:read': 'Social reads',
     'social:write:draft': 'Social drafts',
     'social:propose': 'Social approvals'
+  };
+
+  readonly autoActionDescriptions: Record<string, string> = {
+    'blog.propose_update': 'Blog updates',
+    'blog.request_publish': 'Publish now',
+    'blog.request_schedule': 'Schedule publish',
+    'blog.request_unpublish': 'Unpublish',
+    'blog.request_delete': 'Delete blog posts',
+    'content.propose_update': 'Content updates',
+    'media.request_delete': 'Delete media',
+    'comments.propose_reply': 'Comment replies',
+    'comments.request_delete': 'Delete comments',
+    'social.propose_settings_update': 'Social settings',
+    'social.request_send_delivery': 'Send social posts'
   };
 
   readonly statusOptions = [
@@ -86,12 +105,18 @@ export class AiQueueComponent implements OnInit {
         this.isLoadingClients = false;
         this.clients = response.clients || [];
         this.availableScopes = response.scopes || [];
+        this.availableAutoExecuteActions = response.autoExecuteActions || [];
+        this.recommendedAutoExecuteActions = response.recommendedAutoExecuteActions || [];
+        this.riskyAutoExecuteActions = response.riskyAutoExecuteActions || [];
         if (!this.selectedScopes.size) {
           for (const scope of this.availableScopes) {
             if (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose')) {
               this.selectedScopes.add(scope);
             }
           }
+        }
+        if (!this.selectedAutoExecuteActions.size) {
+          this.applyAutoExecutePreset('recommended');
         }
       },
       error: (error) => {
@@ -132,6 +157,70 @@ export class AiQueueComponent implements OnInit {
     return this.selectedScopes.has(scope);
   }
 
+  toggleAutoExecuteAction(action: string, checked: boolean): void {
+    if (checked) this.selectedAutoExecuteActions.add(action);
+    else this.selectedAutoExecuteActions.delete(action);
+  }
+
+  isAutoExecuteSelected(action: string): boolean {
+    return this.selectedAutoExecuteActions.has(action);
+  }
+
+  isRiskyAutoAction(action: string): boolean {
+    return (this.riskyAutoExecuteActions || []).includes(action);
+  }
+
+  applyAutoExecutePreset(preset: 'recommended' | 'none' | 'full'): void {
+    this.selectedAutoExecuteActions.clear();
+    if (preset === 'none') return;
+
+    const available = new Set(this.availableAutoExecuteActions || []);
+    const source = preset === 'full'
+      ? this.availableAutoExecuteActions
+      : this.recommendedAutoExecuteActions;
+    for (const action of source || []) {
+      if (available.has(action)) this.selectedAutoExecuteActions.add(action);
+    }
+  }
+
+  applyScopePreset(preset: 'recommended' | 'readOnly' | 'draftOnly' | 'full'): void {
+    this.selectedScopes.clear();
+    const scopes = new Set(this.availableScopes || []);
+    const add = (scope: string) => {
+      if (scopes.has(scope)) this.selectedScopes.add(scope);
+    };
+
+    if (preset === 'full') {
+      for (const scope of this.availableScopes) this.selectedScopes.add(scope);
+      return;
+    }
+
+    if (preset === 'readOnly') {
+      for (const scope of this.availableScopes) {
+        if (scope.endsWith(':read')) this.selectedScopes.add(scope);
+      }
+      return;
+    }
+
+    if (preset === 'draftOnly') {
+      add('site:read');
+      add('content:read');
+      add('blog:read');
+      add('blog:write:draft');
+      add('media:read');
+      add('media:write:draft');
+      add('social:read');
+      add('social:write:draft');
+      return;
+    }
+
+    for (const scope of this.availableScopes) {
+      if (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose')) {
+        this.selectedScopes.add(scope);
+      }
+    }
+  }
+
   createClient(): void {
     const name = this.newClientName.trim();
     if (!name) {
@@ -142,6 +231,7 @@ export class AiQueueComponent implements OnInit {
     const payload: McpCreateClientRequest = {
       name,
       scopes: Array.from(this.selectedScopes),
+      autoExecuteActions: Array.from(this.selectedAutoExecuteActions),
       ...(this.expiresAt ? { expiresAt: new Date(this.expiresAt).toISOString() } : {})
     };
 
@@ -264,6 +354,40 @@ export class AiQueueComponent implements OnInit {
     });
   }
 
+  copyText(value: string, summary: string): void {
+    if (!value) return;
+    navigator.clipboard?.writeText(value).then(() => {
+      this.messageService.add({ severity: 'success', summary });
+    }).catch(() => {
+      this.messageService.add({ severity: 'warn', summary: 'Copy unavailable' });
+    });
+  }
+
+  getMcpEndpoint(): string {
+    return `${this.blogApi.getApiEndpoint().replace(/\/+$/, '')}/mcp`;
+  }
+
+  getKeychainCommand(): string {
+    return [
+      'read -rsp "MCP token: " MCP_TOKEN; echo',
+      `security add-generic-password -a "$(hostname)" -s ${this.keychainService} -w "$MCP_TOKEN" -U`,
+      'unset MCP_TOKEN'
+    ].join('\n');
+  }
+
+  getMcpConfigSnippet(): string {
+    return JSON.stringify({
+      mcpServers: {
+        'portfolio-blog-authoring': {
+          url: this.getMcpEndpoint(),
+          headers: {
+            Authorization: 'Bearer ${MCP_BEARER_TOKEN}'
+          }
+        }
+      }
+    }, null, 2);
+  }
+
   clearGeneratedToken(): void {
     this.generatedToken = '';
     this.generatedClient = null;
@@ -315,5 +439,9 @@ export class AiQueueComponent implements OnInit {
 
   trackByScope(_index: number, scope: string): string {
     return scope;
+  }
+
+  trackByAutoAction(_index: number, action: string): string {
+    return action;
   }
 }

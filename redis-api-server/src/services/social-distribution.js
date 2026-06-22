@@ -92,6 +92,15 @@ function getDefaultSettings() {
         body: '{{title}}\n\n{{summary}}\n\nLink: {{url}}',
         hashtags: '{{tags}}',
         useCoverImage: true
+      },
+      {
+        id: 'threads-short-post',
+        name: 'Threads short post',
+        platformId: 'threads',
+        destination: 'Post',
+        body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: false
       }
     ],
     rules: [
@@ -595,7 +604,7 @@ function assertAccessToken(credential) {
 
 async function postToX(credential, delivery) {
   const accessToken = assertAccessToken(credential);
-  const payload = await fetchJson('https://api.twitter.com/2/tweets', {
+  const payload = await fetchJson('https://api.x.com/2/tweets', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -661,6 +670,9 @@ async function postToInstagram(credential, delivery) {
   const imageUrl = String(delivery.mediaUrl || '').trim();
   if (!igUserId) throw new Error('Instagram account id is missing');
   if (!/^https?:\/\//i.test(imageUrl)) throw new Error('Instagram requires media');
+  const graphBaseUrl = credential.family === 'instagram'
+    ? 'https://graph.instagram.com/v23.0'
+    : 'https://graph.facebook.com/v22.0';
 
   const isStory = /story/i.test(String(delivery.destination || ''));
   const createPayload = {
@@ -673,11 +685,45 @@ async function postToInstagram(credential, delivery) {
     createPayload.caption = delivery.caption;
   }
 
-  const created = await postForm(`https://graph.facebook.com/v22.0/${encodeURIComponent(igUserId)}/media`, createPayload);
+  const created = await postForm(`${graphBaseUrl}/${encodeURIComponent(igUserId)}/media`, createPayload);
   const creationId = String(created?.id || '');
   if (!creationId) throw new Error('Instagram did not create a media container');
 
-  const published = await postForm(`https://graph.facebook.com/v22.0/${encodeURIComponent(igUserId)}/media_publish`, {
+  const published = await postForm(`${graphBaseUrl}/${encodeURIComponent(igUserId)}/media_publish`, {
+    access_token: accessToken,
+    creation_id: creationId
+  });
+  const id = String(published?.id || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: ''
+  };
+}
+
+async function postToThreads(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const threadsUserId = credential.accountId || credential.account?.id || 'me';
+  const imageUrl = String(delivery.mediaUrl || '').trim();
+  const text = String(delivery.caption || '').trim();
+  if (!text) throw new Error('Threads requires post text');
+  if (text.length > 500) throw new Error('Threads posts are limited to 500 characters');
+
+  const createParams = {
+    access_token: accessToken,
+    media_type: /^https?:\/\//i.test(imageUrl) ? 'IMAGE' : 'TEXT',
+    text
+  };
+  if (createParams.media_type === 'IMAGE') {
+    createParams.image_url = imageUrl;
+  } else if (/^https?:\/\//i.test(String(delivery.postUrl || ''))) {
+    createParams.link_attachment = String(delivery.postUrl).trim();
+  }
+
+  const created = await postForm(`https://graph.threads.net/v1.0/${encodeURIComponent(threadsUserId)}/threads`, createParams);
+  const creationId = String(created?.id || '');
+  if (!creationId) throw new Error('Threads did not create a media container');
+
+  const published = await postForm(`https://graph.threads.net/v1.0/${encodeURIComponent(threadsUserId)}/threads_publish`, {
     access_token: accessToken,
     creation_id: creationId
   });
@@ -709,6 +755,7 @@ async function sendDeliveryRecord(delivery, credential = null) {
     else if (delivery.provider === 'linkedin') result = await postToLinkedIn(postingCredential, delivery);
     else if (delivery.provider === 'facebook') result = await postToFacebook(postingCredential, delivery);
     else if (delivery.provider === 'instagram') result = await postToInstagram(postingCredential, delivery);
+    else if (delivery.provider === 'threads') result = await postToThreads(postingCredential, delivery);
     else throw new Error(`Unsupported social provider: ${delivery.provider}`);
 
     return await updateDelivery(userSub, deliveryId, {
@@ -910,5 +957,9 @@ module.exports = {
   sanitizeDelivery,
   getTableName,
   getSchedulerConfig,
-  getAwsRegion
+  getAwsRegion,
+  __private: {
+    postToX,
+    postToInstagram
+  }
 };

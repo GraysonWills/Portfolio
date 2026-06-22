@@ -14,6 +14,11 @@ PROVIDER_KEYS=(
   SOCIAL_LINKEDIN_CLIENT_SECRET
   SOCIAL_META_CLIENT_ID
   SOCIAL_META_CLIENT_SECRET
+  SOCIAL_FACEBOOK_CONFIG_ID
+  SOCIAL_INSTAGRAM_CLIENT_ID
+  SOCIAL_INSTAGRAM_CLIENT_SECRET
+  SOCIAL_THREADS_CLIENT_ID
+  SOCIAL_THREADS_CLIENT_SECRET
 )
 
 require_cmd() {
@@ -29,7 +34,7 @@ main() {
 
   local tmp_dir updated version
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf '$tmp_dir'" EXIT
 
   aws --profile "$PROFILE" --region "$REGION" lambda get-function-configuration \
     --function-name "$LAMBDA_FUNCTION_NAME" \
@@ -61,6 +66,11 @@ Set one or more of these environment variables and rerun:
   SOCIAL_LINKEDIN_CLIENT_SECRET
   SOCIAL_META_CLIENT_ID
   SOCIAL_META_CLIENT_SECRET
+  SOCIAL_FACEBOOK_CONFIG_ID
+  SOCIAL_INSTAGRAM_CLIENT_ID
+  SOCIAL_INSTAGRAM_CLIENT_SECRET
+  SOCIAL_THREADS_CLIENT_ID
+  SOCIAL_THREADS_CLIENT_SECRET
 EOF
     exit 1
   fi
@@ -98,6 +108,7 @@ Register these callback URLs in the provider apps:
   LinkedIn:    https://api.grayson-wills.com/api/social-auth/linkedin/callback
   Facebook:    https://api.grayson-wills.com/api/social-auth/facebook/callback
   Instagram:   https://api.grayson-wills.com/api/social-auth/instagram/callback
+  Threads:     https://api.grayson-wills.com/api/social-auth/threads/callback
 EOF
 }
 

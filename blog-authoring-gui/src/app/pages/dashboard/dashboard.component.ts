@@ -72,6 +72,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return 'published';
   }
 
+  private getGroupUpdatedAt(group: ContentGroup): string | null {
+    const timestamps = (group.items || [])
+      .map((item) => item.UpdatedAt || item.CreatedAt)
+      .map((value) => value ? new Date(value as any).getTime() : Number.NaN)
+      .filter((value) => Number.isFinite(value));
+    return timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : null;
+  }
+
+  private getGroupExpectedState(group: ContentGroup): { expectedVersion?: number; expectedUpdatedAt?: string } {
+    const metadata = (group.metadata || {}) as any;
+    const expectedVersion = Number(metadata?.version);
+    const expectedUpdatedAt = this.getGroupUpdatedAt(group) || '';
+    return {
+      ...(Number.isFinite(expectedVersion) ? { expectedVersion } : {}),
+      ...(expectedUpdatedAt ? { expectedUpdatedAt } : {})
+    };
+  }
+
   constructor(
     private authService: AuthService,
     private blogApi: BlogApiService,
@@ -340,6 +358,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
           signatureSnapshot: metadata?.signatureSnapshot || null,
           scheduleName: metadata?.scheduleName || null,
           sendEmailUpdate: metadata?.notifyEmail ?? true,
+          version: Number.isFinite(Number(metadata?.version)) ? Number(metadata.version) : undefined,
+          updatedAt: this.getGroupUpdatedAt(post),
           blogItemId: post.items.find((item) => item.PageContentID === PageContentID.BlogItem)?.ID || null,
           blogTextId: post.items.find((item) => item.PageContentID === PageContentID.BlogText)?.ID || null,
           blogBodyId: post.items.find((item) => item.PageContentID === PageContentID.BlogBody)?.ID || null,
@@ -418,24 +438,26 @@ export class DashboardComponent implements OnInit, OnDestroy {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger',
       accept: () => {
-        this.blogApi.deleteBlogPost(view.listItemID).subscribe({
-          next: () => {
-            this.txLog.log('DELETE', `Deleted blog post: ${view.title} (${view.listItemID})`);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: 'Blog post deleted successfully'
-            });
-            this.loadBlogPosts();
-          },
-          error: (error) => {
-            this.txLog.log('DELETE_FAILED', `Failed to delete: ${view.title} — ${error.message}`);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: 'Failed to delete blog post'
-            });
-          }
+        this.resolvePostGroup(view, (post) => {
+          this.blogApi.deleteBlogPost(view.listItemID, this.getGroupExpectedState(post)).subscribe({
+            next: () => {
+              this.txLog.log('DELETE', `Deleted blog post: ${view.title} (${view.listItemID})`);
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: 'Blog post deleted successfully'
+              });
+              this.loadBlogPosts();
+            },
+            error: (error) => {
+              this.txLog.log('DELETE_FAILED', `Failed to delete: ${view.title} — ${error.message}`);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to delete blog post'
+              });
+            }
+          });
         });
       }
     });

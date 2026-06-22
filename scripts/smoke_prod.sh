@@ -116,6 +116,21 @@ if [[ "$unauth_code" != "401" ]]; then
   exit 1
 fi
 
+mcp_unauth_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API_URL}/mcp" \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' || true)"
+if [[ "$mcp_unauth_code" != "401" ]]; then
+  echo "expected 401 on unauthenticated POST /mcp, got ${mcp_unauth_code}"
+  exit 1
+fi
+
+if [[ -n "${MCP_BEARER_TOKEN:-}" || "${RUN_MCP_AUTH_SMOKE:-}" == "true" ]]; then
+  echo "== MCP authenticated smoke =="
+  MCP_BASE_URL="${API_URL}/mcp" node scripts/mcp_smoke.mjs --mode prod-smoke
+else
+  echo "== MCP authenticated smoke skipped (set MCP_BEARER_TOKEN or RUN_MCP_AUTH_SMOKE=true) =="
+fi
+
 echo "== CORS =="
 retry 30 10 expect_cors_allow_origin "${API_URL}/content" "https://www.grayson-wills.com"
 retry 30 10 expect_cors_allow_origin "${API_URL}/content" "https://grayson-wills.com"

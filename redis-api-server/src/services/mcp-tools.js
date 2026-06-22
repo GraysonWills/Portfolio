@@ -94,6 +94,18 @@ function summarizePatch(patch = {}) {
   return [...keys, ...contentBits].join(', ') || 'changes';
 }
 
+function withIdempotencyInput(inputSchema = {}) {
+  return {
+    ...(inputSchema || {}),
+    idempotencyKey: z.string().optional(),
+  };
+}
+
+function shouldUseIdempotency(config = {}, request = {}) {
+  if (!config.category || config.category === 'read') return false;
+  return Boolean(String(request?.idempotencyKey || '').trim());
+}
+
 async function createPreviewSession(payload, route = '/') {
   const token = crypto.randomBytes(18).toString('hex');
   await putPreviewSession(token, {
@@ -435,16 +447,49 @@ async function executeApproval(approvalId, reviewerUser) {
 }
 
 function registerTool(server, client, name, config, handler) {
+  const inputSchema = config.category && config.category !== 'read'
+    ? withIdempotencyInput(config.inputSchema || {})
+    : config.inputSchema || {};
+
   server.registerTool(name, {
     title: config.title || name,
     description: config.description,
-    inputSchema: config.inputSchema || {},
+    inputSchema,
   }, async (args) => {
     const request = args || {};
+    const idempotencyKey = String(request.idempotencyKey || '').trim();
+    const idempotencyScope = `mcp:${client.clientId}:${name}`;
     try {
       mcpControl.requireScope(client, config.scope);
+      if (shouldUseIdempotency(config, request)) {
+        const replay = await mcpControl.getIdempotentResult({
+          scope: idempotencyScope,
+          key: idempotencyKey,
+          request,
+        });
+        if (replay) {
+          await mcpControl.auditToolCall({
+            client,
+            toolName: name,
+            targetIds: config.targetIds ? config.targetIds(request, replay.response) : [],
+            request,
+            status: 'idempotent_replay',
+            approvalId: replay.response?.approvalId || replay.response?.approval?.approvalId || '',
+          });
+          return toolResult(replay.response);
+        }
+      }
       await mcpControl.consumeRateLimit(client, config.category || 'read');
       const data = await handler(request);
+      if (shouldUseIdempotency(config, request)) {
+        await mcpControl.storeIdempotentResult({
+          scope: idempotencyScope,
+          key: idempotencyKey,
+          request,
+          response: data,
+          statusCode: 200,
+        });
+      }
       await mcpControl.auditToolCall({
         client,
         toolName: name,
@@ -473,14 +518,27 @@ function createApprovalTool(server, client, name, scope, inputSchema, buildAppro
     description: `Request human approval for ${name}.`,
     scope,
     category: 'approvalMutation',
-    inputSchema,
+    inputSchema: withIdempotencyInput(inputSchema),
   }, async (args) => {
     const approval = await buildApproval(args || {});
+    if (mcpControl.canAutoExecute(client, name)) {
+      const executed = await executeApproval(approval.approvalId, ownerUser(client));
+      return {
+        approvalId: executed.approval.approvalId,
+        summary: executed.approval.summary,
+        targetIds: executed.approval.targetIds,
+        previewUrl: executed.approval.previewUrl,
+        autoExecuted: true,
+        approval: executed.approval,
+        result: executed.result,
+      };
+    }
     return {
       approvalId: approval.approvalId,
       summary: approval.summary,
       targetIds: approval.targetIds,
       previewUrl: approval.previewUrl,
+      autoExecuted: false,
       approval,
     };
   });
@@ -649,6 +707,23 @@ function buildMcpServer(client) {
     }),
   }));
 
+  registerTool(server, client, 'blog.delete_mcp_draft', {
+    description: 'Delete a draft created by the same MCP client.',
+    scope: 'blog:write:draft',
+    category: 'draftMutation',
+    inputSchema: {
+      listItemID: z.string(),
+      expectedUpdatedAt: z.string().optional(),
+      expectedVersion: z.number().optional(),
+    },
+    targetIds: (args) => [args.listItemID],
+  }, async (args) => blogPosts.deletePost(args.listItemID, {
+    actor: { clientId: client.clientId, clientName: client.name, sub: client.ownerSub },
+    restrictMcpDraftOwner: true,
+    expectedUpdatedAt: args.expectedUpdatedAt || '',
+    expectedVersion: args.expectedVersion,
+  }));
+
   registerTool(server, client, 'preview.create', {
     description: 'Create a preview session for content upserts/deletes.',
     scope: 'content:write:draft',
@@ -705,7 +780,14 @@ function buildMcpServer(client) {
     patch: z.object({}).passthrough(),
   }, async (args) => {
     const current = await blogPosts.getPost(args.listItemID, { includeItems: true });
-    const preview = await createPreviewSession({ upserts: current.items || [], source: 'mcp-propose-update' }, `/blog/${encodeURIComponent(args.listItemID)}`);
+    const proposed = await blogPosts.previewUpdatedPost(args.listItemID, args.patch || {}, {
+      actor: { clientId: client.clientId, clientName: client.name, sub: client.ownerSub },
+      source: 'authoring',
+    });
+    const preview = await createPreviewSession({
+      upserts: proposed.items || current.items || [],
+      source: 'mcp-propose-update',
+    }, `/blog/${encodeURIComponent(args.listItemID)}`);
     return mcpControl.createApproval({
       client,
       action: 'blog.propose_update',
@@ -780,15 +862,24 @@ function buildMcpServer(client) {
   createApprovalTool(server, client, 'content.propose_update', 'content:write:draft', {
     id: z.string(),
     patch: z.object({}).passthrough(),
+    route: z.string().optional(),
   }, async (args) => {
     const item = await ddbGetContentById(args.id);
     if (!item) throw httpError(404, 'Content record not found');
+    const route = String(args.route || '').trim();
+    const preview = route
+      ? await createPreviewSession({
+        upserts: [{ ...item, ...(args.patch || {}), ID: item.ID, UpdatedAt: new Date().toISOString() }],
+        source: 'mcp-content-propose-update',
+      }, route)
+      : null;
     return mcpControl.createApproval({
       client,
       action: 'content.propose_update',
       payload: args,
       summary: `Update content record ${args.id}`,
       targetIds: [args.id],
+      previewUrl: preview?.previewUrl || '',
       diff: { before: item, patch: args.patch },
     });
   });

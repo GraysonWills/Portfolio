@@ -48,6 +48,33 @@ const DEFAULT_SCOPES = [
   'social:propose',
 ];
 
+const AUTO_EXECUTE_ACTIONS = [
+  'blog.propose_update',
+  'blog.request_publish',
+  'blog.request_schedule',
+  'blog.request_unpublish',
+  'blog.request_delete',
+  'content.propose_update',
+  'media.request_delete',
+  'comments.propose_reply',
+  'comments.request_delete',
+  'social.propose_settings_update',
+  'social.request_send_delivery',
+];
+
+const RECOMMENDED_AUTO_EXECUTE_ACTIONS = [
+  'blog.propose_update',
+  'blog.request_publish',
+  'blog.request_schedule',
+  'blog.request_unpublish',
+  'content.propose_update',
+  'comments.propose_reply',
+  'social.propose_settings_update',
+];
+
+const RISKY_AUTO_EXECUTE_ACTIONS = AUTO_EXECUTE_ACTIONS
+  .filter((action) => !RECOMMENDED_AUTO_EXECUTE_ACTIONS.includes(action));
+
 function getTableName() {
   return String(process.env.MCP_CONTROL_TABLE_NAME || DEFAULT_TABLE).trim();
 }
@@ -108,6 +135,7 @@ function publicClient(item) {
     revokedAt: item.revokedAt || null,
     lastUsedAt: item.lastUsedAt || null,
     limits: normalizeLimits(item.limits),
+    autoExecuteActions: normalizeAutoExecuteActions(item.autoExecuteActions),
   };
 }
 
@@ -167,6 +195,19 @@ function normalizeScopes(scopes) {
   return out.length ? out : DEFAULT_SCOPES;
 }
 
+function normalizeAutoExecuteActions(actions) {
+  const allowed = new Set(AUTO_EXECUTE_ACTIONS);
+  const out = [];
+  const seen = new Set();
+  for (const action of Array.isArray(actions) ? actions : []) {
+    const value = String(action || '').trim();
+    if (!value || !allowed.has(value) || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
 function normalizeLimits(input = {}) {
   return {
     read: Math.max(1, Math.min(5000, Number(input.read || input.readToolsPerDay || DEFAULT_READ_LIMIT) || DEFAULT_READ_LIMIT)),
@@ -193,7 +234,7 @@ function normalizeClientName(value) {
   return name.slice(0, 120);
 }
 
-async function createClient({ name, scopes, expiresAt, limits } = {}, createdByUser = {}) {
+async function createClient({ name, scopes, expiresAt, limits, autoExecuteActions } = {}, createdByUser = {}) {
   const ownerSub = userSubFrom(createdByUser);
   if (!ownerSub) throw httpError(401, 'Authenticated user identity is missing');
 
@@ -218,6 +259,7 @@ async function createClient({ name, scopes, expiresAt, limits } = {}, createdByU
     ownerSub,
     createdBy: usernameFrom(createdByUser),
     limits: normalizeLimits(limits),
+    autoExecuteActions: normalizeAutoExecuteActions(autoExecuteActions),
     createdAt: timestamp,
     updatedAt: timestamp,
     expiresAtEpoch: expiresAtEpoch || undefined,
@@ -272,7 +314,13 @@ async function listClients(user) {
     .map(publicClient)
     .filter(Boolean)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  return { clients, scopes: ALL_SCOPES };
+  return {
+    clients,
+    scopes: ALL_SCOPES,
+    autoExecuteActions: AUTO_EXECUTE_ACTIONS,
+    recommendedAutoExecuteActions: RECOMMENDED_AUTO_EXECUTE_ACTIONS,
+    riskyAutoExecuteActions: RISKY_AUTO_EXECUTE_ACTIONS,
+  };
 }
 
 async function getClientRecord(clientId) {
@@ -367,6 +415,10 @@ async function authenticateBearer(authorization) {
 function requireScope(client, scope) {
   const scopes = new Set(Array.isArray(client?.scopes) ? client.scopes : []);
   if (!scopes.has(scope)) throw httpError(403, `MCP client is missing scope: ${scope}`);
+}
+
+function canAutoExecute(client, action) {
+  return normalizeAutoExecuteActions(client?.autoExecuteActions).includes(String(action || '').trim());
 }
 
 function limitForCategory(client, category) {
@@ -639,12 +691,16 @@ async function storeIdempotentResult({ scope, key, request, response, statusCode
 module.exports = {
   ALL_SCOPES,
   DEFAULT_SCOPES,
+  AUTO_EXECUTE_ACTIONS,
+  RECOMMENDED_AUTO_EXECUTE_ACTIONS,
+  RISKY_AUTO_EXECUTE_ACTIONS,
   getTableName,
   createClient,
   listClients,
   revokeClient,
   authenticateBearer,
   requireScope,
+  canAutoExecute,
   consumeRateLimit,
   auditToolCall,
   emitMetric,

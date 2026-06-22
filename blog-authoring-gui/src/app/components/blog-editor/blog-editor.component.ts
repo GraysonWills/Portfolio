@@ -234,7 +234,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       x: 'X / Twitter',
       linkedin: 'LinkedIn',
       facebook: 'Facebook Page',
-      instagram: 'Instagram'
+      instagram: 'Instagram',
+      threads: 'Threads'
     };
     return labels[platformId] || platformId;
   }
@@ -621,10 +622,12 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               formValue.publishDate,
               formValue.status,
               formValue.category,
-              readTimeMinutes || undefined,
-              selectedSignatureId,
-              selectedSignature
-            )
+	              readTimeMinutes || undefined,
+	              selectedSignatureId,
+	              selectedSignature,
+	              Number.isFinite(Number(this.initialData?.version)) ? Number(this.initialData.version) : undefined,
+	              String(this.initialData?.updatedAt || '').trim() || undefined
+	            )
           : this.blogApi.createBlogPost(
               formValue.title,
               normalizedContent,

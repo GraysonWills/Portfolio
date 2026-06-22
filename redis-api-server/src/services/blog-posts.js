@@ -636,18 +636,43 @@ async function updatePost(listItemID, patch, { actor = {}, source = 'authoring',
   return recordsToPost(written, { includeItems: true });
 }
 
+async function previewUpdatedPost(listItemID, patch, { actor = {}, source = 'authoring' } = {}) {
+  requireContentStore();
+  const safeId = normalizeString(listItemID, 180);
+  if (!safeId) throw httpError(400, 'listItemID is required');
+  const existingItems = await getBlogRecordsByListItemId(safeId);
+  const existingPost = recordsToPost(existingItems, { includeItems: true });
+  if (!existingPost) throw httpError(404, 'Blog post not found');
+  const normalized = validatePatchInput(patch);
+  assertConcurrency(existingPost, normalized);
+
+  const built = buildRecordsFromInput(
+    {
+      ...existingPost,
+      ...normalized,
+      listItemID: safeId,
+      status: normalized.status || existingPost.status,
+    },
+    { existingItems, actor, source }
+  );
+  return recordsToPost(built.records, { includeItems: true });
+}
+
 async function ddbDeleteContentByIdSafe(id) {
   const item = await ddbGetContentById(id).catch(() => null);
   if (!item) return;
   await ddbDeleteContentById(id);
 }
 
-async function deletePost(listItemID) {
+async function deletePost(listItemID, { actor = {}, restrictMcpDraftOwner = false, expectedUpdatedAt = '', expectedVersion } = {}) {
   requireContentStore();
   const safeId = normalizeString(listItemID, 180);
   if (!safeId) throw httpError(400, 'listItemID is required');
   const existing = await getBlogRecordsByListItemId(safeId);
   if (!existing || !existing.length) throw httpError(404, 'Blog post not found');
+  const existingPost = recordsToPost(existing, { includeItems: true });
+  assertConcurrency(existingPost, { expectedUpdatedAt, expectedVersion });
+  if (restrictMcpDraftOwner) assertMcpDraftOwner(existingPost, actor);
   let deleted = await ddbDeleteContentByListItemId(safeId);
   if (!deleted) {
     for (const item of existing) {
@@ -818,6 +843,7 @@ module.exports = {
   getPost,
   createPost,
   updatePost,
+  previewUpdatedPost,
   deletePost,
   listCategories,
   createCategory,

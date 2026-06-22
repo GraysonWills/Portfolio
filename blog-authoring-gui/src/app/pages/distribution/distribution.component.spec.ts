@@ -62,6 +62,43 @@ describe('DistributionComponent', () => {
     }));
   });
 
+  it('shows reconnect state when X is missing newly requested scopes', () => {
+    const { component, status$ } = createComponent();
+
+    component.ngOnInit();
+    status$.next({
+      providers: [{
+        provider: 'x',
+        label: 'X / Twitter',
+        family: 'x',
+        configured: true,
+        scopes: ['tweet.read', 'tweet.write', 'users.read', 'dm.read', 'dm.write', 'offline.access'],
+        redirectUri: 'https://api.grayson-wills.com/api/social-auth/x/callback',
+        connected: false,
+        status: 'needs-reconnect',
+        needsReconnect: true,
+        missingScopes: ['dm.read', 'dm.write'],
+        connectedAt: '2026-06-22T23:33:06.659Z',
+        updatedAt: '2026-06-22T23:33:06.659Z',
+        expiresAt: '2026-06-23T01:33:06.478Z',
+        accountLabel: '@GraysonWil91957',
+        selectedAccount: {
+          id: '2030858381473525760',
+          label: '@GraysonWil91957',
+          handle: '@GraysonWil91957',
+          platform: 'x'
+        },
+        scope: 'tweet.write users.read tweet.read offline.access',
+        credentialArtifacts: null
+      }]
+    });
+
+    const xPlatform = component.platforms.find((platform) => platform.id === 'x');
+    expect(xPlatform?.connectionState).toBe('attention');
+    expect(xPlatform?.connectionLabel).toBe('Reconnect needed');
+    expect(xPlatform?.connectionDetail).toContain('dm.read, dm.write');
+  });
+
   it('stages enabled publish automation rules into the delivery queue', () => {
     const { component } = createComponent();
 

@@ -110,6 +110,15 @@ export class SocialDistributionAutomationService {
           body: '{{title}}\n\n{{summary}}\n\nLink: {{url}}',
           hashtags: '{{tags}}',
           useCoverImage: true
+        },
+        {
+          id: 'threads-short-post',
+          name: 'Threads short post',
+          platformId: 'threads',
+          destination: 'Post',
+          body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: false
         }
       ],
       rules: [

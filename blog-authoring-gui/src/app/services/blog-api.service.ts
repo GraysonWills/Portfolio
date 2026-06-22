@@ -94,6 +94,8 @@ export type SocialAuthProviderStatus = {
   redirectUri: string;
   connected: boolean;
   status: 'connected' | 'expired' | 'not-connected' | string;
+  needsReconnect?: boolean;
+  missingScopes?: string[];
   connectedAt: string | null;
   updatedAt: string | null;
   expiresAt: string | null;
@@ -174,6 +176,7 @@ export type McpClient = {
   clientId: string;
   name: string;
   scopes: string[];
+  autoExecuteActions: string[];
   status: 'active' | 'revoked' | string;
   ownerSub: string;
   createdBy: string;
@@ -192,11 +195,15 @@ export type McpClient = {
 export type McpClientsResponse = {
   clients: McpClient[];
   scopes: string[];
+  autoExecuteActions: string[];
+  recommendedAutoExecuteActions: string[];
+  riskyAutoExecuteActions: string[];
 };
 
 export type McpCreateClientRequest = {
   name: string;
   scopes: string[];
+  autoExecuteActions?: string[];
   expiresAt?: string | null;
   limits?: {
     read?: number;
@@ -303,6 +310,59 @@ export type BlogCardsV2Response = {
     returned: number;
     hasMore: boolean;
   };
+};
+
+export type CanonicalBlogPost = {
+  listItemID: string;
+  title: string;
+  summary: string;
+  contentHtml: string;
+  roughDraftHtml?: string;
+  coverImageUrl?: string;
+  status: 'draft' | 'scheduled' | 'published' | string;
+  tags: string[];
+  privateSeoTags: string[];
+  category: string;
+  readTimeMinutes: number;
+  publishDate: string | null;
+  scheduleName?: string | null;
+  scheduledAt?: string | null;
+  metadata?: Record<string, any>;
+  version: number;
+  updatedAt: string | null;
+  createdAt: string | null;
+  recordIds?: {
+    blogItemId?: string | null;
+    blogTextId?: string | null;
+    blogBodyId?: string | null;
+    blogRoughDraftId?: string | null;
+    blogImageId?: string | null;
+  };
+  items?: RedisContent[];
+};
+
+export type CanonicalBlogPostPayload = {
+  listItemID?: string;
+  title: string;
+  summary?: string;
+  contentHtml?: string;
+  contentMarkdown?: string;
+  roughDraftHtml?: string;
+  tags?: string[];
+  privateSeoTags?: string[];
+  category?: string;
+  readTimeMinutes?: number;
+  coverImageUrl?: string;
+  publishDate?: string;
+  status?: 'draft' | 'scheduled' | 'published';
+  signatureId?: string;
+  signatureSnapshot?: BlogSignature;
+  expectedUpdatedAt?: string;
+  expectedVersion?: number;
+};
+
+export type CanonicalBlogPostResponse = {
+  post: CanonicalBlogPost;
 };
 
 export type BlogCardMediaItem = {
@@ -1348,6 +1408,100 @@ export class BlogApiService {
   /**
    * Create a new blog post
    */
+  private toIsoDate(value?: Date | string | null): string | undefined {
+    if (!value) return undefined;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  }
+
+  private canonicalPostItems(post?: CanonicalBlogPost | null): RedisContent[] {
+    return Array.isArray(post?.items) ? post.items : [];
+  }
+
+  private buildCanonicalBlogPostPayload(
+    title: string,
+    content: string,
+    roughDraft: string,
+    summary: string,
+    tags: string[],
+    privateSeoTags: string[],
+    image?: string,
+    listItemID?: string,
+    publishDate?: Date,
+    status?: 'draft' | 'scheduled' | 'published',
+    category?: string,
+    readTimeMinutes?: number,
+    signatureId?: string,
+    signatureSnapshot?: BlogSignature,
+    expectedVersion?: number,
+    expectedUpdatedAt?: string
+  ): CanonicalBlogPostPayload {
+    return {
+      ...(listItemID ? { listItemID } : {}),
+      title,
+      summary,
+      contentHtml: content,
+      roughDraftHtml: String(roughDraft || '').trim() ? roughDraft : undefined,
+      tags,
+      privateSeoTags,
+      publishDate: this.toIsoDate(publishDate),
+      status: status || 'published',
+      ...(category ? { category } : {}),
+      ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
+      ...(image && image.trim() ? { coverImageUrl: image.trim() } : {}),
+      ...(signatureId ? { signatureId } : {}),
+      ...(signatureSnapshot ? { signatureSnapshot } : {}),
+      ...(Number.isFinite(Number(expectedVersion)) ? { expectedVersion: Number(expectedVersion) } : {}),
+      ...(expectedUpdatedAt ? { expectedUpdatedAt } : {})
+    };
+  }
+
+  createCanonicalBlogPost(payload: CanonicalBlogPostPayload): Observable<CanonicalBlogPostResponse> {
+    return this.http.post<CanonicalBlogPostResponse>(
+      `${this.apiUrl}/blog/posts`,
+      payload,
+      { headers: this.headers }
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
+  }
+
+  updateCanonicalBlogPost(listItemID: string, payload: CanonicalBlogPostPayload): Observable<CanonicalBlogPostResponse> {
+    return this.http.put<CanonicalBlogPostResponse>(
+      `${this.apiUrl}/blog/posts/${encodeURIComponent(listItemID)}`,
+      payload,
+      { headers: this.headers }
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
+  }
+
+  getCanonicalBlogPost(listItemID: string): Observable<CanonicalBlogPostResponse> {
+    return this.http.get<CanonicalBlogPostResponse>(
+      `${this.apiUrl}/blog/posts/${encodeURIComponent(listItemID)}`,
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  deleteCanonicalBlogPost(listItemID: string, expected?: { expectedVersion?: number; expectedUpdatedAt?: string }): Observable<{ ok: boolean; listItemID: string; deleted: number }> {
+    const body = {
+      ...(Number.isFinite(Number(expected?.expectedVersion)) ? { expectedVersion: Number(expected?.expectedVersion) } : {}),
+      ...(expected?.expectedUpdatedAt ? { expectedUpdatedAt: expected.expectedUpdatedAt } : {})
+    };
+    return this.http.delete<{ ok: boolean; listItemID: string; deleted: number }>(
+      `${this.apiUrl}/blog/posts/${encodeURIComponent(listItemID)}`,
+      {
+        headers: this.headers,
+        ...(Object.keys(body).length ? { body } : {})
+      }
+    ).pipe(
+      tap(() => this.invalidateReadCaches()),
+      catchError(this.handleError)
+    );
+  }
+
   createBlogPost(
     title: string,
     content: string,
@@ -1364,80 +1518,22 @@ export class BlogApiService {
     signatureId?: string,
     signatureSnapshot?: BlogSignature
   ): Observable<RedisContent[]> {
-    const postItems: RedisContent[] = [];
-    const itemId = listItemID || `blog-${Date.now()}`;
-    const normalizedRoughDraft = String(roughDraft || '').trim();
-    const metadata: BlogPostMetadata = {
+    return this.createCanonicalBlogPost(this.buildCanonicalBlogPostPayload(
       title,
+      content,
+      roughDraft,
       summary,
       tags,
       privateSeoTags,
-      publishDate: publishDate || new Date(),
-      status: status || 'published',
-      ...(category ? { category } : {}),
-      ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
-      ...(signatureId ? { signatureId } : {}),
-      ...(signatureSnapshot ? { signatureSnapshot } : {})
-    };
-
-    // Blog metadata record (required by portfolio for title/tags/date)
-    postItems.push({
-      ID: `blog-item-${itemId}`,
-      Text: title,
-      PageID: PageID.Blog,
-      PageContentID: PageContentID.BlogItem,
-      ListItemID: itemId,
-      Metadata: metadata as any
-    } as any);
-
-    // Blog text content
-    postItems.push({
-      ID: `blog-text-${Date.now()}`,
-      Text: content,
-      PageID: PageID.Blog,
-      PageContentID: PageContentID.BlogText,
-      ListItemID: itemId,
-      Metadata: metadata as any
-    });
-
-    // Blog body content (preferred by the public site detail route)
-    postItems.push({
-      ID: `blog-body-${itemId}`,
-      Text: content,
-      PageID: PageID.Blog,
-      PageContentID: PageContentID.BlogBody,
-      ListItemID: itemId,
-      Metadata: metadata as any
-    });
-
-    if (normalizedRoughDraft) {
-      postItems.push({
-        ID: `blog-rough-${itemId}`,
-        Text: roughDraft,
-        PageID: PageID.Blog,
-        PageContentID: PageContentID.BlogRoughDraft,
-        ListItemID: itemId,
-        Metadata: metadata as any
-      });
-    }
-
-    // Blog image content (if provided)
-    if (image) {
-      postItems.push({
-        ID: `blog-image-${Date.now()}`,
-        Photo: image,
-        PageID: PageID.Blog,
-        PageContentID: PageContentID.BlogImage,
-        ListItemID: itemId,
-        CreatedAt: new Date()
-      });
-    }
-
-    return this.http.post<RedisContent[]>(`${this.apiUrl}/content/batch`, postItems, { headers: this.headers })
-      .pipe(
-        tap(() => this.invalidateReadCaches()),
-        catchError(this.handleError)
-      );
+      image,
+      listItemID,
+      publishDate,
+      status,
+      category,
+      readTimeMinutes,
+      signatureId,
+      signatureSnapshot
+    )).pipe(map((response) => this.canonicalPostItems(response.post)));
   }
 
   /**
@@ -1457,116 +1553,28 @@ export class BlogApiService {
     category?: string,
     readTimeMinutes?: number,
     signatureId?: string,
-    signatureSnapshot?: BlogSignature
+    signatureSnapshot?: BlogSignature,
+    expectedVersion?: number,
+    expectedUpdatedAt?: string
   ): Observable<RedisContent[]> {
-    const normalizedRoughDraft = String(roughDraft || '').trim();
-    const metadata: BlogPostMetadata = {
+    return this.updateCanonicalBlogPost(listItemID, this.buildCanonicalBlogPostPayload(
       title,
+      content,
+      roughDraft,
       summary,
       tags,
       privateSeoTags,
-      publishDate: publishDate || new Date(),
-      status: status || 'published',
-      ...(category ? { category } : {}),
-      ...(readTimeMinutes && readTimeMinutes > 0 ? { readTimeMinutes: Math.round(readTimeMinutes) } : {}),
-      ...(signatureId ? { signatureId } : {}),
-      ...(signatureSnapshot ? { signatureSnapshot } : {})
-    };
-
-    return this.getBlogPost(listItemID).pipe(
-      switchMap((items) => {
-        const blogText = items.find((item) => item.PageContentID === PageContentID.BlogText);
-        const blogItem = items.find((item) => item.PageContentID === PageContentID.BlogItem);
-        const blogBody = items.find((item) => item.PageContentID === PageContentID.BlogBody);
-        const blogImage = items.find((item) => item.PageContentID === PageContentID.BlogImage);
-        const blogRoughDraft = items.find((item) => item.PageContentID === PageContentID.BlogRoughDraft);
-
-        const upserts: RedisContent[] = [
-          {
-            ...(blogText || {}),
-            ID: blogText?.ID || `blog-text-${listItemID}`,
-            Text: content,
-            PageID: PageID.Blog,
-            PageContentID: PageContentID.BlogText,
-            ListItemID: listItemID,
-            Metadata: metadata as any,
-            ...(blogText?.CreatedAt ? { CreatedAt: blogText.CreatedAt } : {})
-          } as RedisContent,
-          {
-            ...(blogBody || {}),
-            ID: blogBody?.ID || `blog-body-${listItemID}`,
-            Text: content,
-            PageID: PageID.Blog,
-            PageContentID: PageContentID.BlogBody,
-            ListItemID: listItemID,
-            Metadata: metadata as any,
-            ...(blogBody?.CreatedAt ? { CreatedAt: blogBody.CreatedAt } : {})
-          } as RedisContent,
-          {
-            ...(blogItem || {}),
-            ID: blogItem?.ID || `blog-item-${listItemID}`,
-            Text: title,
-            PageID: PageID.Blog,
-            PageContentID: PageContentID.BlogItem,
-            ListItemID: listItemID,
-            Metadata: metadata as any,
-            ...(blogItem?.CreatedAt ? { CreatedAt: blogItem.CreatedAt } : {})
-          } as RedisContent
-        ];
-
-        if (normalizedRoughDraft) {
-          upserts.push({
-            ...(blogRoughDraft || {}),
-            ID: blogRoughDraft?.ID || `blog-rough-${listItemID}`,
-            Text: roughDraft,
-            PageID: PageID.Blog,
-            PageContentID: PageContentID.BlogRoughDraft,
-            ListItemID: listItemID,
-            Metadata: metadata as any,
-            ...(blogRoughDraft?.CreatedAt ? { CreatedAt: blogRoughDraft.CreatedAt } : {})
-          } as RedisContent);
-        }
-
-        if (image && image.trim()) {
-          upserts.push({
-            ...(blogImage || {}),
-            ID: blogImage?.ID || `blog-image-${listItemID}`,
-            Photo: image,
-            PageID: PageID.Blog,
-            PageContentID: PageContentID.BlogImage,
-            ListItemID: listItemID,
-            ...(blogImage?.CreatedAt ? { CreatedAt: blogImage.CreatedAt } : {})
-          } as RedisContent);
-        }
-
-        const batch$ = this.http.post<RedisContent[]>(
-          `${this.apiUrl}/content/batch`,
-          upserts,
-          { headers: this.headers }
-        ).pipe(
-          tap(() => this.invalidateReadCaches()),
-          catchError(this.handleError)
-        );
-
-        const deleteIds: string[] = [];
-        if ((!image || !image.trim()) && blogImage?.ID) {
-          deleteIds.push(blogImage.ID);
-        }
-        if (!normalizedRoughDraft && blogRoughDraft?.ID) {
-          deleteIds.push(blogRoughDraft.ID);
-        }
-
-        if (deleteIds.length) {
-          return batch$.pipe(
-            switchMap(() => forkJoin(deleteIds.map((id) => this.deleteContent(id)))),
-            map(() => upserts)
-          );
-        }
-
-        return batch$.pipe(map(() => upserts));
-      }),
-      catchError(this.handleError)
-    );
+      image,
+      listItemID,
+      publishDate,
+      status,
+      category,
+      readTimeMinutes,
+      signatureId,
+      signatureSnapshot,
+      expectedVersion,
+      expectedUpdatedAt
+    )).pipe(map((response) => this.canonicalPostItems(response.post)));
   }
 
   /**
@@ -1585,9 +1593,8 @@ export class BlogApiService {
     }
 
     const stream$ = this.readRequest(
-      this.http.get<RedisContent[]>(
-        `${this.apiUrl}/content/list-item/${encodeURIComponent(safeListItemId)}`,
-        { headers: this.headers }
+      this.getCanonicalBlogPost(safeListItemId).pipe(
+        map((response) => this.canonicalPostItems(response.post))
       )
     ).pipe(
       tap((items) => this.persistListItemSnapshot(safeListItemId, items)),
@@ -1616,14 +1623,8 @@ export class BlogApiService {
   /**
    * Delete blog post
    */
-  deleteBlogPost(listItemID: string): Observable<void> {
-    return this.http.delete<void>(
-      `${this.apiUrl}/content/list-item/${listItemID}`,
-      { headers: this.headers }
-    ).pipe(
-      tap(() => this.invalidateReadCaches()),
-      catchError(this.handleError)
-    );
+  deleteBlogPost(listItemID: string, expected?: { expectedVersion?: number; expectedUpdatedAt?: string }): Observable<void> {
+    return this.deleteCanonicalBlogPost(listItemID, expected).pipe(map(() => undefined));
   }
 
   /**
@@ -1809,6 +1810,26 @@ export class BlogApiService {
     return this.http.post<{ provider: string; selectedAccount: SocialAuthAccount }>(
       `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/accounts/select`,
       { accountId },
+      { headers: this.headers }
+    ).pipe(catchError(this.handleError));
+  }
+
+  importSocialAuthToken(provider: string, accessToken: string): Observable<{
+    provider: string;
+    selectedAccount: SocialAuthAccount;
+    accountLabel: string;
+    expiresAt: string | null;
+    refreshed: boolean;
+  }> {
+    return this.http.post<{
+      provider: string;
+      selectedAccount: SocialAuthAccount;
+      accountLabel: string;
+      expiresAt: string | null;
+      refreshed: boolean;
+    }>(
+      `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/token/import`,
+      { accessToken },
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }

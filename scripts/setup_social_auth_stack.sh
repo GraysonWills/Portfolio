@@ -121,12 +121,17 @@ Next set these Lambda env vars before real provider login:
   SOCIAL_LINKEDIN_CLIENT_SECRET
   SOCIAL_META_CLIENT_ID
   SOCIAL_META_CLIENT_SECRET
+  SOCIAL_INSTAGRAM_CLIENT_ID
+  SOCIAL_INSTAGRAM_CLIENT_SECRET
+  SOCIAL_THREADS_CLIENT_ID
+  SOCIAL_THREADS_CLIENT_SECRET
 
 Provider callback URLs:
   X/Twitter:   https://api.grayson-wills.com/api/social-auth/x/callback
   LinkedIn:    https://api.grayson-wills.com/api/social-auth/linkedin/callback
   Facebook:    https://api.grayson-wills.com/api/social-auth/facebook/callback
   Instagram:   https://api.grayson-wills.com/api/social-auth/instagram/callback
+  Threads:     https://api.grayson-wills.com/api/social-auth/threads/callback
 EOF
 }
 

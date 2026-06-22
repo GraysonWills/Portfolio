@@ -238,6 +238,25 @@ pre {
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
 }
 
+.scope-presets {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.scope-presets button {
+  min-height: 2rem;
+  border: 1px solid #cfd6e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #244d52;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+}
+
 .scope-option {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -254,6 +273,32 @@ pre {
   grid-column: 2;
   color: #667085;
   overflow-wrap: anywhere;
+}
+
+.auto-execute-grid {
+  border-top: 1px solid #e3e7ef;
+  padding-top: 1rem;
+}
+
+.scope-option.risky {
+  border-color: #f3c6a6;
+  background: #fff8f1;
+}
+
+.auto-summary {
+  margin-top: 0.45rem;
+}
+
+.auto-summary span {
+  background: #f1f7ff;
+  border-color: #bfd7f5;
+  color: #24466d;
+}
+
+.auto-summary.muted span {
+  background: #f5f6f8;
+  border-color: #d7dde6;
+  color: #667085;
 }
 
 .token-reveal {
@@ -280,6 +325,29 @@ pre {
   background: #ffffff;
   color: #18413d;
   overflow-wrap: anywhere;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.setup-grid section {
+  min-width: 0;
+  border: 1px solid #e3e7ef;
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 0.85rem;
+}
+
+.setup-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 @media (max-width: 780px) {

@@ -30,8 +30,10 @@ Authenticated Angular authoring console for portfolio/blog/site content.
   - raw-record modal retained as an advanced fallback
 - Subscriber admin management (list/add/remove).
 - Comment management (list/filter, author replies, soft-delete moderation).
+- AI Clients page for per-machine MCP token creation/revocation, scope presets, limits, Keychain setup, and approval queue handling.
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
+- Distribution OAuth cards show live connection state, selected posting identity, expiry, reconnect requirements, and missing provider scopes.
 - Inline editor image guard:
   - detects embedded `data:image/*` tags before save
   - uploads those assets via API and rewrites post HTML to URL-based images
@@ -68,6 +70,8 @@ Main consumed APIs:
 - `/api/content/v3/bootstrap`
 - `/api/content/v3/admin/dashboard`
 - `/api/content/v3/admin/content`
+- `/api/blog/posts/*` for canonical blog create/update/get/delete
+- `/api/mcp/clients` and `/api/mcp/approvals/*` for AI client and approval management
 - `/api/notifications/*`
 - includes `/api/notifications/unpublish`
 - `/api/comments/*`
@@ -90,6 +94,8 @@ Normal route entry no longer calls `/api/health`; connectivity checks are now se
   - exposes typed editors for common content kinds while preserving the same backend JSON/metadata model
   - loads additional rows incrementally
 - Blog editor:
+  - creates, updates, reads, and deletes posts through canonical `/api/blog/posts` APIs
+  - sends `expectedVersion` or `expectedUpdatedAt` when updating/deleting existing posts
   - loads canonical post body from `BlogBody` first, then falls back to `BlogText`
   - preserves manual read time when supplied
   - rewrites inline base64 images to uploaded URLs before save
@@ -101,6 +107,29 @@ Scheduling dependency note:
   - `SCHEDULER_INVOKE_ROLE_ARN`
   - `SCHEDULER_TARGET_LAMBDA_ARN`
   - `SCHEDULER_GROUP_NAME` (optional; defaults to `portfolio-email`)
+
+Social connection note:
+- X/Twitter now asks for `dm.read` and `dm.write` in addition to post/user scopes. If an older X token does not include those scopes, the Distribution tab shows `Reconnect needed` and lists the missing scopes.
+- DM scopes are credential-only for now; the UI does not expose inbox reading or Direct Message sending, and social automation must not send DMs automatically.
+
+## AI Clients + MCP
+
+The AI Clients page creates scoped `mcp_...` tokens for machines that need to call `/api/mcp`. The raw token is shown only at creation time. Use the page-provided Keychain command, or this equivalent, so the token does not land in shell history:
+
+```bash
+read -rsp "MCP token: " MCP_TOKEN; echo
+security add-generic-password -a "$(hostname)" -s portfolio-mcp-authoring -w "$MCP_TOKEN" -U
+unset MCP_TOKEN
+```
+
+The MCP config snippet should reference `${MCP_BEARER_TOKEN}` or rely on the smoke script's Keychain lookup. Scope presets are available for read-only, draft-only, recommended authoring, and full coverage. Auto-execute presets are separate from scopes: "Auto most" covers blog/content updates, publish, schedule, unpublish, comment replies, and social settings; deletes and social sends are marked risky and remain manual unless selected. Auto-executed actions still appear as executed approval-history records.
+
+Useful checks:
+
+```bash
+node /Users/grayson/Desktop/Portfolio/scripts/mcp_smoke.mjs --mode prod-smoke --read-only
+MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node /Users/grayson/Desktop/Portfolio/scripts/mcp_smoke.mjs --mode prod-smoke
+```
 
 ## Hotkeys
 

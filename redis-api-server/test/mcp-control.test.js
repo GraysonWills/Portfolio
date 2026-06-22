@@ -70,6 +70,7 @@ test('MCP clients return raw token once and store only token hashes', async () =
   const result = await mcpControl.createClient({
     name: 'Local agent',
     scopes: ['blog:read', 'not-real'],
+    autoExecuteActions: ['blog.request_publish', 'not-real', 'blog.request_publish'],
   }, {
     sub: 'author-sub',
     email: 'author@example.com',
@@ -78,6 +79,7 @@ test('MCP clients return raw token once and store only token hashes', async () =
   assert.match(result.token, /^mcp_/);
   assert.equal(result.client.name, 'Local agent');
   assert.deepEqual(result.client.scopes, ['blog:read']);
+  assert.deepEqual(result.client.autoExecuteActions, ['blog.request_publish']);
 
   const serializedStore = JSON.stringify(Array.from(store.values()));
   assert.equal(serializedStore.includes(result.token), false);
@@ -86,6 +88,9 @@ test('MCP clients return raw token once and store only token hashes', async () =
   const authenticated = await mcpControl.authenticateBearer(`Bearer ${result.token}`);
   assert.equal(authenticated.clientId, result.client.clientId);
   assert.equal(authenticated.ownerSub, 'author-sub');
+  assert.deepEqual(authenticated.autoExecuteActions, ['blog.request_publish']);
+  assert.equal(mcpControl.canAutoExecute(authenticated, 'blog.request_publish'), true);
+  assert.equal(mcpControl.canAutoExecute(authenticated, 'blog.request_delete'), false);
 });
 
 test('sanitizeBlogHtml strips scripts and unsafe attributes', () => {

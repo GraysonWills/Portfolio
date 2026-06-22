@@ -172,9 +172,10 @@ When adding any new authoring page/route, include hotkeys by default:
   - worker callback endpoint for scheduled jobs
   - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
 - Social distribution OAuth:
-  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, and Instagram
+  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, and Threads
   - OAuth callback handling with short-lived state records
   - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
+  - X/Twitter OAuth currently requests post read/write, user read, refresh-token, and optional Direct Message scopes (`dm.read`, `dm.write`); existing X connections missing newly requested scopes are marked `needs-reconnect`
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
   - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
 
@@ -363,6 +364,8 @@ SCHEDULER_TARGET_LAMBDA_ARN=arn:aws:lambda:us-east-2:<account-id>:function:portf
 CONTENT_BACKEND=dynamodb
 CONTENT_TABLE_NAME=portfolio-content
 PREVIEW_SESSIONS_TABLE_NAME=portfolio-content-preview-sessions
+MCP_CONTROL_TABLE_NAME=portfolio-mcp-control
+# MCP_TOKEN_HASH_SECRET=<optional-dedicated-hmac-secret>
 
 # Optional Redis compatibility mode
 # REDIS_HOST=<host>
@@ -488,10 +491,40 @@ Checks include:
 
 - Public read, protected write endpoint model
 - Cognito JWT validation for mutation routes
+- MCP authoring machine tokens are scoped, revocable, expiring bearer tokens; store them in macOS Keychain or a secret manager, not shell history
 - API rate limiting (global + stricter write limiter)
 - Body size limits and cache invalidation on writes
 - Security scanning in CI (secret scan, SAST, dependency audit)
 - Async notification queueing to absorb bursts and reduce direct API-to-SES coupling
+
+## MCP Blog Authoring
+
+The API exposes an MCP Streamable HTTP gateway at `/api/mcp` for portfolio/blog automation. It uses per-machine `mcp_...` bearer tokens created from the authoring GUI AI Clients page. Tokens are scoped, rate-limited, expiring, and revocable. Direct writes are limited to owned MCP drafts, draft previews, and draft assets.
+
+Approval-backed actions can now be manual or auto-executed per client. The AI Clients page stores an `autoExecuteActions` allowlist on each token. Recommended automation covers blog/content updates, publish, schedule, unpublish, comment replies, and social settings. Deletes and social sends remain manual unless explicitly selected for that client. Auto-executed actions still create approval-style history records and audit rows.
+
+Recommended local token storage on macOS:
+
+```bash
+read -rsp "MCP token: " MCP_TOKEN; echo
+security add-generic-password -a "$(hostname)" -s portfolio-mcp-authoring -w "$MCP_TOKEN" -U
+unset MCP_TOKEN
+```
+
+Smoke test commands:
+
+```bash
+# Requires the API server plus a token in MCP_BEARER_TOKEN or Keychain.
+node scripts/mcp_smoke.mjs --mode local-contract --read-only
+
+# Operator-triggered live environment checks.
+MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node scripts/mcp_smoke.mjs --mode prod-smoke --read-only
+
+# Full disposable draft create/update/delete smoke when write scopes are available.
+MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node scripts/mcp_smoke.mjs --mode prod-smoke
+```
+
+`scripts/smoke_prod.sh` always verifies unauthenticated MCP denial and runs the authenticated smoke only when `MCP_BEARER_TOKEN` is set or `RUN_MCP_AUTH_SMOKE=true` can find the token in Keychain.
 
 ## Design + Blueprint Documentation
 

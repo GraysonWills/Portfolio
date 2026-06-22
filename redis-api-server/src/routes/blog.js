@@ -108,7 +108,10 @@ router.put('/posts/:listItemID', async (req, res) => {
 router.delete('/posts/:listItemID', async (req, res) => {
   try {
     return await withIdempotency(req, res, 200, async () => {
-      return blogPosts.deletePost(req.params.listItemID);
+      return blogPosts.deletePost(req.params.listItemID, {
+        expectedUpdatedAt: req.body?.expectedUpdatedAt || '',
+        expectedVersion: req.body?.expectedVersion,
+      });
     });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message, details: err.details || undefined });

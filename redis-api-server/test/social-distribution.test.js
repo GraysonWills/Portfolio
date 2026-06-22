@@ -33,6 +33,7 @@ test('normalizes social distribution settings with default templates and rules',
 
   assert.ok(settings.templates.some((template) => template.id === 'launch-note'));
   assert.ok(settings.templates.some((template) => template.id === 'custom'));
+  assert.ok(settings.templates.some((template) => template.id === 'threads-short-post'));
   assert.ok(settings.rules.some((rule) => rule.id === 'publish-announcement'));
   assert.ok(settings.rules.some((rule) => rule.id === 'custom-rule'));
 });
@@ -107,4 +108,65 @@ test('builds stable delivery ids from post, rule, provider, and account', () => 
   assert.equal(first, second);
   assert.notEqual(first, third);
   assert.equal(first.length, 64);
+});
+
+test('posts X deliveries through current api.x.com endpoint', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ data: { id: 'tweet-1' } })
+    };
+  };
+
+  const result = await socialDistribution.__private.postToX({
+    token: { access_token: 'x-token' }
+  }, {
+    caption: 'New post https://example.test'
+  });
+
+  assert.equal(result.providerPostId, 'tweet-1');
+  assert.equal(result.providerPostUrl, 'https://x.com/i/web/status/tweet-1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.x.com/2/tweets');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer x-token');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { text: 'New post https://example.test' });
+});
+
+test('posts direct Instagram deliveries through graph.instagram.com', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ id: calls.length === 1 ? 'creation-1' : 'media-1' })
+    };
+  };
+
+  const result = await socialDistribution.__private.postToInstagram({
+    family: 'instagram',
+    accountId: '17841400000000000',
+    token: { access_token: 'ig-token' }
+  }, {
+    caption: 'New post',
+    destination: 'feed-post',
+    mediaUrl: 'https://cdn.example.test/cover.jpg'
+  });
+
+  assert.equal(result.providerPostId, 'media-1');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, 'https://graph.instagram.com/v23.0/17841400000000000/media');
+  assert.equal(calls[1].url, 'https://graph.instagram.com/v23.0/17841400000000000/media_publish');
+  assert.match(String(calls[0].options.body), /caption=New\+post/);
 });
