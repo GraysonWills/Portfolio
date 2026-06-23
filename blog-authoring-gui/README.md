@@ -33,7 +33,8 @@ Authenticated Angular authoring console for portfolio/blog/site content.
 - AI Clients page for per-machine MCP token creation/revocation, scope presets, limits, Keychain setup, and approval queue handling.
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
-- Distribution OAuth cards show live connection state, selected posting identity, expiry, reconnect requirements, and missing provider scopes.
+- Distribution OAuth cards show live connection state, selected posting identity, expiry, reconnect requirements, and missing provider scopes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, and TikTok.
+- TikTok distribution starts with photo upload support through the official Content Posting API and requires a public cover/media URL.
 - Inline editor image guard:
   - detects embedded `data:image/*` tags before save
   - uploads those assets via API and rewrites post HTML to URL-based images

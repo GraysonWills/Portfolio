@@ -34,6 +34,7 @@ test('normalizes social distribution settings with default templates and rules',
   assert.ok(settings.templates.some((template) => template.id === 'launch-note'));
   assert.ok(settings.templates.some((template) => template.id === 'custom'));
   assert.ok(settings.templates.some((template) => template.id === 'threads-short-post'));
+  assert.ok(settings.templates.some((template) => template.id === 'tiktok-photo-upload'));
   assert.ok(settings.rules.some((rule) => rule.id === 'publish-announcement'));
   assert.ok(settings.rules.some((rule) => rule.id === 'custom-rule'));
 });
@@ -169,4 +170,43 @@ test('posts direct Instagram deliveries through graph.instagram.com', async (t) 
   assert.equal(calls[0].url, 'https://graph.instagram.com/v23.0/17841400000000000/media');
   assert.equal(calls[1].url, 'https://graph.instagram.com/v23.0/17841400000000000/media_publish');
   assert.match(String(calls[0].options.body), /caption=New\+post/);
+});
+
+test('uploads TikTok photo deliveries through the Content Posting API', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        data: { publish_id: 'publish-1' },
+        error: { code: 'ok', message: '' }
+      })
+    };
+  };
+
+  const result = await socialDistribution.__private.postToTikTok({
+    token: { access_token: 'tiktok-token' }
+  }, {
+    caption: 'New post\n\nhttps://example.test/blog',
+    postTitle: 'A thoughtful long-form post',
+    mediaUrl: 'https://cdn.example.test/cover.jpg'
+  });
+
+  assert.equal(result.providerPostId, 'publish-1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://open.tiktokapis.com/v2/post/publish/content/init/');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer tiktok-token');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.post_mode, 'MEDIA_UPLOAD');
+  assert.equal(body.media_type, 'PHOTO');
+  assert.equal(body.post_info.title, 'A thoughtful long-form post');
+  assert.equal(body.post_info.description, 'New post\n\nhttps://example.test/blog');
+  assert.equal(body.source_info.source, 'PULL_FROM_URL');
+  assert.deepEqual(body.source_info.photo_images, ['https://cdn.example.test/cover.jpg']);
 });

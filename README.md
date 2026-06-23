@@ -172,10 +172,11 @@ When adding any new authoring page/route, include hotkeys by default:
   - worker callback endpoint for scheduled jobs
   - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
 - Social distribution OAuth:
-  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, and Threads
+  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, and TikTok
   - OAuth callback handling with short-lived state records
   - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
   - X/Twitter OAuth currently requests post read/write, user read, refresh-token, and optional Direct Message scopes (`dm.read`, `dm.write`); existing X connections missing newly requested scopes are marked `needs-reconnect`
+  - TikTok OAuth uses the Login Kit `client_key` flow and V1 stages photo uploads through the Content Posting API media-upload flow
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
   - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
 

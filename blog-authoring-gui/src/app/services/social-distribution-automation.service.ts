@@ -119,6 +119,15 @@ export class SocialDistributionAutomationService {
           body: '{{title}}\n\n{{summary}}\n\n{{url}}',
           hashtags: '{{tags}}',
           useCoverImage: false
+        },
+        {
+          id: 'tiktok-photo-upload',
+          name: 'TikTok photo upload',
+          platformId: 'tiktok',
+          destination: 'Photo upload',
+          body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: true
         }
       ],
       rules: [

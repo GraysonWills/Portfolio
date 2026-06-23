@@ -78,6 +78,19 @@ const PROVIDERS = {
     scopes: ['threads_basic', 'threads_content_publish'],
     pkce: false,
     scopeSeparator: ','
+  },
+  tiktok: {
+    id: 'tiktok',
+    label: 'TikTok',
+    family: 'tiktok',
+    clientIdEnv: ['SOCIAL_TIKTOK_CLIENT_KEY', 'SOCIAL_TIKTOK_CLIENT_ID', 'TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_TIKTOK_CLIENT_SECRET', 'TIKTOK_CLIENT_SECRET'],
+    authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+    tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+    scopes: ['user.info.basic', 'video.upload', 'video.publish'],
+    pkce: false,
+    scopeSeparator: ',',
+    clientIdParam: 'client_key'
   }
 };
 
@@ -401,7 +414,7 @@ async function startOAuth(provider, user, { returnUrl = '' } = {}) {
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: config.clientId,
+    [config.clientIdParam || 'client_id']: config.clientId,
     redirect_uri: config.redirectUri,
     state
   });
@@ -476,7 +489,8 @@ async function completeOAuth(provider, { code, state }) {
   const shouldAutoSelect = config.family === 'x'
     || config.family === 'linkedin'
     || config.family === 'instagram'
-    || config.family === 'threads';
+    || config.family === 'threads'
+    || config.family === 'tiktok';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -574,6 +588,20 @@ async function exchangeCodeForToken(config, code, verifier) {
     });
   }
 
+  if (config.family === 'tiktok') {
+    return fetchJson(config.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_key: config.clientId,
+        client_secret: config.clientSecret,
+        grant_type: 'authorization_code',
+        redirect_uri: config.redirectUri,
+        code
+      }).toString()
+    });
+  }
+
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -629,6 +657,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'meta') url = 'https://graph.facebook.com/v22.0/me?fields=id,name';
   if (config.family === 'instagram') url = 'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name';
   if (config.family === 'threads') url = 'https://graph.threads.net/v1.0/me?fields=id,username,name';
+  if (config.family === 'tiktok') url = 'https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name';
   if (!url) return '';
 
   const payload = await fetchJson(url, {
@@ -640,6 +669,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'meta') return payload?.name || '';
   if (config.family === 'instagram') return payload?.username ? `@${payload.username}` : payload?.name || '';
   if (config.family === 'threads') return payload?.username ? `@${payload.username}` : payload?.name || '';
+  if (config.family === 'tiktok') return payload?.data?.user?.display_name || payload?.data?.display_name || 'TikTok account';
   return '';
 }
 
@@ -735,6 +765,20 @@ async function fetchProviderProfile(config, accessToken) {
       handle: username,
       platform: config.id,
       picture: payload?.threads_profile_picture_url || ''
+    };
+  }
+
+  if (config.family === 'tiktok') {
+    const payload = await fetchJson('https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const user = payload?.data?.user || payload?.data || {};
+    return {
+      id: String(user.open_id || ''),
+      label: String(user.display_name || 'TikTok account'),
+      handle: '',
+      platform: config.id,
+      picture: user.avatar_url || ''
     };
   }
 
@@ -923,7 +967,7 @@ async function listProviderAccounts(provider, user) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads') {
+  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads' || config.family === 'tiktok') {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
@@ -960,7 +1004,7 @@ async function selectProviderAccount(provider, user, { accountId } = {}) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads') {
+  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads' || config.family === 'tiktok') {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);

@@ -95,6 +95,7 @@ Initial provider IDs:
 - `facebook`
 - `instagram`
 - `threads`
+- `tiktok`
 
 The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/x/callback`
@@ -102,6 +103,7 @@ The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/facebook/callback`
 - `https://api.grayson-wills.com/api/social-auth/instagram/callback`
 - `https://api.grayson-wills.com/api/social-auth/threads/callback`
+- `https://api.grayson-wills.com/api/social-auth/tiktok/callback`
 
 X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
@@ -109,13 +111,15 @@ Instagram uses Instagram API with Instagram Login. Register the Instagram callba
 
 When Instagram app credentials are not yet available, an authenticated author can import a generated Instagram access token through `POST /api/social-auth/instagram/token/import`. The backend validates the token against `graph.instagram.com`, refreshes it when the token supports `ig_refresh_token`, encrypts the stored credential, and auto-selects the returned creator/business account. This is a fallback for one-account operation; the preferred long-term path remains normal OAuth through the Connect button once app credentials are available.
 
+TikTok uses Login Kit for Web. Register the TikTok callback URL as a redirect URI, configure `SOCIAL_TIKTOK_CLIENT_KEY` and `SOCIAL_TIKTOK_CLIENT_SECRET`, and grant `user.info.basic`, `video.upload`, and `video.publish` if the app has access. V1 uses the Content Posting API `MEDIA_UPLOAD` photo flow with a public image URL; TikTok returns a publish/upload id and the creator may still need to finish the upload in TikTok depending on app approval and account capability.
+
 Operational flow:
 1. Provider app credentials are configured once on Lambda.
 2. The authoring Distribution tab calls `POST /api/social-auth/:provider/start` when Connect is pressed.
 3. The backend creates a 10-minute state record, builds the provider OAuth URL, and returns it to the browser.
 4. The provider redirects back to `/api/social-auth/:provider/callback` with an authorization code.
 5. The backend exchanges that code for token artifacts, encrypts the raw token payload, stores it in DynamoDB, and redirects back to the authoring Distribution tab.
-6. X, LinkedIn, Instagram direct-login, and Threads personal posting identities are selected automatically when profile lookup succeeds.
+6. X, LinkedIn, Instagram direct-login, Threads, and TikTok posting identities are selected automatically when profile lookup succeeds.
 7. Facebook requires account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page. Instagram now uses direct Instagram Login for professional creator/business accounts instead of page-linked account discovery.
 8. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, selected account label, missing scopes, reconnect requirements, and which credential artifacts were captured.
 9. Blog publish/schedule events create social delivery records from saved templates/rules. Zero-delay deliveries send inline, delayed deliveries use the existing EventBridge Scheduler target, and review-required deliveries stay in `needs_review`.
@@ -250,6 +254,7 @@ Production resources:
 | `SOCIAL_META_CLIENT_ID` / `SOCIAL_META_CLIENT_SECRET` | Meta app credentials for Facebook Page OAuth |
 | `SOCIAL_INSTAGRAM_CLIENT_ID` / `SOCIAL_INSTAGRAM_CLIENT_SECRET` | Instagram App credentials for direct Instagram Login |
 | `SOCIAL_THREADS_CLIENT_ID` / `SOCIAL_THREADS_CLIENT_SECRET` | Threads OAuth app credentials |
+| `SOCIAL_TIKTOK_CLIENT_KEY` / `SOCIAL_TIKTOK_CLIENT_SECRET` | TikTok Login Kit app credentials |
 
 Provision the baseline DynamoDB table/IAM/env with:
 
@@ -270,6 +275,8 @@ SOCIAL_INSTAGRAM_CLIENT_ID=... \
 SOCIAL_INSTAGRAM_CLIENT_SECRET=... \
 SOCIAL_THREADS_CLIENT_ID=... \
 SOCIAL_THREADS_CLIENT_SECRET=... \
+SOCIAL_TIKTOK_CLIENT_KEY=... \
+SOCIAL_TIKTOK_CLIENT_SECRET=... \
 AWS_PROFILE=grayson-sso \
 scripts/set_social_provider_credentials.sh
 ```

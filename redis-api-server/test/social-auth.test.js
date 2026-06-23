@@ -126,6 +126,55 @@ test('builds threads provider config with Threads OAuth endpoints', () => {
   assert.deepEqual(config.scopes, ['threads_basic', 'threads_content_publish']);
 });
 
+test('builds tiktok provider config with TikTok OAuth endpoints', () => {
+  const config = socialAuth.getProviderConfig('tiktok');
+  assert.equal(config.id, 'tiktok');
+  assert.equal(config.family, 'tiktok');
+  assert.equal(config.authUrl, 'https://www.tiktok.com/v2/auth/authorize/');
+  assert.equal(config.tokenUrl, 'https://open.tiktokapis.com/v2/oauth/token/');
+  assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/tiktok/callback');
+  assert.deepEqual(config.scopes, ['user.info.basic', 'video.upload', 'video.publish']);
+  assert.equal(config.scopeSeparator, ',');
+  assert.equal(config.clientIdParam, 'client_key');
+});
+
+test('builds TikTok OAuth authorize URLs with client_key and comma scopes', async (t) => {
+  const previousClientKey = process.env.SOCIAL_TIKTOK_CLIENT_KEY;
+  const previousClientSecret = process.env.SOCIAL_TIKTOK_CLIENT_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousClientKey === undefined) delete process.env.SOCIAL_TIKTOK_CLIENT_KEY;
+    else process.env.SOCIAL_TIKTOK_CLIENT_KEY = previousClientKey;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_TIKTOK_CLIENT_SECRET;
+    else process.env.SOCIAL_TIKTOK_CLIENT_SECRET = previousClientSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_TIKTOK_CLIENT_KEY = 'tiktok-client-key';
+  process.env.SOCIAL_TIKTOK_CLIENT_SECRET = 'tiktok-client-secret';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  const result = await freshSocialAuth.startOAuth('tiktok', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+
+  const url = new URL(result.authUrl);
+  assert.equal(`${url.origin}${url.pathname}`, 'https://www.tiktok.com/v2/auth/authorize/');
+  assert.equal(url.searchParams.get('client_key'), 'tiktok-client-key');
+  assert.equal(url.searchParams.get('client_id'), null);
+  assert.equal(url.searchParams.get('scope'), 'user.info.basic,video.upload,video.publish');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/tiktok/callback');
+});
+
 test('builds instagram provider config with direct Instagram Login endpoints', () => {
   const config = socialAuth.getProviderConfig('instagram');
   assert.equal(config.id, 'instagram');

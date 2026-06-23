@@ -19,6 +19,8 @@ PROVIDER_KEYS=(
   SOCIAL_INSTAGRAM_CLIENT_SECRET
   SOCIAL_THREADS_CLIENT_ID
   SOCIAL_THREADS_CLIENT_SECRET
+  SOCIAL_TIKTOK_CLIENT_KEY
+  SOCIAL_TIKTOK_CLIENT_SECRET
 )
 
 require_cmd() {
@@ -71,6 +73,8 @@ Set one or more of these environment variables and rerun:
   SOCIAL_INSTAGRAM_CLIENT_SECRET
   SOCIAL_THREADS_CLIENT_ID
   SOCIAL_THREADS_CLIENT_SECRET
+  SOCIAL_TIKTOK_CLIENT_KEY
+  SOCIAL_TIKTOK_CLIENT_SECRET
 EOF
     exit 1
   fi
@@ -109,6 +113,7 @@ Register these callback URLs in the provider apps:
   Facebook:    https://api.grayson-wills.com/api/social-auth/facebook/callback
   Instagram:   https://api.grayson-wills.com/api/social-auth/instagram/callback
   Threads:     https://api.grayson-wills.com/api/social-auth/threads/callback
+  TikTok:      https://api.grayson-wills.com/api/social-auth/tiktok/callback
 EOF
 }
 

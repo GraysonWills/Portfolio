@@ -65,7 +65,7 @@ type QueueItem = {
   standalone: false
 })
 export class DistributionComponent implements OnInit {
-  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram', 'threads']);
+  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram', 'threads', 'tiktok']);
   private oauthReturnNoticeActive = false;
 
   activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
@@ -280,19 +280,19 @@ export class DistributionComponent implements OnInit {
     {
       id: 'tiktok',
       name: 'TikTok',
-      handle: '@graysonwills',
+      handle: 'No account selected',
       mark: 'TT',
       accentClass: 'tiktok',
-      connectionState: 'attention',
-      connectionLabel: 'Media check',
-      connectionDetail: 'Connected, but upload requires a video or photo set.',
-      lastChecked: '12 min ago',
-      expiresIn: '15 days',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect TikTok after the app credentials are configured.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
-        { label: 'Photo mode', value: 'photo-mode', requiresMedia: true },
-        { label: 'Video caption', value: 'video-caption', requiresMedia: true }
+        { label: 'Photo upload', value: 'photo-upload', requiresMedia: true },
+        { label: 'Video upload', value: 'video-upload', requiresMedia: true }
       ],
-      destination: 'photo-mode',
+      destination: 'photo-upload',
       selected: false
     },
     {

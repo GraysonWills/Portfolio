@@ -101,6 +101,15 @@ function getDefaultSettings() {
         body: '{{title}}\n\n{{summary}}\n\n{{url}}',
         hashtags: '{{tags}}',
         useCoverImage: false
+      },
+      {
+        id: 'tiktok-photo-upload',
+        name: 'TikTok photo upload',
+        platformId: 'tiktok',
+        destination: 'Photo upload',
+        body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: true
       }
     ],
     rules: [
@@ -734,6 +743,49 @@ async function postToThreads(credential, delivery) {
   };
 }
 
+async function postToTikTok(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const mediaUrl = String(delivery.mediaUrl || '').trim();
+  if (!/^https?:\/\//i.test(mediaUrl)) throw new Error('TikTok requires a public photo URL');
+
+  const caption = String(delivery.caption || '').trim();
+  const titleSource = String(delivery.postTitle || delivery.title || caption || 'New post').trim();
+  const title = Array.from(titleSource).slice(0, 90).join('');
+  const description = Array.from(caption).slice(0, 4000).join('');
+
+  const payload = await fetchJson('https://open.tiktokapis.com/v2/post/publish/content/init/', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8'
+    },
+    body: JSON.stringify({
+      post_info: {
+        title,
+        description
+      },
+      source_info: {
+        source: 'PULL_FROM_URL',
+        photo_cover_index: 0,
+        photo_images: [mediaUrl]
+      },
+      post_mode: 'MEDIA_UPLOAD',
+      media_type: 'PHOTO'
+    })
+  });
+
+  const errorCode = String(payload?.error?.code || 'ok');
+  if (errorCode && errorCode !== 'ok') {
+    throw new Error(payload?.error?.message || errorCode);
+  }
+
+  const publishId = String(payload?.data?.publish_id || '');
+  return {
+    providerPostId: publishId,
+    providerPostUrl: ''
+  };
+}
+
 async function sendDeliveryRecord(delivery, credential = null) {
   const userSub = String(delivery.userSub || '').trim();
   const deliveryId = String(delivery.deliveryId || '').trim();
@@ -756,6 +808,7 @@ async function sendDeliveryRecord(delivery, credential = null) {
     else if (delivery.provider === 'facebook') result = await postToFacebook(postingCredential, delivery);
     else if (delivery.provider === 'instagram') result = await postToInstagram(postingCredential, delivery);
     else if (delivery.provider === 'threads') result = await postToThreads(postingCredential, delivery);
+    else if (delivery.provider === 'tiktok') result = await postToTikTok(postingCredential, delivery);
     else throw new Error(`Unsupported social provider: ${delivery.provider}`);
 
     return await updateDelivery(userSub, deliveryId, {
@@ -960,6 +1013,7 @@ module.exports = {
   getAwsRegion,
   __private: {
     postToX,
-    postToInstagram
+    postToInstagram,
+    postToTikTok
   }
 };
