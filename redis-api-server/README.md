@@ -120,6 +120,8 @@ The callback URLs to register with each provider app are:
 
 X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
+LinkedIn uses OAuth 2.0 with OpenID Connect profile scopes plus member posting. The requested scopes are `openid`, `profile`, `email`, `r_profile_basicinfo`, and `w_member_social`. `w_member_social` enables personal-profile posting. `r_profile_basicinfo` is used only for richer basic profile metadata where LinkedIn makes it available; reading historical member posts still requires restricted LinkedIn permissions such as `r_member_social`.
+
 Instagram uses Instagram API with Instagram Login. Register the Instagram callback URL in the Instagram product OAuth settings and grant at least `instagram_business_basic` and `instagram_business_content_publish` for creator/business publishing.
 
 When Instagram app credentials are not yet available, an authenticated author can import a generated Instagram access token through `POST /api/social-auth/instagram/token/import`. The backend validates the token against `graph.instagram.com`, refreshes it when the token supports `ig_refresh_token`, encrypts the stored credential, and auto-selects the returned creator/business account. This is a fallback for one-account operation; the preferred long-term path remains normal OAuth through the Connect button once app credentials are available.

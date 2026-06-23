@@ -109,11 +109,58 @@ test('marks existing X connections as needing reconnect when newly required scop
   assert.deepEqual(xStatus.missingScopes, ['dm.read', 'dm.write']);
 });
 
-test('builds provider config with production callback by default', () => {
+test('builds LinkedIn provider config with profile and posting scopes', () => {
   const config = socialAuth.getProviderConfig('linkedin');
   assert.equal(config.id, 'linkedin');
   assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/linkedin/callback');
-  assert.ok(config.scopes.includes('w_member_social'));
+  assert.deepEqual(config.scopes, ['openid', 'profile', 'email', 'r_profile_basicinfo', 'w_member_social']);
+});
+
+test('marks existing LinkedIn connections as needing reconnect when r_profile_basicinfo is missing', async (t) => {
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  await memory.ddb.send(new PutCommand({
+    TableName: process.env.SOCIAL_AUTH_TABLE_NAME,
+    Item: {
+      pk: 'USER#author-sub',
+      sk: 'PROVIDER#linkedin',
+      provider: 'linkedin',
+      providerFamily: 'linkedin',
+      username: 'author',
+      accountLabel: 'Author Name',
+      scope: 'email,openid,profile,w_member_social',
+      connectedAt: '2026-06-23T01:14:14.932Z',
+      updatedAt: '2026-06-23T01:14:14.932Z',
+      expiresAtMs: Date.now() + 3600_000,
+      selectedAccount: {
+        id: 'member-id',
+        label: 'Author Name',
+        handle: 'author@example.test',
+        platform: 'linkedin'
+      }
+    }
+  }));
+
+  const statuses = await freshSocialAuth.getProviderStatus({
+    sub: 'author-sub',
+    username: 'author'
+  });
+  const linkedinStatus = statuses.find((status) => status.provider === 'linkedin');
+  assert.equal(linkedinStatus.status, 'needs-reconnect');
+  assert.equal(linkedinStatus.connected, false);
+  assert.equal(linkedinStatus.needsReconnect, true);
+  assert.deepEqual(linkedinStatus.missingScopes, ['r_profile_basicinfo']);
 });
 
 test('builds threads provider config with Threads OAuth endpoints', () => {

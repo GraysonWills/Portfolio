@@ -115,6 +115,7 @@ Scheduling dependency note:
 Social connection note:
 - X/Twitter now asks for `dm.read` and `dm.write` in addition to post/user scopes. If an older X token does not include those scopes, the Distribution tab shows `Reconnect needed` and lists the missing scopes.
 - DM scopes are credential-only for now; the UI does not expose inbox reading or Direct Message sending, and social automation must not send DMs automatically.
+- LinkedIn requests `openid`, `profile`, `email`, `r_profile_basicinfo`, and `w_member_social`. Existing LinkedIn tokens missing `r_profile_basicinfo` show `Reconnect needed`; this can expand basic profile metadata but does not grant historical post reads.
 - Account selection is required after OAuth for Facebook Pages, Pinterest boards, and Tumblr blogs. Single-identity providers such as X, LinkedIn, Instagram direct login, Threads, TikTok, Reddit, Mastodon, and Medium are selected automatically when profile lookup succeeds.
 
 ## AI Clients + MCP

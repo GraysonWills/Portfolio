@@ -33,7 +33,7 @@ const PROVIDERS = {
     clientSecretEnv: ['SOCIAL_LINKEDIN_CLIENT_SECRET', 'LINKEDIN_CLIENT_SECRET'],
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-    scopes: ['openid', 'profile', 'email', 'w_member_social'],
+    scopes: ['openid', 'profile', 'email', 'r_profile_basicinfo', 'w_member_social'],
     pkce: false
   },
   facebook: {
