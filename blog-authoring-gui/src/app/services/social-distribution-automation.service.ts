@@ -128,6 +128,60 @@ export class SocialDistributionAutomationService {
           body: '{{title}}\n\n{{summary}}\n\n{{url}}',
           hashtags: '{{tags}}',
           useCoverImage: true
+        },
+        {
+          id: 'reddit-profile-link',
+          name: 'Reddit profile link',
+          platformId: 'reddit',
+          destination: 'Profile post',
+          body: '{{summary}}\n\n{{url}}',
+          hashtags: '',
+          useCoverImage: false
+        },
+        {
+          id: 'pinterest-blog-pin',
+          name: 'Pinterest blog pin',
+          platformId: 'pinterest',
+          destination: 'Board pin',
+          body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: true
+        },
+        {
+          id: 'mastodon-status',
+          name: 'Mastodon status',
+          platformId: 'mastodon',
+          destination: 'Public post',
+          body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: false
+        },
+        {
+          id: 'tumblr-link-post',
+          name: 'Tumblr link post',
+          platformId: 'tumblr',
+          destination: 'Link post',
+          body: '{{summary}}\n\n{{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: false
+        },
+        {
+          id: 'medium-draft',
+          name: 'Medium draft',
+          platformId: 'medium',
+          destination: 'Draft',
+          body: '# {{title}}\n\n{{summary}}\n\nOriginally published: {{url}}',
+          hashtags: '{{tags}}',
+          useCoverImage: false
+        },
+        {
+          id: 'discord-announcement',
+          name: 'Discord announcement',
+          platformId: 'discord',
+          destination: 'Announcement channel',
+          body: 'New post: {{title}}\n\n{{summary}}\n\n{{url}}',
+          hashtags: '',
+          useCoverImage: false
         }
       ],
       rules: [

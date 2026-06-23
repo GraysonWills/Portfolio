@@ -96,6 +96,14 @@ Initial provider IDs:
 - `instagram`
 - `threads`
 - `tiktok`
+- `reddit`
+- `pinterest`
+- `mastodon`
+- `tumblr`
+- `medium`
+
+Webhook-only provider IDs:
+- `discord`
 
 The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/x/callback`
@@ -104,6 +112,11 @@ The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/instagram/callback`
 - `https://api.grayson-wills.com/api/social-auth/threads/callback`
 - `https://api.grayson-wills.com/api/social-auth/tiktok/callback`
+- `https://api.grayson-wills.com/api/social-auth/reddit/callback`
+- `https://api.grayson-wills.com/api/social-auth/pinterest/callback`
+- `https://api.grayson-wills.com/api/social-auth/mastodon/callback`
+- `https://api.grayson-wills.com/api/social-auth/tumblr/callback`
+- `https://api.grayson-wills.com/api/social-auth/medium/callback`
 
 X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
@@ -113,14 +126,28 @@ When Instagram app credentials are not yet available, an authenticated author ca
 
 TikTok uses Login Kit for Web. Register the TikTok callback URL as a redirect URI, configure `SOCIAL_TIKTOK_CLIENT_KEY` and `SOCIAL_TIKTOK_CLIENT_SECRET`, and grant `user.info.basic`, `video.upload`, and `video.publish` if the app has access. V1 uses the Content Posting API `MEDIA_UPLOAD` photo flow with a public image URL; TikTok returns a publish/upload id and the creator may still need to finish the upload in TikTok depending on app approval and account capability.
 
+Reddit uses OAuth with a confidential app credential, `identity`, `submit`, `read`, and `mysubreddits` scopes, and a required API user agent. V1 submits either link posts or self posts to the connected user's profile subreddit by default, or to an explicit destination like `r/example` or `subreddit:example`.
+
+Pinterest uses OAuth, lists boards after connection, and requires selecting a board before posting. V1 creates image pins, so the delivery must include a public cover/media URL.
+
+Mastodon requires `SOCIAL_MASTODON_INSTANCE_URL` in addition to the OAuth client id/secret. V1 posts statuses through that instance with public/unlisted/private visibility inferred from the delivery destination.
+
+Tumblr uses OAuth and requires selecting a blog before posting. V1 creates link posts when a blog URL is available, otherwise text posts, and can mark Tumblr deliveries as draft when the destination includes `draft`.
+
+Medium API posting is wired for existing integrations. V1 publishes markdown content as draft/public/unlisted and sets the original blog URL as the canonical URL when available.
+
+Discord is webhook-only. Configure `SOCIAL_DISCORD_WEBHOOK_URL`; it does not participate in OAuth status/start/callback.
+
+YouTube, Substack, and Bluesky are not enabled as automatic V1 posting targets. YouTube's official API is video-upload oriented, Substack has no supported public posting API, and Bluesky needs a dedicated AT Protocol connector rather than the current client-secret OAuth model.
+
 Operational flow:
 1. Provider app credentials are configured once on Lambda.
 2. The authoring Distribution tab calls `POST /api/social-auth/:provider/start` when Connect is pressed.
 3. The backend creates a 10-minute state record, builds the provider OAuth URL, and returns it to the browser.
 4. The provider redirects back to `/api/social-auth/:provider/callback` with an authorization code.
 5. The backend exchanges that code for token artifacts, encrypts the raw token payload, stores it in DynamoDB, and redirects back to the authoring Distribution tab.
-6. X, LinkedIn, Instagram direct-login, Threads, and TikTok posting identities are selected automatically when profile lookup succeeds.
-7. Facebook requires account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page. Instagram now uses direct Instagram Login for professional creator/business accounts instead of page-linked account discovery.
+6. X, LinkedIn, Instagram direct-login, Threads, TikTok, Reddit, Mastodon, and Medium posting identities are selected automatically when profile lookup succeeds.
+7. Facebook, Pinterest, and Tumblr require account selection after OAuth; the authoring Distribution tab calls the account list/select endpoints to choose a Facebook Page, Pinterest board, or Tumblr blog. Instagram now uses direct Instagram Login for professional creator/business accounts instead of page-linked account discovery.
 8. `GET /api/social-auth/status` returns non-sensitive connection metadata such as scopes, expiry, selected account label, missing scopes, reconnect requirements, and which credential artifacts were captured.
 9. Blog publish/schedule events create social delivery records from saved templates/rules. Zero-delay deliveries send inline, delayed deliveries use the existing EventBridge Scheduler target, and review-required deliveries stay in `needs_review`.
 
@@ -255,6 +282,14 @@ Production resources:
 | `SOCIAL_INSTAGRAM_CLIENT_ID` / `SOCIAL_INSTAGRAM_CLIENT_SECRET` | Instagram App credentials for direct Instagram Login |
 | `SOCIAL_THREADS_CLIENT_ID` / `SOCIAL_THREADS_CLIENT_SECRET` | Threads OAuth app credentials |
 | `SOCIAL_TIKTOK_CLIENT_KEY` / `SOCIAL_TIKTOK_CLIENT_SECRET` | TikTok Login Kit app credentials |
+| `SOCIAL_REDDIT_CLIENT_ID` / `SOCIAL_REDDIT_CLIENT_SECRET` | Reddit OAuth app credentials |
+| `SOCIAL_REDDIT_USER_AGENT` | optional Reddit API user agent override |
+| `SOCIAL_PINTEREST_CLIENT_ID` / `SOCIAL_PINTEREST_CLIENT_SECRET` | Pinterest OAuth app credentials |
+| `SOCIAL_MASTODON_INSTANCE_URL` | Mastodon instance base URL, for example `https://mastodon.social` |
+| `SOCIAL_MASTODON_CLIENT_ID` / `SOCIAL_MASTODON_CLIENT_SECRET` | Mastodon OAuth app credentials for the configured instance |
+| `SOCIAL_TUMBLR_CLIENT_ID` / `SOCIAL_TUMBLR_CLIENT_SECRET` | Tumblr OAuth app credentials |
+| `SOCIAL_MEDIUM_CLIENT_ID` / `SOCIAL_MEDIUM_CLIENT_SECRET` | Medium API integration credentials where available |
+| `SOCIAL_DISCORD_WEBHOOK_URL` | Discord announcement webhook URL |
 
 Provision the baseline DynamoDB table/IAM/env with:
 

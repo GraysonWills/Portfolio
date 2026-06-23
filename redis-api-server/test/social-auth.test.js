@@ -138,6 +138,98 @@ test('builds tiktok provider config with TikTok OAuth endpoints', () => {
   assert.equal(config.clientIdParam, 'client_key');
 });
 
+test('builds reddit provider config with permanent OAuth and basic token auth', () => {
+  const config = socialAuth.getProviderConfig('reddit');
+  assert.equal(config.id, 'reddit');
+  assert.equal(config.family, 'reddit');
+  assert.equal(config.authUrl, 'https://www.reddit.com/api/v1/authorize');
+  assert.equal(config.tokenUrl, 'https://www.reddit.com/api/v1/access_token');
+  assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/reddit/callback');
+  assert.deepEqual(config.scopes, ['identity', 'submit', 'read', 'mysubreddits']);
+  assert.equal(config.scopeSeparator, ' ');
+  assert.equal(config.tokenAuth, 'basic');
+  assert.deepEqual(config.authParams, { duration: 'permanent' });
+});
+
+test('builds pinterest provider config with comma scopes and basic token auth', () => {
+  const config = socialAuth.getProviderConfig('pinterest');
+  assert.equal(config.id, 'pinterest');
+  assert.equal(config.family, 'pinterest');
+  assert.equal(config.authUrl, 'https://www.pinterest.com/oauth/');
+  assert.equal(config.tokenUrl, 'https://api.pinterest.com/v5/oauth/token');
+  assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/pinterest/callback');
+  assert.deepEqual(config.scopes, ['user_accounts:read', 'boards:read', 'pins:read', 'pins:write']);
+  assert.equal(config.scopeSeparator, ',');
+  assert.equal(config.tokenAuth, 'basic');
+});
+
+test('builds mastodon provider config from configured instance URL', () => {
+  const previousInstance = process.env.SOCIAL_MASTODON_INSTANCE_URL;
+  const previousAltInstance = process.env.MASTODON_INSTANCE_URL;
+  process.env.SOCIAL_MASTODON_INSTANCE_URL = 'https://mastodon.example/';
+  delete process.env.MASTODON_INSTANCE_URL;
+
+  try {
+    const config = socialAuth.getProviderConfig('mastodon');
+    assert.equal(config.id, 'mastodon');
+    assert.equal(config.family, 'mastodon');
+    assert.equal(config.authUrl, 'https://mastodon.example/oauth/authorize');
+    assert.equal(config.tokenUrl, 'https://mastodon.example/oauth/token');
+    assert.equal(config.apiBaseUrl, 'https://mastodon.example');
+    assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/mastodon/callback');
+    assert.deepEqual(config.scopes, ['read:accounts', 'write:statuses']);
+  } finally {
+    if (previousInstance === undefined) delete process.env.SOCIAL_MASTODON_INSTANCE_URL;
+    else process.env.SOCIAL_MASTODON_INSTANCE_URL = previousInstance;
+    if (previousAltInstance === undefined) delete process.env.MASTODON_INSTANCE_URL;
+    else process.env.MASTODON_INSTANCE_URL = previousAltInstance;
+  }
+});
+
+test('marks mastodon as unconfigured without an instance URL', () => {
+  const previousClientId = process.env.SOCIAL_MASTODON_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_MASTODON_CLIENT_SECRET;
+  const previousInstance = process.env.SOCIAL_MASTODON_INSTANCE_URL;
+  const previousAltInstance = process.env.MASTODON_INSTANCE_URL;
+  process.env.SOCIAL_MASTODON_CLIENT_ID = 'mastodon-client';
+  process.env.SOCIAL_MASTODON_CLIENT_SECRET = 'mastodon-secret';
+  delete process.env.SOCIAL_MASTODON_INSTANCE_URL;
+  delete process.env.MASTODON_INSTANCE_URL;
+
+  try {
+    const config = socialAuth.getProviderConfig('mastodon');
+    const publicConfig = socialAuth.providerPublicConfig(config);
+    assert.equal(publicConfig.configured, false);
+  } finally {
+    if (previousClientId === undefined) delete process.env.SOCIAL_MASTODON_CLIENT_ID;
+    else process.env.SOCIAL_MASTODON_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_MASTODON_CLIENT_SECRET;
+    else process.env.SOCIAL_MASTODON_CLIENT_SECRET = previousClientSecret;
+    if (previousInstance === undefined) delete process.env.SOCIAL_MASTODON_INSTANCE_URL;
+    else process.env.SOCIAL_MASTODON_INSTANCE_URL = previousInstance;
+    if (previousAltInstance === undefined) delete process.env.MASTODON_INSTANCE_URL;
+    else process.env.MASTODON_INSTANCE_URL = previousAltInstance;
+  }
+});
+
+test('builds tumblr and medium provider configs', () => {
+  const tumblr = socialAuth.getProviderConfig('tumblr');
+  assert.equal(tumblr.id, 'tumblr');
+  assert.equal(tumblr.family, 'tumblr');
+  assert.equal(tumblr.authUrl, 'https://www.tumblr.com/oauth2/authorize');
+  assert.equal(tumblr.tokenUrl, 'https://api.tumblr.com/v2/oauth2/token');
+  assert.equal(tumblr.redirectUri, 'https://api.grayson-wills.com/api/social-auth/tumblr/callback');
+  assert.deepEqual(tumblr.scopes, ['basic', 'write']);
+
+  const medium = socialAuth.getProviderConfig('medium');
+  assert.equal(medium.id, 'medium');
+  assert.equal(medium.family, 'medium');
+  assert.equal(medium.authUrl, 'https://medium.com/m/oauth/authorize');
+  assert.equal(medium.tokenUrl, 'https://api.medium.com/v1/tokens');
+  assert.equal(medium.redirectUri, 'https://api.grayson-wills.com/api/social-auth/medium/callback');
+  assert.deepEqual(medium.scopes, ['basicProfile', 'publishPost']);
+});
+
 test('builds TikTok OAuth authorize URLs with client_key and comma scopes', async (t) => {
   const previousClientKey = process.env.SOCIAL_TIKTOK_CLIENT_KEY;
   const previousClientSecret = process.env.SOCIAL_TIKTOK_CLIENT_SECRET;
@@ -173,6 +265,79 @@ test('builds TikTok OAuth authorize URLs with client_key and comma scopes', asyn
   assert.equal(url.searchParams.get('client_id'), null);
   assert.equal(url.searchParams.get('scope'), 'user.info.basic,video.upload,video.publish');
   assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/tiktok/callback');
+});
+
+test('builds Reddit OAuth authorize URLs with duration permanent and space scopes', async (t) => {
+  const previousClientId = process.env.SOCIAL_REDDIT_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_REDDIT_CLIENT_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousClientId === undefined) delete process.env.SOCIAL_REDDIT_CLIENT_ID;
+    else process.env.SOCIAL_REDDIT_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_REDDIT_CLIENT_SECRET;
+    else process.env.SOCIAL_REDDIT_CLIENT_SECRET = previousClientSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_REDDIT_CLIENT_ID = 'reddit-client';
+  process.env.SOCIAL_REDDIT_CLIENT_SECRET = 'reddit-secret';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  const result = await freshSocialAuth.startOAuth('reddit', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+
+  const url = new URL(result.authUrl);
+  assert.equal(`${url.origin}${url.pathname}`, 'https://www.reddit.com/api/v1/authorize');
+  assert.equal(url.searchParams.get('client_id'), 'reddit-client');
+  assert.equal(url.searchParams.get('scope'), 'identity submit read mysubreddits');
+  assert.equal(url.searchParams.get('duration'), 'permanent');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/reddit/callback');
+});
+
+test('builds Pinterest OAuth authorize URLs with comma scopes', async (t) => {
+  const previousClientId = process.env.SOCIAL_PINTEREST_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_PINTEREST_CLIENT_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousClientId === undefined) delete process.env.SOCIAL_PINTEREST_CLIENT_ID;
+    else process.env.SOCIAL_PINTEREST_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_PINTEREST_CLIENT_SECRET;
+    else process.env.SOCIAL_PINTEREST_CLIENT_SECRET = previousClientSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_PINTEREST_CLIENT_ID = 'pinterest-client';
+  process.env.SOCIAL_PINTEREST_CLIENT_SECRET = 'pinterest-secret';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  const result = await freshSocialAuth.startOAuth('pinterest', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+
+  const url = new URL(result.authUrl);
+  assert.equal(`${url.origin}${url.pathname}`, 'https://www.pinterest.com/oauth/');
+  assert.equal(url.searchParams.get('client_id'), 'pinterest-client');
+  assert.equal(url.searchParams.get('scope'), 'user_accounts:read,boards:read,pins:read,pins:write');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/pinterest/callback');
 });
 
 test('builds instagram provider config with direct Instagram Login endpoints', () => {

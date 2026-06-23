@@ -172,11 +172,18 @@ When adding any new authoring page/route, include hotkeys by default:
   - worker callback endpoint for scheduled jobs
   - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
 - Social distribution OAuth:
-  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, and TikTok
+  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, TikTok, Reddit, Pinterest, Mastodon, Tumblr, and Medium
   - OAuth callback handling with short-lived state records
   - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
   - X/Twitter OAuth currently requests post read/write, user read, refresh-token, and optional Direct Message scopes (`dm.read`, `dm.write`); existing X connections missing newly requested scopes are marked `needs-reconnect`
   - TikTok OAuth uses the Login Kit `client_key` flow and V1 stages photo uploads through the Content Posting API media-upload flow
+  - Reddit uses OAuth with `identity`, `submit`, `read`, and `mysubreddits` scopes; V1 can submit profile posts or configured subreddit link/self posts with a required API user agent
+  - Pinterest selects a board after OAuth and creates image pins from public cover/media URLs
+  - Mastodon uses a configured instance URL plus OAuth `read:accounts` and `write:statuses`
+  - Tumblr selects a blog after OAuth and creates link/text posts through the official API
+  - Medium publishing is wired for existing API integrations and creates draft/public/unlisted posts with canonical blog URLs
+  - Discord uses a server-side webhook URL instead of OAuth for announcement-channel posts
+  - YouTube, Substack, and Bluesky are intentionally disabled in V1 until a suitable official posting connector is added
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
   - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
 

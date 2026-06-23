@@ -33,8 +33,11 @@ Authenticated Angular authoring console for portfolio/blog/site content.
 - AI Clients page for per-machine MCP token creation/revocation, scope presets, limits, Keychain setup, and approval queue handling.
 - Collections authoring (`PageID=4`) for non-blog written content types.
 - Photo asset upload flow (signed URL + complete lifecycle).
-- Distribution OAuth cards show live connection state, selected posting identity, expiry, reconnect requirements, and missing provider scopes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, and TikTok.
+- Distribution OAuth cards show live connection state, selected posting identity, expiry, reconnect requirements, and missing provider scopes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, TikTok, Reddit, Pinterest, Mastodon, Tumblr, and Medium.
 - TikTok distribution starts with photo upload support through the official Content Posting API and requires a public cover/media URL.
+- Reddit supports profile or subreddit link/self posts after OAuth. Pinterest requires choosing a board and a public image URL. Mastodon requires a configured instance. Tumblr requires choosing a blog. Medium creates API-backed drafts/posts when credentials are available.
+- Discord appears as a webhook-backed manual connector and uses the backend `SOCIAL_DISCORD_WEBHOOK_URL` instead of OAuth.
+- YouTube, Substack, and Bluesky remain disabled in Distribution V1 until a supported official connector is added.
 - Inline editor image guard:
   - detects embedded `data:image/*` tags before save
   - uploads those assets via API and rewrites post HTML to URL-based images
@@ -112,6 +115,7 @@ Scheduling dependency note:
 Social connection note:
 - X/Twitter now asks for `dm.read` and `dm.write` in addition to post/user scopes. If an older X token does not include those scopes, the Distribution tab shows `Reconnect needed` and lists the missing scopes.
 - DM scopes are credential-only for now; the UI does not expose inbox reading or Direct Message sending, and social automation must not send DMs automatically.
+- Account selection is required after OAuth for Facebook Pages, Pinterest boards, and Tumblr blogs. Single-identity providers such as X, LinkedIn, Instagram direct login, Threads, TikTok, Reddit, Mastodon, and Medium are selected automatically when profile lookup succeeds.
 
 ## AI Clients + MCP
 

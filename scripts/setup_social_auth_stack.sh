@@ -127,6 +127,18 @@ Next set these Lambda env vars before real provider login:
   SOCIAL_THREADS_CLIENT_SECRET
   SOCIAL_TIKTOK_CLIENT_KEY
   SOCIAL_TIKTOK_CLIENT_SECRET
+  SOCIAL_REDDIT_CLIENT_ID
+  SOCIAL_REDDIT_CLIENT_SECRET
+  SOCIAL_PINTEREST_CLIENT_ID
+  SOCIAL_PINTEREST_CLIENT_SECRET
+  SOCIAL_MASTODON_INSTANCE_URL
+  SOCIAL_MASTODON_CLIENT_ID
+  SOCIAL_MASTODON_CLIENT_SECRET
+  SOCIAL_TUMBLR_CLIENT_ID
+  SOCIAL_TUMBLR_CLIENT_SECRET
+  SOCIAL_MEDIUM_CLIENT_ID
+  SOCIAL_MEDIUM_CLIENT_SECRET
+  SOCIAL_DISCORD_WEBHOOK_URL
 
 Provider callback URLs:
   X/Twitter:   https://api.grayson-wills.com/api/social-auth/x/callback
@@ -135,6 +147,13 @@ Provider callback URLs:
   Instagram:   https://api.grayson-wills.com/api/social-auth/instagram/callback
   Threads:     https://api.grayson-wills.com/api/social-auth/threads/callback
   TikTok:      https://api.grayson-wills.com/api/social-auth/tiktok/callback
+  Reddit:      https://api.grayson-wills.com/api/social-auth/reddit/callback
+  Pinterest:   https://api.grayson-wills.com/api/social-auth/pinterest/callback
+  Mastodon:    https://api.grayson-wills.com/api/social-auth/mastodon/callback
+  Tumblr:      https://api.grayson-wills.com/api/social-auth/tumblr/callback
+  Medium:      https://api.grayson-wills.com/api/social-auth/medium/callback
+
+Discord uses SOCIAL_DISCORD_WEBHOOK_URL and does not use OAuth.
 EOF
 }
 

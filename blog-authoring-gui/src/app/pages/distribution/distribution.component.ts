@@ -65,7 +65,20 @@ type QueueItem = {
   standalone: false
 })
 export class DistributionComponent implements OnInit {
-  private readonly oauthProviderIds = new Set(['facebook', 'x', 'linkedin', 'instagram', 'threads', 'tiktok']);
+  private readonly oauthProviderIds = new Set([
+    'facebook',
+    'x',
+    'linkedin',
+    'instagram',
+    'threads',
+    'tiktok',
+    'reddit',
+    'pinterest',
+    'mastodon',
+    'tumblr',
+    'medium'
+  ]);
+  private readonly webhookProviderIds = new Set(['discord']);
   private oauthReturnNoticeActive = false;
 
   activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
@@ -193,18 +206,19 @@ export class DistributionComponent implements OnInit {
       handle: '@graysonwills',
       mark: 'YT',
       accentClass: 'youtube',
-      connectionState: 'not-connected',
-      connectionLabel: 'Not connected',
-      connectionDetail: 'Connect the channel before queueing community posts.',
-      lastChecked: 'Not checked',
-      expiresIn: 'No token',
+      connectionState: 'manual',
+      connectionLabel: 'Video only',
+      connectionDetail: 'YouTube Data API supports video uploads, not blog-link announcement posts.',
+      lastChecked: 'Manual',
+      expiresIn: 'Manual',
       destinationOptions: [
         { label: 'Community post', value: 'community-post' },
         { label: 'Short description', value: 'short-description', requiresMedia: true },
         { label: 'Video description', value: 'video-description' }
       ],
       destination: 'community-post',
-      selected: false
+      selected: false,
+      disabled: true
     },
     {
       id: 'threads',
@@ -230,46 +244,47 @@ export class DistributionComponent implements OnInit {
       handle: '@graysonwills.com',
       mark: 'BS',
       accentClass: 'bluesky',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'App password is present and healthy.',
-      lastChecked: '2 min ago',
-      expiresIn: 'Rotates manually',
+      connectionState: 'manual',
+      connectionLabel: 'Planned',
+      connectionDetail: 'AT Protocol OAuth needs a dedicated connector before API posting.',
+      lastChecked: 'Manual',
+      expiresIn: 'Manual',
       destinationOptions: [
         { label: 'Post', value: 'post' }
       ],
       destination: 'post',
-      selected: true
+      selected: false,
+      disabled: true
     },
     {
       id: 'mastodon',
       name: 'Mastodon',
-      handle: '@grayson@mastodon.social',
+      handle: 'No account selected',
       mark: 'M',
       accentClass: 'mastodon',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Instance access token is healthy.',
-      lastChecked: '2 min ago',
-      expiresIn: 'No expiry',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Configure the instance app credentials, then connect Mastodon.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
         { label: 'Post', value: 'post' },
         { label: 'Unlisted post', value: 'unlisted-post' }
       ],
       destination: 'post',
-      selected: true
+      selected: false
     },
     {
       id: 'pinterest',
       name: 'Pinterest',
-      handle: 'Grayson Wills',
+      handle: 'No board selected',
       mark: 'P',
       accentClass: 'pinterest',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Board posting is available.',
-      lastChecked: '7 min ago',
-      expiresIn: '87 days',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect Pinterest, then choose a board for pins.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
         { label: 'Pin to blog board', value: 'blog-board-pin', requiresMedia: true },
         { label: 'Idea pin draft', value: 'idea-pin-draft', requiresMedia: true }
@@ -298,32 +313,32 @@ export class DistributionComponent implements OnInit {
     {
       id: 'reddit',
       name: 'Reddit',
-      handle: 'u/graysonwills',
+      handle: 'No account selected',
       mark: 'R',
       accentClass: 'reddit',
-      connectionState: 'manual',
-      connectionLabel: 'Manual review',
-      connectionDetail: 'Keep this as a draft unless a community truly fits.',
-      lastChecked: 'Manual',
-      expiresIn: 'Manual',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect Reddit OAuth before profile or subreddit posts.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
-        { label: 'Profile post draft', value: 'profile-post-draft' },
-        { label: 'Subreddit draft', value: 'subreddit-draft' }
+        { label: 'Profile post', value: 'profile-post' },
+        { label: 'Subreddit post', value: 'subreddit-post' }
       ],
-      destination: 'profile-post-draft',
+      destination: 'profile-post',
       selected: false
     },
     {
       id: 'medium',
       name: 'Medium',
-      handle: '@graysonwills',
+      handle: 'No account selected',
       mark: 'M',
       accentClass: 'medium',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Draft publishing token is healthy.',
-      lastChecked: '9 min ago',
-      expiresIn: 'No expiry',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Medium API publishing is wired for existing API credentials.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
         { label: 'Excerpt draft', value: 'excerpt-draft' },
         { label: 'Canonical mirror draft', value: 'canonical-mirror-draft' }
@@ -334,14 +349,14 @@ export class DistributionComponent implements OnInit {
     {
       id: 'tumblr',
       name: 'Tumblr',
-      handle: 'graysonwills',
+      handle: 'No blog selected',
       mark: 'T',
       accentClass: 'tumblr',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Blog token is healthy.',
-      lastChecked: '9 min ago',
-      expiresIn: 'No expiry',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect Tumblr, then choose the blog to post to.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
       destinationOptions: [
         { label: 'Text post', value: 'text-post' },
         { label: 'Link post', value: 'link-post' }
@@ -355,10 +370,10 @@ export class DistributionComponent implements OnInit {
       handle: '#announcements',
       mark: 'D',
       accentClass: 'discord',
-      connectionState: 'connected',
-      connectionLabel: 'Connected',
-      connectionDetail: 'Announcement webhook is available.',
-      lastChecked: '2 min ago',
+      connectionState: 'manual',
+      connectionLabel: 'Webhook',
+      connectionDetail: 'Uses the server-side Discord webhook URL when configured.',
+      lastChecked: 'Manual',
       expiresIn: 'Webhook',
       destinationOptions: [
         { label: 'Announcement channel', value: 'announcement-channel' },
@@ -798,7 +813,7 @@ export class DistributionComponent implements OnInit {
         const statuses = response?.providers || [];
         statuses.forEach((status) => this.applyProviderStatus(status));
         for (const platform of this.platforms) {
-          if (!this.platformCanUseOAuth(platform) && !platform.disabled) {
+          if (!this.platformCanUseOAuth(platform) && !this.platformCanUseWebhook(platform) && !platform.disabled) {
             platform.connectionState = 'manual';
             platform.connectionLabel = 'Future connector';
             platform.connectionDetail = 'OAuth is not wired for this platform yet.';
@@ -912,7 +927,9 @@ export class DistributionComponent implements OnInit {
   }
 
   platformIsConnected(platform: DistributionPlatform): boolean {
-    return platform.connectionState === 'connected' || platform.connectionState === 'attention';
+    return platform.connectionState === 'connected'
+      || platform.connectionState === 'attention'
+      || (this.platformCanUseWebhook(platform) && platform.connectionState === 'manual');
   }
 
   destinationNeedsMedia(platform: DistributionPlatform): boolean {
@@ -925,6 +942,7 @@ export class DistributionComponent implements OnInit {
 
   getTargetReadiness(platform: DistributionPlatform): string {
     if (platform.disabled) return 'Connector unavailable';
+    if (this.platformCanUseWebhook(platform)) return 'Ready when webhook is configured';
     if (!this.platformCanUseOAuth(platform) && platform.connectionState === 'manual') return 'Future connector';
     if (platform.connectionState === 'expired') return 'Reconnect before posting';
     if (platform.connectionState === 'not-connected') return 'Connect before posting';
@@ -943,11 +961,16 @@ export class DistributionComponent implements OnInit {
     if (platform.connectionState === 'attention') return `${this.getSelectedDestinationLabel(platform)} needs media review.`;
     if (platform.connectionState === 'expired') return 'Login expired before posting.';
     if (platform.connectionState === 'not-connected') return 'Account is not connected.';
+    if (this.platformCanUseWebhook(platform)) return 'Webhook delivery through the backend.';
     return 'Manual workflow only.';
   }
 
   platformCanUseOAuth(platform: DistributionPlatform): boolean {
     return this.oauthProviderIds.has(platform.id);
+  }
+
+  platformCanUseWebhook(platform: DistributionPlatform): boolean {
+    return this.webhookProviderIds.has(platform.id);
   }
 
   goToDashboard(): void {
@@ -1144,6 +1167,16 @@ export class DistributionComponent implements OnInit {
         platform.lastChecked = 'Pending';
         platform.expiresIn = 'Pending';
         platform.selected = false;
+        continue;
+      }
+
+      if (this.platformCanUseWebhook(platform)) {
+        platform.connectionState = 'manual';
+        platform.connectionLabel = 'Webhook';
+        platform.connectionDetail = 'Uses the server-side Discord webhook URL when configured.';
+        platform.lastChecked = 'Manual';
+        platform.expiresIn = 'Webhook';
+        platform.selected = true;
         continue;
       }
 

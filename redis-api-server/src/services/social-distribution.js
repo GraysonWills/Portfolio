@@ -110,6 +110,60 @@ function getDefaultSettings() {
         body: '{{title}}\n\n{{summary}}\n\n{{url}}',
         hashtags: '{{tags}}',
         useCoverImage: true
+      },
+      {
+        id: 'reddit-profile-link',
+        name: 'Reddit profile link',
+        platformId: 'reddit',
+        destination: 'Profile post',
+        body: '{{summary}}\n\n{{url}}',
+        hashtags: '',
+        useCoverImage: false
+      },
+      {
+        id: 'pinterest-blog-pin',
+        name: 'Pinterest blog pin',
+        platformId: 'pinterest',
+        destination: 'Board pin',
+        body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: true
+      },
+      {
+        id: 'mastodon-status',
+        name: 'Mastodon status',
+        platformId: 'mastodon',
+        destination: 'Public post',
+        body: '{{title}}\n\n{{summary}}\n\n{{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: false
+      },
+      {
+        id: 'tumblr-link-post',
+        name: 'Tumblr link post',
+        platformId: 'tumblr',
+        destination: 'Link post',
+        body: '{{summary}}\n\n{{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: false
+      },
+      {
+        id: 'medium-draft',
+        name: 'Medium draft',
+        platformId: 'medium',
+        destination: 'Draft',
+        body: '# {{title}}\n\n{{summary}}\n\nOriginally published: {{url}}',
+        hashtags: '{{tags}}',
+        useCoverImage: false
+      },
+      {
+        id: 'discord-announcement',
+        name: 'Discord announcement',
+        platformId: 'discord',
+        destination: 'Announcement channel',
+        body: 'New post: {{title}}\n\n{{summary}}\n\n{{url}}',
+        hashtags: '',
+        useCoverImage: false
       }
     ],
     rules: [
@@ -786,6 +840,217 @@ async function postToTikTok(credential, delivery) {
   };
 }
 
+function truncateChars(value, max) {
+  return Array.from(String(value || '').trim()).slice(0, max).join('');
+}
+
+function getRedditUserAgent() {
+  return String(process.env.SOCIAL_REDDIT_USER_AGENT || 'web:grayson-wills-portfolio:v1.0 (by /u/graysonwills)').trim();
+}
+
+function tagListFromDelivery(delivery, max = 3) {
+  return String(delivery.caption || '')
+    .split(/\s+/)
+    .filter((word) => /^#[\w-]{2,}$/i.test(word))
+    .map((word) => word.replace(/^#/, '').slice(0, 25))
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+async function postToReddit(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const username = String(credential.account?.id || credential.accountId || '').replace(/^u\//, '').trim();
+  const destination = String(delivery.destination || '').trim();
+  const subredditFromDestination = destination.match(/(?:^|\s)(?:r\/|subreddit:)([A-Za-z0-9_]{3,21})/i)?.[1] || '';
+  const profileSubreddit = credential.account?.extra?.profileSubreddit || (username ? `u_${username}` : '');
+  const subreddit = subredditFromDestination || profileSubreddit;
+  if (!subreddit) throw new Error('Reddit destination subreddit is missing');
+
+  const postUrl = String(delivery.postUrl || '').trim();
+  const title = truncateChars(delivery.title || delivery.postTitle || delivery.caption || 'New post', 300);
+  const isLink = /^https?:\/\//i.test(postUrl);
+  const params = {
+    api_type: 'json',
+    kind: isLink ? 'link' : 'self',
+    sr: subreddit,
+    title,
+    resubmit: 'true',
+    sendreplies: 'false'
+  };
+  if (isLink) params.url = postUrl;
+  else params.text = delivery.caption;
+
+  const payload = await fetchJson('https://oauth.reddit.com/api/submit', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': getRedditUserAgent()
+    },
+    body: new URLSearchParams(params).toString()
+  });
+
+  const errors = payload?.json?.errors || [];
+  if (Array.isArray(errors) && errors.length) {
+    throw new Error(errors.map((err) => err?.[1] || err?.[0]).filter(Boolean).join('; ') || 'Reddit rejected the submission');
+  }
+
+  const id = String(payload?.json?.data?.id || payload?.json?.data?.name || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: payload?.json?.data?.url || ''
+  };
+}
+
+async function postToPinterest(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const boardId = credential.accountId || credential.account?.id;
+  const mediaUrl = String(delivery.mediaUrl || '').trim();
+  if (!boardId) throw new Error('Pinterest board is not selected');
+  if (!/^https?:\/\//i.test(mediaUrl)) throw new Error('Pinterest requires a public image URL');
+
+  const payload = await fetchJson('https://api.pinterest.com/v5/pins', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      board_id: boardId,
+      title: truncateChars(delivery.title || delivery.postTitle || 'New post', 100),
+      description: truncateChars(delivery.caption, 500),
+      link: /^https?:\/\//i.test(String(delivery.postUrl || '')) ? String(delivery.postUrl).trim() : undefined,
+      media_source: {
+        source_type: 'image_url',
+        url: mediaUrl
+      }
+    })
+  });
+
+  const id = String(payload?.id || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: payload?.link || payload?.url || ''
+  };
+}
+
+async function postToMastodon(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const instanceUrl = String(credential.token?.instance_url || credential.account?.extra?.instanceUrl || process.env.SOCIAL_MASTODON_INSTANCE_URL || '').replace(/\/+$/, '');
+  if (!instanceUrl) throw new Error('Mastodon instance URL is missing');
+  const visibility = /unlisted/i.test(String(delivery.destination || '')) ? 'unlisted'
+    : /private/i.test(String(delivery.destination || '')) ? 'private'
+      : 'public';
+  const payload = await fetchJson(`${instanceUrl}/api/v1/statuses`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      status: truncateChars(delivery.caption, 500),
+      visibility
+    })
+  });
+  const id = String(payload?.id || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: payload?.url || ''
+  };
+}
+
+async function postToTumblr(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const blogIdentifier = credential.account?.extra?.name || credential.accountId || credential.account?.handle;
+  if (!blogIdentifier) throw new Error('Tumblr blog is not selected');
+  const postUrl = String(delivery.postUrl || '').trim();
+  const isLink = /^https?:\/\//i.test(postUrl);
+  const payload = await fetchJson(`https://api.tumblr.com/v2/blog/${encodeURIComponent(blogIdentifier)}/posts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      type: isLink ? 'link' : 'text',
+      state: /draft/i.test(String(delivery.destination || '')) ? 'draft' : 'published',
+      title: truncateChars(delivery.title || delivery.postTitle || 'New post', 140),
+      ...(isLink ? { url: postUrl, description: delivery.caption } : { body: delivery.caption }),
+      tags: tagListFromDelivery(delivery, 20).join(',')
+    })
+  });
+  const response = payload?.response || {};
+  const id = String(response?.id || response?.id_string || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: response?.post_url || ''
+  };
+}
+
+async function postToMedium(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const authorId = credential.accountId || credential.account?.id;
+  if (!authorId) throw new Error('Medium author id is missing');
+  const postUrl = String(delivery.postUrl || '').trim();
+  const publishStatus = /public/i.test(String(delivery.destination || '')) ? 'public'
+    : /unlisted/i.test(String(delivery.destination || '')) ? 'unlisted'
+      : 'draft';
+  const payload = await fetchJson(`https://api.medium.com/v1/users/${encodeURIComponent(authorId)}/posts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'Accept-Charset': 'utf-8'
+    },
+    body: JSON.stringify({
+      title: truncateChars(delivery.title || delivery.postTitle || 'New post', 100),
+      contentFormat: 'markdown',
+      content: delivery.caption,
+      canonicalUrl: /^https?:\/\//i.test(postUrl) ? postUrl : undefined,
+      tags: tagListFromDelivery(delivery, 3),
+      publishStatus,
+      notifyFollowers: false
+    })
+  });
+  const data = payload?.data || {};
+  return {
+    providerPostId: String(data.id || ''),
+    providerPostUrl: data.url || ''
+  };
+}
+
+async function postToDiscord(_credential, delivery) {
+  const webhookUrl = String(process.env.SOCIAL_DISCORD_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL || '').trim();
+  if (!/^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\//i.test(webhookUrl)) {
+    throw new Error('Discord webhook URL is not configured');
+  }
+
+  const postUrl = String(delivery.postUrl || '').trim();
+  const mediaUrl = String(delivery.mediaUrl || '').trim();
+  const payload = await fetchJson(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}wait=true`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: truncateChars(delivery.caption, 2000),
+      username: 'Grayson Wills Blog',
+      allowed_mentions: { parse: [] },
+      embeds: /^https?:\/\//i.test(postUrl) || /^https?:\/\//i.test(mediaUrl)
+        ? [{
+          title: truncateChars(delivery.title || delivery.postTitle || 'New post', 256),
+          url: /^https?:\/\//i.test(postUrl) ? postUrl : undefined,
+          image: /^https?:\/\//i.test(mediaUrl) ? { url: mediaUrl } : undefined
+        }]
+        : []
+    })
+  });
+  const id = String(payload?.id || '');
+  return {
+    providerPostId: id,
+    providerPostUrl: id && payload?.channel_id ? `https://discord.com/channels/@me/${payload.channel_id}/${id}` : ''
+  };
+}
+
 async function sendDeliveryRecord(delivery, credential = null) {
   const userSub = String(delivery.userSub || '').trim();
   const deliveryId = String(delivery.deliveryId || '').trim();
@@ -801,15 +1066,24 @@ async function sendDeliveryRecord(delivery, credential = null) {
   });
 
   try {
-    const postingCredential = credential || await socialAuth.getPostingCredential(delivery.provider, { sub: userSub });
     let result;
-    if (delivery.provider === 'x') result = await postToX(postingCredential, delivery);
-    else if (delivery.provider === 'linkedin') result = await postToLinkedIn(postingCredential, delivery);
-    else if (delivery.provider === 'facebook') result = await postToFacebook(postingCredential, delivery);
-    else if (delivery.provider === 'instagram') result = await postToInstagram(postingCredential, delivery);
-    else if (delivery.provider === 'threads') result = await postToThreads(postingCredential, delivery);
-    else if (delivery.provider === 'tiktok') result = await postToTikTok(postingCredential, delivery);
-    else throw new Error(`Unsupported social provider: ${delivery.provider}`);
+    if (delivery.provider === 'discord') {
+      result = await postToDiscord(null, delivery);
+    } else {
+      const postingCredential = credential || await socialAuth.getPostingCredential(delivery.provider, { sub: userSub });
+      if (delivery.provider === 'x') result = await postToX(postingCredential, delivery);
+      else if (delivery.provider === 'linkedin') result = await postToLinkedIn(postingCredential, delivery);
+      else if (delivery.provider === 'facebook') result = await postToFacebook(postingCredential, delivery);
+      else if (delivery.provider === 'instagram') result = await postToInstagram(postingCredential, delivery);
+      else if (delivery.provider === 'threads') result = await postToThreads(postingCredential, delivery);
+      else if (delivery.provider === 'tiktok') result = await postToTikTok(postingCredential, delivery);
+      else if (delivery.provider === 'reddit') result = await postToReddit(postingCredential, delivery);
+      else if (delivery.provider === 'pinterest') result = await postToPinterest(postingCredential, delivery);
+      else if (delivery.provider === 'mastodon') result = await postToMastodon(postingCredential, delivery);
+      else if (delivery.provider === 'tumblr') result = await postToTumblr(postingCredential, delivery);
+      else if (delivery.provider === 'medium') result = await postToMedium(postingCredential, delivery);
+      else throw new Error(`Unsupported social provider: ${delivery.provider}`);
+    }
 
     return await updateDelivery(userSub, deliveryId, {
       status: 'sent',
@@ -1014,6 +1288,12 @@ module.exports = {
   __private: {
     postToX,
     postToInstagram,
-    postToTikTok
+    postToTikTok,
+    postToReddit,
+    postToPinterest,
+    postToMastodon,
+    postToTumblr,
+    postToMedium,
+    postToDiscord
   }
 };

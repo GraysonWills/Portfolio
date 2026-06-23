@@ -91,6 +91,70 @@ const PROVIDERS = {
     pkce: false,
     scopeSeparator: ',',
     clientIdParam: 'client_key'
+  },
+  reddit: {
+    id: 'reddit',
+    label: 'Reddit',
+    family: 'reddit',
+    clientIdEnv: ['SOCIAL_REDDIT_CLIENT_ID', 'REDDIT_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_REDDIT_CLIENT_SECRET', 'REDDIT_CLIENT_SECRET'],
+    authUrl: 'https://www.reddit.com/api/v1/authorize',
+    tokenUrl: 'https://www.reddit.com/api/v1/access_token',
+    scopes: ['identity', 'submit', 'read', 'mysubreddits'],
+    pkce: false,
+    scopeSeparator: ' ',
+    tokenAuth: 'basic',
+    authParams: { duration: 'permanent' }
+  },
+  pinterest: {
+    id: 'pinterest',
+    label: 'Pinterest',
+    family: 'pinterest',
+    clientIdEnv: ['SOCIAL_PINTEREST_CLIENT_ID', 'PINTEREST_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_PINTEREST_CLIENT_SECRET', 'PINTEREST_CLIENT_SECRET'],
+    authUrl: 'https://www.pinterest.com/oauth/',
+    tokenUrl: 'https://api.pinterest.com/v5/oauth/token',
+    scopes: ['user_accounts:read', 'boards:read', 'pins:read', 'pins:write'],
+    pkce: false,
+    scopeSeparator: ',',
+    tokenAuth: 'basic'
+  },
+  mastodon: {
+    id: 'mastodon',
+    label: 'Mastodon',
+    family: 'mastodon',
+    clientIdEnv: ['SOCIAL_MASTODON_CLIENT_ID', 'MASTODON_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_MASTODON_CLIENT_SECRET', 'MASTODON_CLIENT_SECRET'],
+    instanceUrlEnv: ['SOCIAL_MASTODON_INSTANCE_URL', 'MASTODON_INSTANCE_URL'],
+    authUrl: '',
+    tokenUrl: '',
+    scopes: ['read:accounts', 'write:statuses'],
+    pkce: false,
+    scopeSeparator: ' '
+  },
+  tumblr: {
+    id: 'tumblr',
+    label: 'Tumblr',
+    family: 'tumblr',
+    clientIdEnv: ['SOCIAL_TUMBLR_CLIENT_ID', 'SOCIAL_TUMBLR_CONSUMER_KEY', 'TUMBLR_CLIENT_ID', 'TUMBLR_CONSUMER_KEY'],
+    clientSecretEnv: ['SOCIAL_TUMBLR_CLIENT_SECRET', 'SOCIAL_TUMBLR_CONSUMER_SECRET', 'TUMBLR_CLIENT_SECRET', 'TUMBLR_CONSUMER_SECRET'],
+    authUrl: 'https://www.tumblr.com/oauth2/authorize',
+    tokenUrl: 'https://api.tumblr.com/v2/oauth2/token',
+    scopes: ['basic', 'write'],
+    pkce: false,
+    scopeSeparator: ' '
+  },
+  medium: {
+    id: 'medium',
+    label: 'Medium',
+    family: 'medium',
+    clientIdEnv: ['SOCIAL_MEDIUM_CLIENT_ID', 'MEDIUM_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_MEDIUM_CLIENT_SECRET', 'MEDIUM_CLIENT_SECRET'],
+    authUrl: 'https://medium.com/m/oauth/authorize',
+    tokenUrl: 'https://api.medium.com/v1/tokens',
+    scopes: ['basicProfile', 'publishPost'],
+    pkce: false,
+    scopeSeparator: ','
   }
 };
 
@@ -132,11 +196,18 @@ function normalizeProviderId(provider) {
 function getProviderConfig(provider) {
   const id = normalizeProviderId(provider);
   const config = PROVIDERS[id];
+  const instanceUrl = getEnvValue(config.instanceUrlEnv || []).replace(/\/+$/, '');
+  const authUrl = id === 'mastodon' && instanceUrl ? `${instanceUrl}/oauth/authorize` : config.authUrl;
+  const tokenUrl = id === 'mastodon' && instanceUrl ? `${instanceUrl}/oauth/token` : config.tokenUrl;
   return {
     ...config,
     clientId: getEnvValue(config.clientIdEnv),
     clientSecret: getEnvValue(config.clientSecretEnv),
     configId: getEnvValue(config.configIdEnv || []),
+    instanceUrl,
+    apiBaseUrl: instanceUrl,
+    authUrl,
+    tokenUrl,
     redirectUri: getRedirectUri(id)
   };
 }
@@ -312,7 +383,7 @@ function providerPublicConfig(config) {
     provider: config.id,
     label: config.label,
     family: config.family,
-    configured: Boolean(config.clientId && config.clientSecret),
+    configured: Boolean(config.clientId && config.clientSecret && (config.id !== 'mastodon' || config.instanceUrl)),
     scopes: config.scopes,
     redirectUri: config.redirectUri
   };
@@ -335,7 +406,7 @@ function toConnectionStatus(config, item) {
   const expiresAtMs = item?.expiresAtMs ? Number(item.expiresAtMs) : null;
   const expired = expiresAtMs ? Date.now() >= expiresAtMs : false;
   const selectedAccount = item?.selectedAccount || null;
-  const needsSelection = Boolean(item && ['facebook', 'instagram'].includes(config.id) && !selectedAccount?.id);
+  const needsSelection = Boolean(item && ['facebook', 'instagram', 'pinterest', 'tumblr'].includes(config.id) && !selectedAccount?.id);
   const missingScopes = getMissingScopes(config, item);
   const needsReconnect = Boolean(item && !expired && !needsSelection && missingScopes.length);
   return {
@@ -425,6 +496,9 @@ async function startOAuth(provider, user, { returnUrl = '' } = {}) {
     params.set('scope', config.scopes.join(config.scopeSeparator || (config.family === 'meta' ? ',' : ' ')));
   }
   if (config.forceReauth) params.set('force_reauth', 'true');
+  for (const [key, value] of Object.entries(config.authParams || {})) {
+    params.set(key, value);
+  }
 
   if (config.pkce) {
     params.set('code_challenge', codeChallenge(verifier));
@@ -479,6 +553,9 @@ async function completeOAuth(provider, { code, state }) {
       }))
       .catch(() => tokenPayload);
   }
+  if (config.family === 'mastodon' && tokenPayload?.access_token && config.apiBaseUrl) {
+    tokenPayload.instance_url = config.apiBaseUrl;
+  }
 
   const expiresInSeconds = Number(tokenPayload?.expires_in || 0);
   const expiresAtMs = expiresInSeconds > 0 ? Date.now() + (expiresInSeconds * 1000) : null;
@@ -490,7 +567,10 @@ async function completeOAuth(provider, { code, state }) {
     || config.family === 'linkedin'
     || config.family === 'instagram'
     || config.family === 'threads'
-    || config.family === 'tiktok';
+    || config.family === 'tiktok'
+    || config.family === 'reddit'
+    || config.family === 'mastodon'
+    || config.family === 'medium';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -546,7 +626,7 @@ async function getPostingCredential(provider, user) {
   const selectedAccount = item.selectedAccount || null;
   const encryptedToken = item.selectedToken || item.token;
   const providerFamily = item.providerFamily || config.family;
-  if (['facebook', 'instagram'].includes(config.id) && !selectedAccount?.id) {
+  if (['facebook', 'instagram', 'pinterest', 'tumblr'].includes(config.id) && !selectedAccount?.id) {
     const err = new Error(`${config.label} needs a selected account before posting`);
     err.status = 409;
     throw err;
@@ -602,6 +682,23 @@ async function exchangeCodeForToken(config, code, verifier) {
     });
   }
 
+  if (config.tokenAuth === 'basic') {
+    const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+    return fetchJson(config.tokenUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${basic}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...(config.family === 'reddit' ? { 'User-Agent': getRedditUserAgent() } : {})
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: config.redirectUri
+      }).toString()
+    });
+  }
+
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -609,7 +706,7 @@ async function exchangeCodeForToken(config, code, verifier) {
     client_id: config.clientId
   });
   if (verifier) params.set('code_verifier', verifier);
-  if (config.family === 'linkedin' || config.family === 'instagram') params.set('client_secret', config.clientSecret);
+  if (['linkedin', 'instagram', 'mastodon', 'tumblr', 'medium'].includes(config.family)) params.set('client_secret', config.clientSecret);
 
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.family === 'x' && config.clientSecret) {
@@ -649,6 +746,10 @@ async function exchangeInstagramLongLivedToken(config, shortToken) {
   return fetchJson(url.toString(), { method: 'GET' });
 }
 
+function getRedditUserAgent() {
+  return String(process.env.SOCIAL_REDDIT_USER_AGENT || 'web:grayson-wills-portfolio:v1.0 (by /u/graysonwills)').trim();
+}
+
 async function fetchAccountLabel(config, accessToken) {
   if (!accessToken) return '';
   let url = '';
@@ -658,10 +759,18 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'instagram') url = 'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name';
   if (config.family === 'threads') url = 'https://graph.threads.net/v1.0/me?fields=id,username,name';
   if (config.family === 'tiktok') url = 'https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name';
+  if (config.family === 'reddit') url = 'https://oauth.reddit.com/api/v1/me';
+  if (config.family === 'pinterest') url = 'https://api.pinterest.com/v5/user_account';
+  if (config.family === 'mastodon') url = `${config.apiBaseUrl}/api/v1/accounts/verify_credentials`;
+  if (config.family === 'tumblr') url = 'https://api.tumblr.com/v2/user/info';
+  if (config.family === 'medium') url = 'https://api.medium.com/v1/me';
   if (!url) return '';
 
   const payload = await fetchJson(url, {
-    headers: { Authorization: `Bearer ${accessToken}` }
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(config.family === 'reddit' ? { 'User-Agent': getRedditUserAgent() } : {})
+    }
   });
 
   if (config.family === 'x') return payload?.data?.username ? `@${payload.data.username}` : '';
@@ -670,6 +779,11 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'instagram') return payload?.username ? `@${payload.username}` : payload?.name || '';
   if (config.family === 'threads') return payload?.username ? `@${payload.username}` : payload?.name || '';
   if (config.family === 'tiktok') return payload?.data?.user?.display_name || payload?.data?.display_name || 'TikTok account';
+  if (config.family === 'reddit') return payload?.name ? `u/${payload.name}` : 'Reddit account';
+  if (config.family === 'pinterest') return payload?.username ? `@${payload.username}` : payload?.profile_url || 'Pinterest account';
+  if (config.family === 'mastodon') return payload?.acct ? `@${payload.acct}` : payload?.display_name || 'Mastodon account';
+  if (config.family === 'tumblr') return payload?.response?.user?.name || 'Tumblr account';
+  if (config.family === 'medium') return payload?.data?.username ? `@${payload.data.username}` : payload?.data?.name || 'Medium account';
   return '';
 }
 
@@ -782,6 +896,90 @@ async function fetchProviderProfile(config, accessToken) {
     };
   }
 
+  if (config.family === 'reddit') {
+    const user = await fetchJson('https://oauth.reddit.com/api/v1/me', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': getRedditUserAgent()
+      }
+    });
+    const username = String(user?.name || '').trim();
+    return {
+      id: username,
+      label: username ? `u/${username}` : 'Reddit account',
+      handle: username ? `u/${username}` : '',
+      platform: config.id,
+      picture: user?.icon_img || '',
+      extra: {
+        profileSubreddit: username ? `u_${username}` : ''
+      }
+    };
+  }
+
+  if (config.family === 'pinterest') {
+    const user = await fetchJson('https://api.pinterest.com/v5/user_account', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const username = String(user?.username || '').trim();
+    return {
+      id: String(user?.account_id || username || user?.id || ''),
+      label: username ? `@${username}` : String(user?.profile_url || 'Pinterest account'),
+      handle: username ? `@${username}` : '',
+      platform: config.id,
+      picture: user?.profile_image || ''
+    };
+  }
+
+  if (config.family === 'mastodon') {
+    const user = await fetchJson(`${config.apiBaseUrl}/api/v1/accounts/verify_credentials`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const acct = String(user?.acct || '').trim();
+    return {
+      id: String(user?.id || acct),
+      label: acct ? `@${acct}` : String(user?.display_name || 'Mastodon account'),
+      handle: acct ? `@${acct}` : '',
+      platform: config.id,
+      picture: user?.avatar || '',
+      extra: {
+        url: user?.url || '',
+        instanceUrl: config.apiBaseUrl
+      }
+    };
+  }
+
+  if (config.family === 'tumblr') {
+    const payload = await fetchJson('https://api.tumblr.com/v2/user/info', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const name = String(payload?.response?.user?.name || '').trim();
+    return {
+      id: name,
+      label: name || 'Tumblr account',
+      handle: name,
+      platform: config.id,
+      picture: ''
+    };
+  }
+
+  if (config.family === 'medium') {
+    const payload = await fetchJson('https://api.medium.com/v1/me', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const user = payload?.data || {};
+    const username = String(user.username || '').trim();
+    return {
+      id: String(user.id || username),
+      label: username ? `@${username}` : String(user.name || 'Medium account'),
+      handle: username ? `@${username}` : '',
+      platform: config.id,
+      picture: user.imageUrl || '',
+      extra: {
+        url: user.url || ''
+      }
+    };
+  }
+
   return null;
 }
 
@@ -853,6 +1051,67 @@ async function fetchInstagramAccounts(accessToken) {
   }
 
   return accounts;
+}
+
+async function fetchPinterestBoards(accessToken) {
+  const boards = [];
+  let url = 'https://api.pinterest.com/v5/boards?page_size=100';
+
+  while (url) {
+    const payload = await fetchJson(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    for (const board of payload?.items || []) {
+      if (!board?.id) continue;
+      boards.push({
+        id: String(board.id),
+        label: String(board.name || 'Pinterest board'),
+        handle: board.url || '',
+        platform: 'pinterest',
+        picture: '',
+        tokenPayload: {
+          access_token: accessToken,
+          token_type: 'Bearer'
+        },
+        extra: {
+          privacy: board.privacy || '',
+          url: board.url || ''
+        }
+      });
+    }
+
+    const bookmark = String(payload?.bookmark || '').trim();
+    url = bookmark
+      ? `https://api.pinterest.com/v5/boards?page_size=100&bookmark=${encodeURIComponent(bookmark)}`
+      : '';
+  }
+
+  return boards;
+}
+
+async function fetchTumblrBlogs(accessToken) {
+  const payload = await fetchJson('https://api.tumblr.com/v2/user/info', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  return (payload?.response?.user?.blogs || [])
+    .filter((blog) => blog?.name)
+    .map((blog) => ({
+      id: String(blog.uuid || blog.name),
+      label: String(blog.title || blog.name || 'Tumblr blog'),
+      handle: String(blog.name || ''),
+      platform: 'tumblr',
+      picture: '',
+      tokenPayload: {
+        access_token: accessToken,
+        token_type: 'Bearer'
+      },
+      extra: {
+        name: String(blog.name || ''),
+        url: blog.url || ''
+      }
+    }));
 }
 
 async function validateInstagramAccessToken(accessToken, config = PROVIDERS.instagram) {
@@ -967,13 +1226,17 @@ async function listProviderAccounts(provider, user) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads' || config.family === 'tiktok') {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
     accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
   } else if (config.id === 'facebook') {
     accounts = await fetchMetaPages(accessToken);
+  } else if (config.id === 'pinterest') {
+    accounts = await fetchPinterestBoards(accessToken);
+  } else if (config.id === 'tumblr') {
+    accounts = await fetchTumblrBlogs(accessToken);
   } else if (config.id === 'instagram') {
     accounts = await fetchInstagramAccounts(accessToken);
   }
@@ -1004,13 +1267,17 @@ async function selectProviderAccount(provider, user, { accountId } = {}) {
   }
 
   let accounts = [];
-  if (config.family === 'x' || config.family === 'linkedin' || config.family === 'instagram' || config.family === 'threads' || config.family === 'tiktok') {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
     accounts = profile?.id ? [{ ...profile, tokenPayload }] : [];
   } else if (config.id === 'facebook') {
     accounts = await fetchMetaPages(accessToken);
+  } else if (config.id === 'pinterest') {
+    accounts = await fetchPinterestBoards(accessToken);
+  } else if (config.id === 'tumblr') {
+    accounts = await fetchTumblrBlogs(accessToken);
   } else if (config.id === 'instagram') {
     accounts = await fetchInstagramAccounts(accessToken);
   }
