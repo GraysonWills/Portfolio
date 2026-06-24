@@ -437,6 +437,7 @@ async function refreshStoredConnection(config, item) {
   const refreshedItem = {
     ...item,
     token: encryptJson(mergedToken),
+    ...(item.selectedToken ? { selectedToken: encryptJson(mergedToken) } : {}),
     credentialArtifacts: summarizeTokenPayload(mergedToken, config),
     scope: String(mergedToken.scope || config.scopes.join(' ')),
     updatedAt: refreshedAt,

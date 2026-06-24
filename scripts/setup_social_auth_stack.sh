@@ -72,7 +72,8 @@ ensure_iam() {
       "dynamodb:PutItem",
       "dynamodb:GetItem",
       "dynamodb:DeleteItem",
-      "dynamodb:Query"
+      "dynamodb:Query",
+      "dynamodb:UpdateItem"
     ],
     Resource: $arn
   }')"

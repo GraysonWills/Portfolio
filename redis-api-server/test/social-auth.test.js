@@ -213,6 +213,7 @@ test('refreshes expired X access tokens before reporting status or posting crede
     TableName: process.env.SOCIAL_AUTH_TABLE_NAME,
     Item: {
       ...stored,
+      selectedToken: stored.token,
       expiresAtMs: Date.now() - 1000
     }
   }));
@@ -233,6 +234,7 @@ test('refreshes expired X access tokens before reporting status or posting crede
 
   const refreshed = memory.valuesForTable('social-auth-test').find((item) => item.provider === 'x');
   assert.equal(refreshed.credentialArtifacts.expiresInSeconds, 7200);
+  assert.notDeepEqual(refreshed.selectedToken, stored.token);
   assert.equal(JSON.stringify(refreshed).includes('new-x-access-token'), false);
   assert.equal(JSON.stringify(refreshed).includes('new-x-refresh-token'), false);
 });
