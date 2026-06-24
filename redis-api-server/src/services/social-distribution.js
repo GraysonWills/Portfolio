@@ -686,7 +686,64 @@ async function postToLinkedIn(credential, delivery) {
   const accessToken = assertAccessToken(credential);
   const personId = credential.accountId || credential.account?.id;
   if (!personId) throw new Error('LinkedIn profile id is missing');
-  const payload = await fetchJson('https://api.linkedin.com/v2/ugcPosts', {
+  const author = `urn:li:person:${personId}`;
+  const mediaUrl = String(delivery.mediaUrl || '').trim();
+  let mediaAsset = '';
+
+  if (/^https?:\/\//i.test(mediaUrl)) {
+    const registered = await fetchJson('https://api.linkedin.com/v2/assets?action=registerUpload', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Restli-Protocol-Version': '2.0.0'
+      },
+      body: JSON.stringify({
+        registerUploadRequest: {
+          recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+          owner: author,
+          serviceRelationships: [
+            {
+              relationshipType: 'OWNER',
+              identifier: 'urn:li:userGeneratedContent'
+            }
+          ]
+        }
+      })
+    });
+    const uploadMechanism = registered?.value?.uploadMechanism
+      ?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'];
+    const uploadUrl = String(uploadMechanism?.uploadUrl || '');
+    mediaAsset = String(registered?.value?.asset || '');
+    if (!uploadUrl || !mediaAsset) throw new Error('LinkedIn did not provide an image upload target');
+
+    const imageResponse = await fetch(mediaUrl);
+    if (!imageResponse.ok) throw new Error(`Unable to download LinkedIn image (HTTP ${imageResponse.status})`);
+    const contentType = String(imageResponse.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!['image/jpeg', 'image/png', 'image/gif'].includes(contentType)) {
+      throw new Error('LinkedIn image must be JPEG, PNG, or GIF');
+    }
+    const contentLength = Number(imageResponse.headers?.get?.('content-length') || 0);
+    if (contentLength > 10 * 1024 * 1024) throw new Error('LinkedIn image exceeds the 10 MB upload limit');
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    if (!imageBuffer.length) throw new Error('LinkedIn image download was empty');
+    if (imageBuffer.length > 10 * 1024 * 1024) throw new Error('LinkedIn image exceeds the 10 MB upload limit');
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': contentType
+      },
+      body: imageBuffer
+    });
+    if (!uploadResponse.ok) {
+      const details = await uploadResponse.text().catch(() => '');
+      throw new Error(details || `LinkedIn image upload failed (HTTP ${uploadResponse.status})`);
+    }
+  }
+
+  const response = await fetch('https://api.linkedin.com/v2/ugcPosts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -694,12 +751,22 @@ async function postToLinkedIn(credential, delivery) {
       'X-Restli-Protocol-Version': '2.0.0'
     },
     body: JSON.stringify({
-      author: `urn:li:person:${personId}`,
+      author,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
           shareCommentary: { text: delivery.caption },
-          shareMediaCategory: 'NONE'
+          shareMediaCategory: mediaAsset ? 'IMAGE' : 'NONE',
+          ...(mediaAsset ? {
+            media: [
+              {
+                status: 'READY',
+                description: { text: String(delivery.title || 'Blog post cover image') },
+                media: mediaAsset,
+                title: { text: String(delivery.title || 'Blog post cover image') }
+              }
+            ]
+          } : {})
         }
       },
       visibility: {
@@ -707,7 +774,22 @@ async function postToLinkedIn(credential, delivery) {
       }
     })
   });
-  const id = String(payload?.id || '');
+
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+  if (!response.ok) {
+    const err = new Error(payload?.message || payload?.error?.message || payload?.error || `HTTP ${response.status}`);
+    err.status = response.status;
+    err.details = payload;
+    throw err;
+  }
+
+  const id = String(response.headers?.get?.('x-restli-id') || payload?.id || '');
   return { providerPostId: id, providerPostUrl: '' };
 }
 
@@ -1287,6 +1369,7 @@ module.exports = {
   getAwsRegion,
   __private: {
     postToX,
+    postToLinkedIn,
     postToInstagram,
     postToTikTok,
     postToReddit,

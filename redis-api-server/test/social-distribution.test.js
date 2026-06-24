@@ -146,6 +146,80 @@ test('posts X deliveries through current api.x.com endpoint', async (t) => {
   assert.deepEqual(JSON.parse(calls[0].options.body), { text: 'New post https://example.test' });
 });
 
+test('uploads an image before creating a LinkedIn personal-profile post', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (calls.length === 1) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          value: {
+            uploadMechanism: {
+              'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest': {
+                uploadUrl: 'https://media-upload.example.test/image'
+              }
+            },
+            asset: 'urn:li:digitalmediaAsset:image-1'
+          }
+        })
+      };
+    }
+    if (calls.length === 2) {
+      return {
+        ok: true,
+        headers: {
+          get: (name) => ({
+            'content-type': 'image/jpeg',
+            'content-length': '4'
+          }[String(name).toLowerCase()] || null)
+        },
+        arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
+      };
+    }
+    if (calls.length === 3) {
+      return {
+        ok: true,
+        text: async () => ''
+      };
+    }
+    return {
+      ok: true,
+      headers: {
+        get: (name) => String(name).toLowerCase() === 'x-restli-id' ? 'ugc-post-1' : null
+      },
+      text: async () => ''
+    };
+  };
+
+  const result = await socialDistribution.__private.postToLinkedIn({
+    accountId: 'person-1',
+    token: { access_token: 'linkedin-token' }
+  }, {
+    caption: 'I have been publishing to my blog.',
+    title: "Want It, Don't Need It",
+    mediaUrl: 'https://images.example.test/cover.jpg'
+  });
+
+  assert.equal(result.providerPostId, 'ugc-post-1');
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].url, 'https://api.linkedin.com/v2/assets?action=registerUpload');
+  assert.equal(calls[1].url, 'https://images.example.test/cover.jpg');
+  assert.equal(calls[2].url, 'https://media-upload.example.test/image');
+  assert.equal(calls[2].options.method, 'PUT');
+  assert.equal(calls[3].url, 'https://api.linkedin.com/v2/ugcPosts');
+  const postBody = JSON.parse(calls[3].options.body);
+  const share = postBody.specificContent['com.linkedin.ugc.ShareContent'];
+  assert.equal(postBody.author, 'urn:li:person:person-1');
+  assert.equal(share.shareMediaCategory, 'IMAGE');
+  assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:image-1');
+});
+
 test('posts direct Instagram deliveries through graph.instagram.com', async (t) => {
   const calls = [];
   const originalFetch = global.fetch;
