@@ -12,6 +12,7 @@ const { randomToken, sha256Hex } = require('../utils/crypto');
 const DEFAULT_SOCIAL_AUTH_TABLE = 'portfolio-social-auth';
 const STATE_TTL_SECONDS = 10 * 60;
 const MAX_RETURN_URL_CHARS = 600;
+const TOKEN_REFRESH_SKEW_MS = 10 * 60 * 1000;
 
 const PROVIDERS = {
   x: {
@@ -402,6 +403,60 @@ function getMissingScopes(config, item) {
   return (config.scopes || []).filter((scope) => !grantedScopes.has(scope));
 }
 
+function providerSupportsRefresh(config) {
+  return config.family === 'x';
+}
+
+function tokenNeedsRefresh(config, item) {
+  if (!providerSupportsRefresh(config) || !item?.token) return false;
+  const expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+  if (!expiresAtMs) return false;
+  return Date.now() + TOKEN_REFRESH_SKEW_MS >= expiresAtMs;
+}
+
+async function refreshStoredConnection(config, item) {
+  const currentToken = decryptJson(item.token);
+  if (!currentToken?.refresh_token) return item;
+
+  let nextToken = null;
+  if (config.family === 'x') {
+    nextToken = await refreshXAccessToken(config, currentToken.refresh_token);
+  } else {
+    return item;
+  }
+
+  const mergedToken = {
+    ...currentToken,
+    ...nextToken,
+    refresh_token: nextToken.refresh_token || currentToken.refresh_token,
+    scope: nextToken.scope || currentToken.scope || config.scopes.join(' '),
+    token_type: nextToken.token_type || currentToken.token_type || 'bearer'
+  };
+  const expiresInSeconds = Number(mergedToken.expires_in || 0);
+  const refreshedAt = nowIso();
+  const refreshedItem = {
+    ...item,
+    token: encryptJson(mergedToken),
+    credentialArtifacts: summarizeTokenPayload(mergedToken, config),
+    scope: String(mergedToken.scope || config.scopes.join(' ')),
+    updatedAt: refreshedAt,
+    tokenRefreshedAt: refreshedAt,
+    expiresAtMs: expiresInSeconds > 0 ? Date.now() + (expiresInSeconds * 1000) : undefined
+  };
+
+  await getDdbDoc().send(new PutCommand({
+    TableName: getTableName(),
+    Item: refreshedItem
+  }));
+
+  return refreshedItem;
+}
+
+async function refreshConnectionIfNeeded(config, item) {
+  if (!tokenNeedsRefresh(config, item)) return item;
+  return refreshStoredConnection(config, item);
+}
+
 function toConnectionStatus(config, item) {
   const expiresAtMs = item?.expiresAtMs ? Number(item.expiresAtMs) : null;
   const expired = expiresAtMs ? Date.now() >= expiresAtMs : false;
@@ -447,10 +502,16 @@ async function getProviderStatus(user) {
   }
 
   const byProvider = new Map((resp?.Items || []).map((item) => [String(item.provider || ''), item]));
-  return Object.values(PROVIDERS).map((baseConfig) => {
+  return Promise.all(Object.values(PROVIDERS).map(async (baseConfig) => {
     const config = getProviderConfig(baseConfig.id);
-    return toConnectionStatus(config, byProvider.get(config.id));
-  });
+    let item = byProvider.get(config.id);
+    try {
+      item = await refreshConnectionIfNeeded(config, item);
+    } catch {
+      // Leave the stored status as-is; callers can reconnect if refresh fails.
+    }
+    return toConnectionStatus(config, item);
+  }));
 }
 
 async function startOAuth(provider, user, { returnUrl = '' } = {}) {
@@ -609,14 +670,28 @@ async function getPostingCredential(provider, user) {
     ConsistentRead: true
   }));
 
-  const item = res?.Item;
+  let item = res?.Item;
   if (!item?.token) {
     const err = new Error(`${config.label} is not connected`);
     err.status = 404;
     throw err;
   }
 
-  const expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+  let expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+  if (tokenNeedsRefresh(config, item)) {
+    try {
+      item = await refreshStoredConnection(config, item);
+      expiresAtMs = item.expiresAtMs ? Number(item.expiresAtMs) : null;
+    } catch (refreshErr) {
+      if (expiresAtMs && Date.now() >= expiresAtMs) {
+        const err = new Error(`${config.label} token refresh failed. Reconnect ${config.label} before posting.`);
+        err.status = 409;
+        err.details = { reason: refreshErr.message };
+        throw err;
+      }
+    }
+  }
+
   if (expiresAtMs && Date.now() >= expiresAtMs) {
     const err = new Error(`${config.label} token is expired`);
     err.status = 409;
@@ -710,6 +785,25 @@ async function exchangeCodeForToken(config, code, verifier) {
 
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.family === 'x' && config.clientSecret) {
+    const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+    headers.Authorization = `Basic ${basic}`;
+  }
+
+  return fetchJson(config.tokenUrl, {
+    method: 'POST',
+    headers,
+    body: params.toString()
+  });
+}
+
+async function refreshXAccessToken(config, refreshToken) {
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: config.clientId
+  });
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  if (config.clientSecret) {
     const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
     headers.Authorization = `Basic ${basic}`;
   }

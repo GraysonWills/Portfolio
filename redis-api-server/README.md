@@ -118,7 +118,7 @@ The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/tumblr/callback`
 - `https://api.grayson-wills.com/api/social-auth/medium/callback`
 
-X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
+X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. The short-lived X access token is renewed server-side with the stored encrypted refresh token before status checks and posting. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
 LinkedIn uses OAuth 2.0 with OpenID Connect profile scopes plus member posting. The requested scopes are `openid`, `profile`, `email`, `r_profile_basicinfo`, and `w_member_social`. `w_member_social` enables personal-profile posting. `r_profile_basicinfo` is used only for richer basic profile metadata where LinkedIn makes it available; reading historical member posts still requires restricted LinkedIn permissions such as `r_member_social`.
 

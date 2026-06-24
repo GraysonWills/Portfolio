@@ -1262,6 +1262,9 @@ export class DistributionComponent implements OnInit {
 
   private formatConnectionExpiry(status: SocialAuthProviderStatus): string {
     if (!status.configured) return 'Missing app setup';
+    if (status.provider === 'x' && status.credentialArtifacts?.hasRefreshToken && status.connected) {
+      return 'Auto-refresh enabled';
+    }
     if (!status.expiresAt) return status.connected ? 'No expiry reported' : 'No token';
     return this.formatExpiresAt(status.expiresAt);
   }

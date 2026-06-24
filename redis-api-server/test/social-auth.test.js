@@ -109,6 +109,134 @@ test('marks existing X connections as needing reconnect when newly required scop
   assert.deepEqual(xStatus.missingScopes, ['dm.read', 'dm.write']);
 });
 
+test('refreshes expired X access tokens before reporting status or posting credentials', async (t) => {
+  const originalFetch = global.fetch;
+  const previousClientId = process.env.SOCIAL_X_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_X_CLIENT_SECRET;
+  const previousTokenSecret = process.env.SOCIAL_AUTH_TOKEN_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (previousClientId === undefined) delete process.env.SOCIAL_X_CLIENT_ID;
+    else process.env.SOCIAL_X_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_X_CLIENT_SECRET;
+    else process.env.SOCIAL_X_CLIENT_SECRET = previousClientSecret;
+    if (previousTokenSecret === undefined) delete process.env.SOCIAL_AUTH_TOKEN_SECRET;
+    else process.env.SOCIAL_AUTH_TOKEN_SECRET = previousTokenSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_X_CLIENT_ID = 'x-client-id';
+  process.env.SOCIAL_X_CLIENT_SECRET = 'x-client-secret';
+  process.env.SOCIAL_AUTH_TOKEN_SECRET = 'test-social-token-secret-32-chars-minimum';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+  const user = {
+    sub: 'author-sub',
+    username: 'author'
+  };
+  const tokenRequests = [];
+  const expectedBasic = `Basic ${Buffer.from('x-client-id:x-client-secret').toString('base64')}`;
+
+  global.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href === 'https://api.x.com/2/oauth2/token') {
+      const params = new URLSearchParams(String(options.body || ''));
+      tokenRequests.push({
+        grantType: params.get('grant_type'),
+        refreshToken: params.get('refresh_token'),
+        authorization: options.headers?.Authorization || ''
+      });
+      assert.equal(options.headers?.Authorization, expectedBasic);
+
+      if (params.get('grant_type') === 'authorization_code') {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            access_token: 'old-x-access-token',
+            refresh_token: 'old-x-refresh-token',
+            token_type: 'bearer',
+            expires_in: 3600,
+            scope: 'tweet.read tweet.write users.read dm.read dm.write offline.access'
+          })
+        };
+      }
+
+      if (params.get('grant_type') === 'refresh_token') {
+        assert.equal(params.get('client_id'), 'x-client-id');
+        assert.equal(params.get('refresh_token'), 'old-x-refresh-token');
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            access_token: 'new-x-access-token',
+            refresh_token: 'new-x-refresh-token',
+            token_type: 'bearer',
+            expires_in: 7200,
+            scope: 'tweet.read tweet.write users.read dm.read dm.write offline.access'
+          })
+        };
+      }
+    }
+
+    if (href.startsWith('https://api.twitter.com/2/users/me')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          data: {
+            id: '2030858381473525760',
+            username: 'GraysonWil91957',
+            name: 'Grayson Wills'
+          }
+        })
+      };
+    }
+
+    throw new Error(`Unexpected fetch ${href}`);
+  };
+
+  const start = await freshSocialAuth.startOAuth('x', user, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+  const state = new URL(start.authUrl).searchParams.get('state');
+  await freshSocialAuth.completeOAuth('x', {
+    code: 'oauth-code',
+    state
+  });
+
+  const stored = memory.valuesForTable('social-auth-test').find((item) => item.provider === 'x');
+  await memory.ddb.send(new PutCommand({
+    TableName: process.env.SOCIAL_AUTH_TABLE_NAME,
+    Item: {
+      ...stored,
+      expiresAtMs: Date.now() - 1000
+    }
+  }));
+
+  const statuses = await freshSocialAuth.getProviderStatus(user);
+  const xStatus = statuses.find((status) => status.provider === 'x');
+  assert.equal(xStatus.status, 'connected');
+  assert.equal(xStatus.connected, true);
+  assert.equal(xStatus.credentialArtifacts.hasRefreshToken, true);
+  assert.equal(xStatus.credentialArtifacts.expiresInSeconds, 7200);
+  assert.ok(new Date(xStatus.expiresAt).getTime() > Date.now());
+
+  const credential = await freshSocialAuth.getPostingCredential('x', user);
+  assert.equal(credential.token.access_token, 'new-x-access-token');
+  assert.equal(credential.token.refresh_token, 'new-x-refresh-token');
+  assert.equal(credential.token.scope, 'tweet.read tweet.write users.read dm.read dm.write offline.access');
+  assert.deepEqual(tokenRequests.map((request) => request.grantType), ['authorization_code', 'refresh_token']);
+
+  const refreshed = memory.valuesForTable('social-auth-test').find((item) => item.provider === 'x');
+  assert.equal(refreshed.credentialArtifacts.expiresInSeconds, 7200);
+  assert.equal(JSON.stringify(refreshed).includes('new-x-access-token'), false);
+  assert.equal(JSON.stringify(refreshed).includes('new-x-refresh-token'), false);
+});
+
 test('builds LinkedIn provider config with profile and posting scopes', () => {
   const config = socialAuth.getProviderConfig('linkedin');
   assert.equal(config.id, 'linkedin');
