@@ -182,7 +182,25 @@
             [disabled]="tokenImportLoading"
             (onClick)="openTokenImport(platform)">
           </p-button>
-          <span *ngIf="platform.disabled || !platformCanUseOAuth(platform)" class="manual-note">Manual setup</span>
+          <p-button
+            *ngIf="platformUsesManualImport(platform)"
+            label="Copy Blog URL"
+            icon="pi pi-copy"
+            styleClass="p-button-sm p-button-outlined"
+            (onClick)="copyMediumImportUrl()">
+          </p-button>
+          <p-button
+            *ngIf="platformUsesManualImport(platform)"
+            label="Open Import"
+            icon="pi pi-external-link"
+            styleClass="p-button-sm"
+            (onClick)="openMediumImport()">
+          </p-button>
+          <span
+            *ngIf="platform.disabled || (!platformCanUseOAuth(platform) && !platformUsesManualImport(platform))"
+            class="manual-note">
+            Manual setup
+          </span>
         </div>
 
         <div class="token-import" *ngIf="tokenImportProviderId === platform.id">

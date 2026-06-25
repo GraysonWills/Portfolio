@@ -167,11 +167,11 @@ export class SocialDistributionAutomationService {
         },
         {
           id: 'medium-draft',
-          name: 'Medium draft',
+          name: 'Medium import handoff',
           platformId: 'medium',
-          destination: 'Draft',
-          body: '# {{title}}\n\n{{summary}}\n\nOriginally published: {{url}}',
-          hashtags: '{{tags}}',
+          destination: 'Manual import',
+          body: '{{url}}',
+          hashtags: '',
           useCoverImage: false
         },
         {

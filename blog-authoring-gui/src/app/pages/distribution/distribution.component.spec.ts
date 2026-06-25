@@ -141,6 +141,49 @@ describe('DistributionComponent', () => {
     expect(xPlatform?.expiresIn).toBe('Auto-refresh enabled');
   });
 
+  it('keeps Medium as a manual import workflow even when legacy OAuth status is returned', () => {
+    const { component, status$ } = createComponent();
+
+    component.ngOnInit();
+    status$.next({
+      providers: [{
+        provider: 'medium',
+        label: 'Medium',
+        family: 'medium',
+        configured: true,
+        scopes: ['basicProfile', 'publishPost'],
+        redirectUri: 'https://api.grayson-wills.com/api/social-auth/medium/callback',
+        connected: true,
+        status: 'connected',
+        connectedAt: '2026-06-25T00:00:00.000Z',
+        updatedAt: '2026-06-25T00:00:00.000Z',
+        expiresAt: null,
+        accountLabel: 'Legacy Medium account',
+        selectedAccount: null,
+        scope: 'basicProfile,publishPost',
+        credentialArtifacts: null
+      }]
+    });
+
+    const medium = component.platforms.find((platform) => platform.id === 'medium');
+    expect(component.platformCanUseOAuth(medium!)).toBeFalse();
+    expect(component.platformUsesManualImport(medium!)).toBeTrue();
+    expect(medium?.connectionState).toBe('manual');
+    expect(medium?.connectionLabel).toBe('Manual import');
+    expect(medium?.destination).toBe('manual-import');
+    expect(component.getTargetReadiness(medium!)).toContain('Manual import');
+  });
+
+  it('opens the official Medium import handoff', () => {
+    const { component } = createComponent();
+    const openSpy = spyOn(window, 'open');
+
+    component.openMediumImport();
+
+    expect(openSpy).toHaveBeenCalledWith('https://medium.com/p/import', '_blank', 'noopener,noreferrer');
+    expect(component.draftNotice).toContain('Medium import opened');
+  });
+
   it('stages enabled publish automation rules into the delivery queue', () => {
     const { component } = createComponent();
 

@@ -75,10 +75,10 @@ export class DistributionComponent implements OnInit {
     'reddit',
     'pinterest',
     'mastodon',
-    'tumblr',
-    'medium'
+    'tumblr'
   ]);
   private readonly webhookProviderIds = new Set(['discord']);
+  private readonly manualImportProviderIds = new Set(['medium']);
   private oauthReturnNoticeActive = false;
 
   activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
@@ -331,19 +331,18 @@ export class DistributionComponent implements OnInit {
     {
       id: 'medium',
       name: 'Medium',
-      handle: 'No account selected',
+      handle: 'medium.com',
       mark: 'M',
       accentClass: 'medium',
-      connectionState: 'not-connected',
-      connectionLabel: 'Not connected',
-      connectionDetail: 'Medium API publishing is wired for existing API credentials.',
-      lastChecked: 'Not checked',
-      expiresIn: 'No token',
+      connectionState: 'manual',
+      connectionLabel: 'Manual import',
+      connectionDetail: 'Medium no longer accepts new API integrations. Import the published blog URL manually.',
+      lastChecked: 'Manual workflow',
+      expiresIn: 'No OAuth',
       destinationOptions: [
-        { label: 'Excerpt draft', value: 'excerpt-draft' },
-        { label: 'Canonical mirror draft', value: 'canonical-mirror-draft' }
+        { label: 'Import published story', value: 'manual-import' }
       ],
-      destination: 'excerpt-draft',
+      destination: 'manual-import',
       selected: false
     },
     {
@@ -677,6 +676,34 @@ export class DistributionComponent implements OnInit {
     });
   }
 
+  platformUsesManualImport(platform: DistributionPlatform): boolean {
+    return this.manualImportProviderIds.has(platform.id);
+  }
+
+  copyMediumImportUrl(): void {
+    const url = this.postUrl.trim();
+    if (!url) {
+      this.draftNotice = 'Add the published blog URL before copying it for Medium.';
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      this.draftNotice = 'Clipboard access is unavailable. Use the canonical link from the Composer.';
+      return;
+    }
+
+    navigator.clipboard.writeText(url).then(() => {
+      this.draftNotice = 'Blog URL copied for Medium import.';
+    }).catch(() => {
+      this.draftNotice = 'Could not copy the URL. Use the canonical link from the Composer.';
+    });
+  }
+
+  openMediumImport(): void {
+    window.open('https://medium.com/p/import', '_blank', 'noopener,noreferrer');
+    this.draftNotice = 'Medium import opened. Paste the published blog URL to create the canonical copy.';
+  }
+
   disconnectPlatform(platform: DistributionPlatform): void {
     if (platform.disabled) return;
     if (!this.platformCanUseOAuth(platform)) {
@@ -813,6 +840,7 @@ export class DistributionComponent implements OnInit {
         const statuses = response?.providers || [];
         statuses.forEach((status) => this.applyProviderStatus(status));
         for (const platform of this.platforms) {
+          if (this.platformUsesManualImport(platform)) continue;
           if (!this.platformCanUseOAuth(platform) && !this.platformCanUseWebhook(platform) && !platform.disabled) {
             platform.connectionState = 'manual';
             platform.connectionLabel = 'Future connector';
@@ -942,6 +970,7 @@ export class DistributionComponent implements OnInit {
 
   getTargetReadiness(platform: DistributionPlatform): string {
     if (platform.disabled) return 'Connector unavailable';
+    if (this.platformUsesManualImport(platform)) return 'Manual import after the blog is published';
     if (this.platformCanUseWebhook(platform)) return 'Ready when webhook is configured';
     if (!this.platformCanUseOAuth(platform) && platform.connectionState === 'manual') return 'Future connector';
     if (platform.connectionState === 'expired') return 'Reconnect before posting';
@@ -957,6 +986,7 @@ export class DistributionComponent implements OnInit {
   }
 
   getPlatformSummary(platform: DistributionPlatform): string {
+    if (this.platformUsesManualImport(platform)) return 'Copy the canonical URL into Medium’s importer.';
     if (platform.connectionState === 'connected') return `${this.getSelectedDestinationLabel(platform)} is available.`;
     if (platform.connectionState === 'attention') return `${this.getSelectedDestinationLabel(platform)} needs media review.`;
     if (platform.connectionState === 'expired') return 'Login expired before posting.';
@@ -1063,21 +1093,37 @@ export class DistributionComponent implements OnInit {
 
   private loadAutomationSettings(): void {
     const settings = this.automation.loadSettings();
-    this.automationTemplates = settings.templates;
+    this.automationTemplates = this.normalizeManualImportTemplates(settings.templates);
     this.automationRules = settings.rules;
     this.selectedTemplateId = this.automationTemplates[0]?.id || '';
     this.blogApi.getSocialDistributionSettings().subscribe({
       next: (remote) => {
-        this.automationTemplates = remote.templates;
+        this.automationTemplates = this.normalizeManualImportTemplates(remote.templates);
         this.automationRules = remote.rules;
         this.selectedTemplateId = this.selectedTemplateId || this.automationTemplates[0]?.id || '';
-        this.automation.saveSettings(remote);
+        this.automation.saveSettings({
+          templates: this.automationTemplates,
+          rules: this.automationRules
+        });
         this.automationNotice = 'Automation settings loaded from the backend.';
       },
       error: () => {
         this.automationNotice = 'Using local automation settings until the backend is available.';
       }
     });
+  }
+
+  private normalizeManualImportTemplates(templates: SocialDistributionTemplate[]): SocialDistributionTemplate[] {
+    return templates.map((template) => template.platformId === 'medium'
+      ? {
+          ...template,
+          name: 'Medium import handoff',
+          destination: 'Manual import',
+          body: '{{url}}',
+          hashtags: '',
+          useCoverImage: false
+        }
+      : template);
   }
 
   private applyWorkspaceTabFromRoute(): void {
@@ -1160,6 +1206,16 @@ export class DistributionComponent implements OnInit {
 
   private initializeConnectionDefaults(): void {
     for (const platform of this.platforms) {
+      if (this.platformUsesManualImport(platform)) {
+        platform.connectionState = 'manual';
+        platform.connectionLabel = 'Manual import';
+        platform.connectionDetail = 'Medium no longer accepts new API integrations. Import the published blog URL manually.';
+        platform.lastChecked = 'Manual workflow';
+        platform.expiresIn = 'No OAuth';
+        platform.selected = false;
+        continue;
+      }
+
       if (this.platformCanUseOAuth(platform)) {
         platform.connectionState = 'not-connected';
         platform.connectionLabel = 'Checking';
@@ -1194,6 +1250,7 @@ export class DistributionComponent implements OnInit {
   private applyProviderStatus(status: SocialAuthProviderStatus): void {
     const platform = this.platforms.find((candidate) => candidate.id === status.provider);
     if (!platform) return;
+    if (this.platformUsesManualImport(platform)) return;
 
     platform.handle = status.accountLabel || platform.handle;
     platform.lastChecked = 'Just now';
