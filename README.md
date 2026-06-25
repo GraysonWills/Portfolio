@@ -177,7 +177,9 @@ When adding any new authoring page/route, include hotkeys by default:
   - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
   - X/Twitter OAuth currently requests post read/write, user read, refresh-token, and optional Direct Message scopes (`dm.read`, `dm.write`); existing X connections missing newly requested scopes are marked `needs-reconnect`
   - TikTok OAuth uses the Login Kit `client_key` flow and V1 stages photo uploads through the Content Posting API media-upload flow
-  - Reddit uses OAuth with `identity`, `submit`, `read`, and `mysubreddits` scopes; V1 can submit profile posts or configured subreddit link/self posts with a required API user agent
+  - Reddit's legacy Data API connector uses OAuth with `identity`, `submit`, `read`, and `mysubreddits`, but new Data API credentials require Reddit approval
+  - `grayson-automate/` contains the current Devvit fallback: a private subreddit-installed app that polls for newly published blog posts, deduplicates with Devvit Redis, and posts through the app account
+  - Devvit automatic polling remains disabled until Reddit approves the pending `grayson-wills.com` domain exception
   - Pinterest selects a board after OAuth and creates image pins from public cover/media URLs
   - Mastodon uses a configured instance URL plus OAuth `read:accounts` and `write:statuses`
   - Tumblr selects a blog after OAuth and creates link/text posts through the official API

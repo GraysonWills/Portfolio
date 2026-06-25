@@ -1,0 +1,60 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "grayson-automate",
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Check Grayson's blog now",
+        "description": "Publish any new blog announcements",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/blog-sync"
+      }
+    ]
+  },
+  "permissions": {
+    "http": {
+      "enable": true,
+      "domains": [
+        "www.grayson-wills.com"
+      ]
+    },
+    "redis": true,
+    "reddit": {
+      "enable": true,
+      "scope": "user"
+    }
+  },
+  "scheduler": {
+    "tasks": {
+      "blog-sync": {
+        "endpoint": "/internal/tasks/blog-sync",
+        "cron": "* * * * *"
+      }
+    }
+  },
+  "settings": {
+    "global": {
+      "automationEnabled": {
+        "type": "boolean",
+        "label": "Enable automatic blog announcements",
+        "helpText": "Turn this on only after the grayson-wills.com domain exception is approved.",
+        "defaultValue": false
+      }
+    }
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "dev": {
+    "subreddit": "grayson_automate_dev"
+  }
+}

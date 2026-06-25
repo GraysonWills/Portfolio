@@ -128,7 +128,16 @@ When Instagram app credentials are not yet available, an authenticated author ca
 
 TikTok uses Login Kit for Web. Register the TikTok callback URL as a redirect URI, configure `SOCIAL_TIKTOK_CLIENT_KEY` and `SOCIAL_TIKTOK_CLIENT_SECRET`, and grant `user.info.basic`, `video.upload`, and `video.publish` if the app has access. V1 uses the Content Posting API `MEDIA_UPLOAD` photo flow with a public image URL; TikTok returns a publish/upload id and the creator may still need to finish the upload in TikTok depending on app approval and account capability.
 
-Reddit uses OAuth with a confidential app credential, `identity`, `submit`, `read`, and `mysubreddits` scopes, and a required API user agent. V1 submits either link posts or self posts to the connected user's profile subreddit by default, or to an explicit destination like `r/example` or `subreddit:example`.
+Reddit's backend adapter uses the legacy Data API with a confidential OAuth
+credential, `identity`, `submit`, `read`, and `mysubreddits` scopes, plus a
+required API user agent. New Data API applications require Reddit approval, so
+the production Lambda does not currently have Reddit OAuth credentials.
+
+The repository also includes `grayson-automate/`, a Devvit fallback that runs
+inside an installed subreddit and posts through the Devvit app account. Its
+private playtest installation is disabled while Reddit reviews the requested
+`grayson-wills.com` HTTP domain exception. Devvit does not produce a reusable
+personal-account OAuth token for this backend.
 
 Pinterest uses OAuth, lists boards after connection, and requires selecting a board before posting. V1 creates image pins, so the delivery must include a public cover/media URL.
 
