@@ -182,6 +182,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - Devvit automatic polling remains disabled until Reddit approves the pending `grayson-wills.com` domain exception
   - Pinterest selects a board after OAuth and creates image pins from public cover/media URLs
   - Mastodon uses a configured instance URL plus OAuth `read:accounts` and `write:statuses`
+  - Instagram, Threads, and Mastodon can also import generated access tokens so the backend can keep using official APIs while the local browser remains blocked from normal social browsing
   - Tumblr selects a blog after OAuth and creates link/text posts through the official API
   - Medium publishing is wired for existing API integrations and creates draft/public/unlisted posts with canonical blog URLs
   - Discord uses a server-side webhook URL instead of OAuth for announcement-channel posts

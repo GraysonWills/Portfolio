@@ -25,11 +25,24 @@ describe('DistributionComponent', () => {
       getSocialAuthStatus: jasmine.createSpy('getSocialAuthStatus').and.returnValue(status$.asObservable()),
       getSocialDistributionSettings: jasmine.createSpy('getSocialDistributionSettings').and.returnValue(of(automation.getDefaultSettings())),
       saveSocialDistributionSettings: jasmine.createSpy('saveSocialDistributionSettings').and.callFake((settings) => of(settings)),
-      getSocialDistributionDeliveries: jasmine.createSpy('getSocialDistributionDeliveries').and.returnValue(of({ deliveries: [] }))
+      getSocialDistributionDeliveries: jasmine.createSpy('getSocialDistributionDeliveries').and.returnValue(of({ deliveries: [] })),
+      importSocialAuthToken: jasmine.createSpy('importSocialAuthToken').and.returnValue(of({
+        provider: 'mastodon',
+        selectedAccount: {
+          id: '109123456789',
+          label: '@graysonwills',
+          handle: '@graysonwills',
+          platform: 'mastodon'
+        },
+        accountLabel: '@graysonwills',
+        expiresAt: null,
+        refreshed: false
+      }))
     } as unknown as BlogApiService;
 
     return {
       component: new DistributionComponent(route, router, authService, blogApi, automation),
+      blogApi,
       router,
       status$
     };
@@ -182,6 +195,32 @@ describe('DistributionComponent', () => {
 
     expect(openSpy).toHaveBeenCalledWith('https://medium.com/p/import', '_blank', 'noopener,noreferrer');
     expect(component.draftNotice).toContain('Medium import opened');
+  });
+
+  it('supports token-only imports for Instagram, Threads, and Mastodon', () => {
+    const { component, blogApi } = createComponent();
+    const instagram = component.platforms.find((platform) => platform.id === 'instagram')!;
+    const threads = component.platforms.find((platform) => platform.id === 'threads')!;
+    const mastodon = component.platforms.find((platform) => platform.id === 'mastodon')!;
+    const facebook = component.platforms.find((platform) => platform.id === 'facebook')!;
+
+    expect(component.canImportAccessToken(instagram)).toBeTrue();
+    expect(component.canImportAccessToken(threads)).toBeTrue();
+    expect(component.canImportAccessToken(mastodon)).toBeTrue();
+    expect(component.canImportAccessToken(facebook)).toBeFalse();
+
+    component.openTokenImport(mastodon);
+    component.tokenImportValue = 'mastodon-access-token-for-import';
+    component.tokenImportInstanceUrl = 'https://mastodon.social';
+    component.importPlatformToken(mastodon);
+
+    expect(blogApi.importSocialAuthToken).toHaveBeenCalledWith(
+      'mastodon',
+      'mastodon-access-token-for-import',
+      { instanceUrl: 'https://mastodon.social' }
+    );
+    expect(component.tokenImportProviderId).toBe('');
+    expect(mastodon.connectionState).toBe('connected');
   });
 
   it('stages enabled publish automation rules into the delivery queue', () => {

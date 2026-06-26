@@ -678,3 +678,212 @@ test('imports Instagram access tokens as encrypted selected creator credentials'
   assert.equal(JSON.stringify(stored[0]).includes('original-instagram-access-token'), false);
   assert.equal(JSON.stringify(stored[0]).includes('refreshed-instagram-token'), false);
 });
+
+test('imports Threads access tokens without local browser OAuth', async (t) => {
+  const originalFetch = global.fetch;
+  const previousTokenSecret = process.env.SOCIAL_AUTH_TOKEN_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+  const previousClientId = process.env.SOCIAL_THREADS_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_THREADS_CLIENT_SECRET;
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (previousTokenSecret === undefined) delete process.env.SOCIAL_AUTH_TOKEN_SECRET;
+    else process.env.SOCIAL_AUTH_TOKEN_SECRET = previousTokenSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    if (previousClientId === undefined) delete process.env.SOCIAL_THREADS_CLIENT_ID;
+    else process.env.SOCIAL_THREADS_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_THREADS_CLIENT_SECRET;
+    else process.env.SOCIAL_THREADS_CLIENT_SECRET = previousClientSecret;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  delete process.env.SOCIAL_THREADS_CLIENT_ID;
+  delete process.env.SOCIAL_THREADS_CLIENT_SECRET;
+  process.env.SOCIAL_AUTH_TOKEN_SECRET = 'test-social-token-secret-32-chars-minimum';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  global.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes('/refresh_access_token')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          access_token: 'refreshed-threads-token',
+          token_type: 'bearer',
+          expires_in: 5_184_000
+        })
+      };
+    }
+
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        id: '1234567890',
+        username: 'graysonwills',
+        name: 'Grayson Wills',
+        threads_profile_picture_url: 'https://example.test/threads.jpg'
+      })
+    };
+  };
+
+  const user = {
+    sub: 'author-sub',
+    username: 'author'
+  };
+  const result = await freshSocialAuth.importProviderToken('threads', user, {
+    accessToken: 'original-threads-access-token'
+  });
+
+  assert.equal(result.provider, 'threads');
+  assert.equal(result.selectedAccount.id, '1234567890');
+  assert.equal(result.selectedAccount.handle, '@graysonwills');
+  assert.equal(result.refreshed, true);
+
+  const stored = memory.valuesForTable('social-auth-test');
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].providerFamily, 'threads');
+  assert.equal(stored[0].connectionMethod, 'token-import');
+  assert.equal(JSON.stringify(stored[0]).includes('original-threads-access-token'), false);
+  assert.equal(JSON.stringify(stored[0]).includes('refreshed-threads-token'), false);
+
+  const statuses = await freshSocialAuth.getProviderStatus(user);
+  const threadsStatus = statuses.find((status) => status.provider === 'threads');
+  assert.equal(threadsStatus.configured, true);
+  assert.equal(threadsStatus.connected, true);
+  assert.equal(threadsStatus.accountLabel, '@graysonwills');
+});
+
+test('refreshes expiring imported Threads tokens during status checks', async (t) => {
+  const originalFetch = global.fetch;
+  const previousTokenSecret = process.env.SOCIAL_AUTH_TOKEN_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (previousTokenSecret === undefined) delete process.env.SOCIAL_AUTH_TOKEN_SECRET;
+    else process.env.SOCIAL_AUTH_TOKEN_SECRET = previousTokenSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_AUTH_TOKEN_SECRET = 'test-social-token-secret-32-chars-minimum';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+  let refreshCallCount = 0;
+
+  global.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes('/refresh_access_token')) {
+      refreshCallCount += 1;
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          access_token: `refreshed-threads-token-${refreshCallCount}`,
+          token_type: 'bearer',
+          expires_in: refreshCallCount === 1 ? 1 : 5_184_000
+        })
+      };
+    }
+
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        id: '1234567890',
+        username: 'graysonwills',
+        name: 'Grayson Wills'
+      })
+    };
+  };
+
+  const user = {
+    sub: 'author-sub',
+    username: 'author'
+  };
+
+  await freshSocialAuth.importProviderToken('threads', user, {
+    accessToken: 'original-threads-access-token'
+  });
+  const statuses = await freshSocialAuth.getProviderStatus(user);
+  const threadsStatus = statuses.find((status) => status.provider === 'threads');
+
+  assert.equal(refreshCallCount, 2);
+  assert.equal(threadsStatus.connected, true);
+  const stored = memory.valuesForTable('social-auth-test')[0];
+  assert.ok(stored.tokenRefreshedAt);
+  assert.equal(JSON.stringify(stored).includes('refreshed-threads-token-2'), false);
+});
+
+test('imports Mastodon access tokens with an explicit instance URL', async (t) => {
+  const originalFetch = global.fetch;
+  const previousTokenSecret = process.env.SOCIAL_AUTH_TOKEN_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+  const previousInstanceUrl = process.env.SOCIAL_MASTODON_INSTANCE_URL;
+  const previousClientId = process.env.SOCIAL_MASTODON_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_MASTODON_CLIENT_SECRET;
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (previousTokenSecret === undefined) delete process.env.SOCIAL_AUTH_TOKEN_SECRET;
+    else process.env.SOCIAL_AUTH_TOKEN_SECRET = previousTokenSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    if (previousInstanceUrl === undefined) delete process.env.SOCIAL_MASTODON_INSTANCE_URL;
+    else process.env.SOCIAL_MASTODON_INSTANCE_URL = previousInstanceUrl;
+    if (previousClientId === undefined) delete process.env.SOCIAL_MASTODON_CLIENT_ID;
+    else process.env.SOCIAL_MASTODON_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_MASTODON_CLIENT_SECRET;
+    else process.env.SOCIAL_MASTODON_CLIENT_SECRET = previousClientSecret;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  delete process.env.SOCIAL_MASTODON_INSTANCE_URL;
+  delete process.env.SOCIAL_MASTODON_CLIENT_ID;
+  delete process.env.SOCIAL_MASTODON_CLIENT_SECRET;
+  process.env.SOCIAL_AUTH_TOKEN_SECRET = 'test-social-token-secret-32-chars-minimum';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  global.fetch = async (url) => {
+    assert.equal(String(url), 'https://mastodon.social/api/v1/accounts/verify_credentials');
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        id: '109123456789',
+        acct: 'graysonwills',
+        display_name: 'Grayson Wills',
+        avatar: 'https://mastodon.social/avatar.jpg',
+        url: 'https://mastodon.social/@graysonwills'
+      })
+    };
+  };
+
+  const result = await freshSocialAuth.importProviderToken('mastodon', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    accessToken: 'mastodon-access-token-for-import',
+    instanceUrl: 'https://mastodon.social/@graysonwills'
+  });
+
+  assert.equal(result.provider, 'mastodon');
+  assert.equal(result.selectedAccount.id, '109123456789');
+  assert.equal(result.selectedAccount.handle, '@graysonwills');
+  assert.equal(result.refreshed, false);
+
+  const stored = memory.valuesForTable('social-auth-test');
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].providerFamily, 'mastodon');
+  assert.equal(stored[0].connectionMethod, 'token-import');
+  assert.equal(stored[0].selectedAccount.extra.instanceUrl, 'https://mastodon.social');
+  assert.equal(JSON.stringify(stored[0]).includes('mastodon-access-token-for-import'), false);
+});

@@ -79,6 +79,7 @@ export class DistributionComponent implements OnInit {
   ]);
   private readonly webhookProviderIds = new Set(['discord']);
   private readonly manualImportProviderIds = new Set(['medium']);
+  private readonly tokenImportProviderIds = new Set(['instagram', 'threads', 'mastodon']);
   private oauthReturnNoticeActive = false;
 
   activeWorkspaceTab: DistributionWorkspaceTab = 'connections';
@@ -97,6 +98,7 @@ export class DistributionComponent implements OnInit {
   socialAccountsLoading = false;
   tokenImportProviderId = '';
   tokenImportValue = '';
+  tokenImportInstanceUrl = '';
   tokenImportLoading = false;
   deliveryLoading = false;
   deliveryError = '';
@@ -228,7 +230,7 @@ export class DistributionComponent implements OnInit {
       accentClass: 'threads',
       connectionState: 'not-connected',
       connectionLabel: 'Not connected',
-      connectionDetail: 'Connect a Threads account after the app credentials are configured.',
+      connectionDetail: 'Connect Threads with OAuth or import a generated access token for API posting.',
       lastChecked: 'Not checked',
       expiresIn: 'No token',
       destinationOptions: [
@@ -264,7 +266,7 @@ export class DistributionComponent implements OnInit {
       accentClass: 'mastodon',
       connectionState: 'not-connected',
       connectionLabel: 'Not connected',
-      connectionDetail: 'Configure the instance app credentials, then connect Mastodon.',
+      connectionDetail: 'Connect Mastodon with OAuth or import a server access token for API posting.',
       lastChecked: 'Not checked',
       expiresIn: 'No token',
       destinationOptions: [
@@ -736,18 +738,20 @@ export class DistributionComponent implements OnInit {
   }
 
   canImportAccessToken(platform: DistributionPlatform): boolean {
-    return platform.id === 'instagram';
+    return this.tokenImportProviderIds.has(platform.id);
   }
 
   openTokenImport(platform: DistributionPlatform): void {
     this.tokenImportProviderId = platform.id;
     this.tokenImportValue = '';
+    this.tokenImportInstanceUrl = platform.id === 'mastodon' ? 'https://mastodon.social' : '';
     this.socialAuthError = '';
   }
 
   cancelTokenImport(): void {
     this.tokenImportProviderId = '';
     this.tokenImportValue = '';
+    this.tokenImportInstanceUrl = '';
     this.tokenImportLoading = false;
   }
 
@@ -758,13 +762,20 @@ export class DistributionComponent implements OnInit {
       return;
     }
 
+    const instanceUrl = this.tokenImportInstanceUrl.trim();
+    if (platform.id === 'mastodon' && !instanceUrl) {
+      this.socialAuthError = 'Add the Mastodon instance URL for this token.';
+      return;
+    }
+
     this.tokenImportLoading = true;
     this.socialAuthError = '';
-    this.blogApi.importSocialAuthToken(platform.id, accessToken).subscribe({
+    this.blogApi.importSocialAuthToken(platform.id, accessToken, { instanceUrl }).subscribe({
       next: (response) => {
         this.tokenImportLoading = false;
         this.tokenImportProviderId = '';
         this.tokenImportValue = '';
+        this.tokenImportInstanceUrl = '';
         const account = response.selectedAccount;
         platform.handle = account?.handle || account?.label || platform.handle;
         platform.connectionState = 'connected';
@@ -780,6 +791,21 @@ export class DistributionComponent implements OnInit {
         this.socialAuthError = this.extractErrorMessage(err);
       }
     });
+  }
+
+  tokenImportNeedsInstance(platform: DistributionPlatform): boolean {
+    return platform.id === 'mastodon';
+  }
+
+  tokenImportPlaceholder(platform: DistributionPlatform): string {
+    if (platform.id === 'threads') return 'Paste Threads access token';
+    if (platform.id === 'mastodon') return 'Paste Mastodon access token';
+    return 'Paste Instagram access token';
+  }
+
+  tokenImportHint(platform: DistributionPlatform): string {
+    if (platform.id === 'mastodon') return 'Stored encrypted and used only by the backend for Mastodon API calls.';
+    return 'Stored encrypted and used only by the backend for API posting.';
   }
 
   loadProviderAccounts(platform: DistributionPlatform): void {
@@ -1320,6 +1346,9 @@ export class DistributionComponent implements OnInit {
   private formatConnectionExpiry(status: SocialAuthProviderStatus): string {
     if (!status.configured) return 'Missing app setup';
     if (status.provider === 'x' && status.credentialArtifacts?.hasRefreshToken && status.connected) {
+      return 'Auto-refresh enabled';
+    }
+    if ((status.provider === 'instagram' || status.provider === 'threads') && status.credentialArtifacts?.hasAccessToken && status.connected) {
       return 'Auto-refresh enabled';
     }
     if (!status.expiresAt) return status.connected ? 'No expiry reported' : 'No token';

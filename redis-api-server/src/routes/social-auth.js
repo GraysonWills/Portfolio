@@ -42,7 +42,8 @@ router.post('/:provider/accounts/select', requireAuth, asyncRoute(async (req, re
 
 router.post('/:provider/token/import', requireAuth, asyncRoute(async (req, res) => {
   const result = await socialAuth.importProviderToken(req.params.provider, req.user, {
-    accessToken: req.body?.accessToken
+    accessToken: req.body?.accessToken,
+    instanceUrl: req.body?.instanceUrl
   });
   res.json(result);
 }));

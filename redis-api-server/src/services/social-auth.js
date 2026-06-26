@@ -170,6 +170,7 @@ const SECRET_TOKEN_FIELDS = new Set([
   'id_token',
   'client_secret'
 ]);
+const TOKEN_IMPORT_PROVIDER_IDS = new Set(['instagram', 'threads', 'mastodon']);
 
 function getTableName() {
   return String(process.env.SOCIAL_AUTH_TABLE_NAME || DEFAULT_SOCIAL_AUTH_TABLE).trim();
@@ -404,7 +405,7 @@ function getMissingScopes(config, item) {
 }
 
 function providerSupportsRefresh(config) {
-  return config.family === 'x';
+  return config.family === 'x' || config.family === 'instagram' || config.family === 'threads';
 }
 
 function tokenNeedsRefresh(config, item) {
@@ -416,11 +417,17 @@ function tokenNeedsRefresh(config, item) {
 
 async function refreshStoredConnection(config, item) {
   const currentToken = decryptJson(item.token);
-  if (!currentToken?.refresh_token) return item;
 
   let nextToken = null;
   if (config.family === 'x') {
+    if (!currentToken?.refresh_token) return item;
     nextToken = await refreshXAccessToken(config, currentToken.refresh_token);
+  } else if (config.family === 'instagram') {
+    if (!currentToken?.access_token) return item;
+    nextToken = await refreshImportedInstagramToken(currentToken.access_token);
+  } else if (config.family === 'threads') {
+    if (!currentToken?.access_token) return item;
+    nextToken = await refreshImportedThreadsToken(currentToken.access_token);
   } else {
     return item;
   }
@@ -465,8 +472,11 @@ function toConnectionStatus(config, item) {
   const needsSelection = Boolean(item && ['facebook', 'instagram', 'pinterest', 'tumblr'].includes(config.id) && !selectedAccount?.id);
   const missingScopes = getMissingScopes(config, item);
   const needsReconnect = Boolean(item && !expired && !needsSelection && missingScopes.length);
+  const publicConfig = providerPublicConfig(config);
+  const configured = Boolean(publicConfig.configured || item?.connectionMethod === 'token-import');
   return {
-    ...providerPublicConfig(config),
+    ...publicConfig,
+    configured,
     connected: Boolean(item && !expired && !needsSelection && !needsReconnect),
     status: !item ? 'not-connected' : expired ? 'expired' : needsSelection ? 'needs-selection' : needsReconnect ? 'needs-reconnect' : 'connected',
     needsReconnect,
@@ -1229,28 +1239,94 @@ async function refreshImportedInstagramToken(accessToken) {
   return fetchJson(url.toString(), { method: 'GET' });
 }
 
-async function importProviderToken(provider, user, { accessToken } = {}) {
-  const config = getProviderConfig(provider);
-  if (config.id !== 'instagram') {
-    const err = new Error('Token import is only supported for Instagram');
+async function refreshImportedThreadsToken(accessToken) {
+  const url = new URL('https://graph.threads.net/refresh_access_token');
+  url.searchParams.set('grant_type', 'th_refresh_token');
+  url.searchParams.set('access_token', accessToken);
+  return fetchJson(url.toString(), { method: 'GET' });
+}
+
+function normalizeMastodonInstanceUrl(value = '') {
+  const safeValue = String(value || '').trim().replace(/\/+$/, '');
+  if (!safeValue) return '';
+  let url = null;
+  try {
+    url = new URL(safeValue);
+  } catch {
+    const err = new Error('Mastodon instance URL must be a valid HTTPS URL');
     err.status = 400;
     throw err;
   }
+  if (url.protocol !== 'https:') {
+    const err = new Error('Mastodon instance URL must use HTTPS');
+    err.status = 400;
+    throw err;
+  }
+  url.pathname = '';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
+function configForTokenImport(config, { instanceUrl = '' } = {}) {
+  if (config.id !== 'mastodon') return config;
+  const normalizedInstanceUrl = normalizeMastodonInstanceUrl(instanceUrl || config.instanceUrl);
+  if (!normalizedInstanceUrl) {
+    const err = new Error('Mastodon instance URL is required when importing a token');
+    err.status = 400;
+    throw err;
+  }
+  return {
+    ...config,
+    instanceUrl: normalizedInstanceUrl,
+    apiBaseUrl: normalizedInstanceUrl,
+    authUrl: `${normalizedInstanceUrl}/oauth/authorize`,
+    tokenUrl: `${normalizedInstanceUrl}/oauth/token`
+  };
+}
+
+async function validateImportedToken(config, accessToken) {
+  if (config.id === 'instagram') return validateInstagramAccessToken(accessToken, config);
+
+  const account = await fetchProviderProfile(config, accessToken);
+  if (!account?.id) {
+    const err = new Error(`${config.label} access token did not return a profile`);
+    err.status = 400;
+    throw err;
+  }
+  return { payload: null, account };
+}
+
+async function maybeRefreshImportedToken(config, accessToken) {
+  if (config.id === 'instagram') return refreshImportedInstagramToken(accessToken).catch(() => null);
+  if (config.id === 'threads') return refreshImportedThreadsToken(accessToken).catch(() => null);
+  return null;
+}
+
+async function importProviderToken(provider, user, { accessToken, instanceUrl = '' } = {}) {
+  const baseConfig = getProviderConfig(provider);
+  if (!TOKEN_IMPORT_PROVIDER_IDS.has(baseConfig.id)) {
+    const err = new Error('Token import is only supported for Instagram, Threads, and Mastodon');
+    err.status = 400;
+    throw err;
+  }
+  const config = configForTokenImport(baseConfig, { instanceUrl });
 
   const safeAccessToken = String(accessToken || '').trim();
   if (!safeAccessToken || safeAccessToken.length < 20) {
-    const err = new Error('Instagram access token is required');
+    const err = new Error(`${config.label} access token is required`);
     err.status = 400;
     throw err;
   }
 
-  const { account } = await validateInstagramAccessToken(safeAccessToken, config);
-  const refreshed = await refreshImportedInstagramToken(safeAccessToken).catch(() => null);
+  const { account } = await validateImportedToken(config, safeAccessToken);
+  const refreshed = await maybeRefreshImportedToken(config, safeAccessToken);
   const tokenPayload = {
     access_token: refreshed?.access_token || safeAccessToken,
     token_type: String(refreshed?.token_type || 'Bearer'),
     scope: config.scopes.join(' '),
     imported: true,
+    ...(config.id === 'mastodon' ? { instance_url: config.apiBaseUrl } : {}),
     ...(refreshed?.expires_in ? { expires_in: refreshed.expires_in } : {})
   };
   const expiresInSeconds = Number(tokenPayload.expires_in || 0);

@@ -80,7 +80,7 @@ Mounted in `/Users/grayson/Desktop/Portfolio/redis-api-server/src/app.js`.
 - `POST /api/social-auth/:provider/start` (auth)
 - `GET /api/social-auth/:provider/accounts` (auth)
 - `POST /api/social-auth/:provider/accounts/select` (auth)
-- `POST /api/social-auth/:provider/token/import` (auth, Instagram access-token fallback)
+- `POST /api/social-auth/:provider/token/import` (auth, token-only fallback for Instagram, Threads, and Mastodon)
 - `DELETE /api/social-auth/:provider` (auth)
 - `GET /api/social-auth/:provider/callback`
 - `GET /api/social-distribution/settings` (auth)
@@ -124,7 +124,17 @@ LinkedIn uses OAuth 2.0 with OpenID Connect profile scopes plus member posting. 
 
 Instagram uses Instagram API with Instagram Login. Register the Instagram callback URL in the Instagram product OAuth settings and grant at least `instagram_business_basic` and `instagram_business_content_publish` for creator/business publishing.
 
-When Instagram app credentials are not yet available, an authenticated author can import a generated Instagram access token through `POST /api/social-auth/instagram/token/import`. The backend validates the token against `graph.instagram.com`, refreshes it when the token supports `ig_refresh_token`, encrypts the stored credential, and auto-selects the returned creator/business account. This is a fallback for one-account operation; the preferred long-term path remains normal OAuth through the Connect button once app credentials are available.
+Instagram, Threads, and Mastodon support a token-only fallback for the
+browser-blocked workflow. An authenticated author can import a generated access
+token through `POST /api/social-auth/:provider/token/import`; the backend
+validates it against the provider profile endpoint, refreshes Instagram and
+Threads tokens during import and later status/posting checks, encrypts the
+stored credential, and auto-selects the returned posting identity. Mastodon
+token import also accepts
+`instanceUrl`, for example `https://mastodon.social`. This keeps normal feed
+browsing blocked locally while allowing the backend to post through official
+APIs. The preferred long-term path for Meta platforms remains OAuth through the
+Connect button when app credentials and consent screens are available.
 
 TikTok uses Login Kit for Web. Register the TikTok callback URL as a redirect URI, configure `SOCIAL_TIKTOK_CLIENT_KEY` and `SOCIAL_TIKTOK_CLIENT_SECRET`, and grant `user.info.basic`, `video.upload`, and `video.publish` if the app has access. V1 uses the Content Posting API `MEDIA_UPLOAD` photo flow with a public image URL; TikTok returns a publish/upload id and the creator may still need to finish the upload in TikTok depending on app approval and account capability.
 

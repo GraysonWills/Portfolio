@@ -1814,7 +1814,7 @@ export class BlogApiService {
     ).pipe(catchError(this.handleError));
   }
 
-  importSocialAuthToken(provider: string, accessToken: string): Observable<{
+  importSocialAuthToken(provider: string, accessToken: string, options: { instanceUrl?: string } = {}): Observable<{
     provider: string;
     selectedAccount: SocialAuthAccount;
     accountLabel: string;
@@ -1829,7 +1829,7 @@ export class BlogApiService {
       refreshed: boolean;
     }>(
       `${this.apiUrl}/social-auth/${encodeURIComponent(provider)}/token/import`,
-      { accessToken },
+      { accessToken, ...options },
       { headers: this.headers }
     ).pipe(catchError(this.handleError));
   }
