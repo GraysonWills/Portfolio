@@ -189,6 +189,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - YouTube, Substack, and Bluesky are intentionally disabled in V1 until a suitable official posting connector is added
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
   - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
+  - device focus helper: `/Users/grayson/Desktop/Portfolio/scripts/social_site_blocker.sh` manages this Mac's social browsing block and timed OAuth setup windows
 
 ## Data Model
 
