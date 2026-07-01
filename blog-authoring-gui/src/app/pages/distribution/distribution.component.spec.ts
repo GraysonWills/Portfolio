@@ -154,6 +154,57 @@ describe('DistributionComponent', () => {
     expect(xPlatform?.expiresIn).toBe('Auto-refresh enabled');
   });
 
+  it('shows Google APIs as an OAuth connection with automatic refresh', () => {
+    const { component, status$ } = createComponent();
+
+    component.ngOnInit();
+    status$.next({
+      providers: [{
+        provider: 'google',
+        label: 'Google APIs',
+        family: 'google',
+        configured: true,
+        scopes: [
+          'openid',
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/gmail.modify',
+          'https://www.googleapis.com/auth/youtube.upload'
+        ],
+        redirectUri: 'https://api.grayson-wills.com/api/social-auth/google/callback',
+        connected: true,
+        status: 'connected',
+        connectedAt: '2026-07-01T14:00:00.000Z',
+        updatedAt: '2026-07-01T14:00:00.000Z',
+        expiresAt: '2026-07-01T15:00:00.000Z',
+        accountLabel: 'grayson@example.test',
+        selectedAccount: {
+          id: 'google-sub',
+          label: 'grayson@example.test',
+          handle: 'grayson@example.test',
+          platform: 'google'
+        },
+        scope: 'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/youtube.upload',
+        credentialArtifacts: {
+          tokenType: 'Bearer',
+          hasAccessToken: true,
+          hasRefreshToken: true,
+          hasIdToken: true,
+          scope: 'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/youtube.upload',
+          expiresInSeconds: 3600,
+          providerFields: ['expires_in', 'scope', 'token_type']
+        }
+      }]
+    });
+
+    const google = component.platforms.find((platform) => platform.id === 'google');
+    expect(component.platformCanUseOAuth(google!)).toBeTrue();
+    expect(google?.connectionState).toBe('connected');
+    expect(google?.handle).toBe('grayson@example.test');
+    expect(google?.expiresIn).toBe('Auto-refresh enabled');
+    expect(google?.connectionDetail).toContain('refresh token');
+  });
+
   it('keeps Medium as a manual import workflow even when legacy OAuth status is returned', () => {
     const { component, status$ } = createComponent();
 

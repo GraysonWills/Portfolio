@@ -75,7 +75,8 @@ export class DistributionComponent implements OnInit {
     'reddit',
     'pinterest',
     'mastodon',
-    'tumblr'
+    'tumblr',
+    'google'
   ]);
   private readonly webhookProviderIds = new Set(['discord']);
   private readonly manualImportProviderIds = new Set(['medium']);
@@ -203,14 +204,33 @@ export class DistributionComponent implements OnInit {
       selected: true
     },
     {
+      id: 'google',
+      name: 'Google APIs',
+      handle: 'No account selected',
+      mark: 'G',
+      accentClass: 'google',
+      connectionState: 'not-connected',
+      connectionLabel: 'Not connected',
+      connectionDetail: 'Connect Google OAuth for Gmail, YouTube, Ads, Analytics, and Drive automations.',
+      lastChecked: 'Not checked',
+      expiresIn: 'No token',
+      destinationOptions: [
+        { label: 'Gmail reply draft', value: 'gmail-reply-draft' },
+        { label: 'YouTube upload', value: 'youtube-upload', requiresMedia: true },
+        { label: 'Marketing report', value: 'marketing-report' }
+      ],
+      destination: 'gmail-reply-draft',
+      selected: false
+    },
+    {
       id: 'youtube',
       name: 'YouTube',
       handle: '@graysonwills',
       mark: 'YT',
       accentClass: 'youtube',
       connectionState: 'manual',
-      connectionLabel: 'Video only',
-      connectionDetail: 'YouTube Data API supports video uploads, not blog-link announcement posts.',
+      connectionLabel: 'Uses Google',
+      connectionDetail: 'Connect Google APIs first; YouTube upload automation will use that credential.',
       lastChecked: 'Manual',
       expiresIn: 'Manual',
       destinationOptions: [
@@ -1349,6 +1369,9 @@ export class DistributionComponent implements OnInit {
       return 'Auto-refresh enabled';
     }
     if ((status.provider === 'instagram' || status.provider === 'threads') && status.credentialArtifacts?.hasAccessToken && status.connected) {
+      return 'Auto-refresh enabled';
+    }
+    if (status.provider === 'google' && status.credentialArtifacts?.hasRefreshToken && status.connected) {
       return 'Auto-refresh enabled';
     }
     if (!status.expiresAt) return status.connected ? 'No expiry reported' : 'No token';

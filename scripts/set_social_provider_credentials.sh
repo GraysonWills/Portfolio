@@ -32,6 +32,9 @@ PROVIDER_KEYS=(
   SOCIAL_TUMBLR_CLIENT_SECRET
   SOCIAL_MEDIUM_CLIENT_ID
   SOCIAL_MEDIUM_CLIENT_SECRET
+  SOCIAL_GOOGLE_CLIENT_ID
+  SOCIAL_GOOGLE_CLIENT_SECRET
+  SOCIAL_GOOGLE_SCOPES
   SOCIAL_DISCORD_WEBHOOK_URL
 )
 
@@ -98,6 +101,9 @@ Set one or more of these environment variables and rerun:
   SOCIAL_TUMBLR_CLIENT_SECRET
   SOCIAL_MEDIUM_CLIENT_ID
   SOCIAL_MEDIUM_CLIENT_SECRET
+  SOCIAL_GOOGLE_CLIENT_ID
+  SOCIAL_GOOGLE_CLIENT_SECRET
+  SOCIAL_GOOGLE_SCOPES
   SOCIAL_DISCORD_WEBHOOK_URL
 EOF
     exit 1
@@ -143,6 +149,7 @@ Register these callback URLs in the provider apps:
   Mastodon:    https://api.grayson-wills.com/api/social-auth/mastodon/callback
   Tumblr:      https://api.grayson-wills.com/api/social-auth/tumblr/callback
   Medium:      https://api.grayson-wills.com/api/social-auth/medium/callback
+  Google APIs: https://api.grayson-wills.com/api/social-auth/google/callback
 
 Discord uses SOCIAL_DISCORD_WEBHOOK_URL and does not use OAuth.
 EOF

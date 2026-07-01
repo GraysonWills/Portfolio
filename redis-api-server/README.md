@@ -101,6 +101,7 @@ Initial provider IDs:
 - `mastodon`
 - `tumblr`
 - `medium`
+- `google`
 
 Webhook-only provider IDs:
 - `discord`
@@ -117,6 +118,7 @@ The callback URLs to register with each provider app are:
 - `https://api.grayson-wills.com/api/social-auth/mastodon/callback`
 - `https://api.grayson-wills.com/api/social-auth/tumblr/callback`
 - `https://api.grayson-wills.com/api/social-auth/medium/callback`
+- `https://api.grayson-wills.com/api/social-auth/google/callback`
 
 X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. The short-lived X access token is renewed server-side with the stored encrypted refresh token before status checks and posting. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
@@ -157,9 +159,23 @@ Tumblr uses OAuth and requires selecting a blog before posting. V1 creates link 
 
 Medium API posting is wired for existing integrations. V1 publishes markdown content as draft/public/unlisted and sets the original blog URL as the canonical URL when available.
 
+Google APIs use OAuth 2.0 Authorization Code with PKCE. The requested default
+scopes cover account identity, Gmail reply/draft/send capability, YouTube upload
+capability, Google Ads access, Analytics read-only access, and app-created Drive
+files. Set `SOCIAL_GOOGLE_SCOPES` to override the default scope list if Google
+verification or least-privilege review requires a narrower launch. The backend
+requests offline access, stores the refresh token encrypted, and refreshes the
+short-lived Google access token before status checks and future Google workers.
+This is not an API-key flow: user Gmail, YouTube channel, Ads, and Analytics
+data require OAuth consent from the Google account being automated.
+
 Discord is webhook-only. Configure `SOCIAL_DISCORD_WEBHOOK_URL`; it does not participate in OAuth status/start/callback.
 
-YouTube, Substack, and Bluesky are not enabled as automatic V1 posting targets. YouTube's official API is video-upload oriented, Substack has no supported public posting API, and Bluesky needs a dedicated AT Protocol connector rather than the current client-secret OAuth model.
+YouTube-specific upload automation will use the Google APIs credential once a
+video upload worker is added. Substack and Bluesky are not enabled as automatic
+V1 posting targets. Substack has no supported public posting API, and Bluesky
+needs a dedicated AT Protocol connector rather than the current client-secret
+OAuth model.
 
 Operational flow:
 1. Provider app credentials are configured once on Lambda.
@@ -310,6 +326,8 @@ Production resources:
 | `SOCIAL_MASTODON_CLIENT_ID` / `SOCIAL_MASTODON_CLIENT_SECRET` | Mastodon OAuth app credentials for the configured instance |
 | `SOCIAL_TUMBLR_CLIENT_ID` / `SOCIAL_TUMBLR_CLIENT_SECRET` | Tumblr OAuth app credentials |
 | `SOCIAL_MEDIUM_CLIENT_ID` / `SOCIAL_MEDIUM_CLIENT_SECRET` | Medium API integration credentials where available |
+| `SOCIAL_GOOGLE_CLIENT_ID` / `SOCIAL_GOOGLE_CLIENT_SECRET` | Google OAuth web app credentials for Gmail, YouTube, Ads, Analytics, and Drive access |
+| `SOCIAL_GOOGLE_SCOPES` | optional whitespace/comma-separated override for Google OAuth scopes |
 | `SOCIAL_DISCORD_WEBHOOK_URL` | Discord announcement webhook URL |
 
 Provision the baseline DynamoDB table/IAM/env with:
@@ -333,6 +351,8 @@ SOCIAL_THREADS_CLIENT_ID=... \
 SOCIAL_THREADS_CLIENT_SECRET=... \
 SOCIAL_TIKTOK_CLIENT_KEY=... \
 SOCIAL_TIKTOK_CLIENT_SECRET=... \
+SOCIAL_GOOGLE_CLIENT_ID=... \
+SOCIAL_GOOGLE_CLIENT_SECRET=... \
 AWS_PROFILE=grayson-sso \
 scripts/set_social_provider_credentials.sh
 ```

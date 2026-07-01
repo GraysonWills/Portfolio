@@ -1133,6 +1133,10 @@ async function postToDiscord(_credential, delivery) {
   };
 }
 
+async function postToGoogle() {
+  throw new Error('Google APIs are connected, but Gmail, YouTube, and marketing action workers are not enabled yet.');
+}
+
 async function sendDeliveryRecord(delivery, credential = null) {
   const userSub = String(delivery.userSub || '').trim();
   const deliveryId = String(delivery.deliveryId || '').trim();
@@ -1164,6 +1168,7 @@ async function sendDeliveryRecord(delivery, credential = null) {
       else if (delivery.provider === 'mastodon') result = await postToMastodon(postingCredential, delivery);
       else if (delivery.provider === 'tumblr') result = await postToTumblr(postingCredential, delivery);
       else if (delivery.provider === 'medium') result = await postToMedium(postingCredential, delivery);
+      else if (delivery.provider === 'google') result = await postToGoogle(postingCredential, delivery);
       else throw new Error(`Unsupported social provider: ${delivery.provider}`);
     }
 
@@ -1377,6 +1382,7 @@ module.exports = {
     postToMastodon,
     postToTumblr,
     postToMedium,
+    postToGoogle,
     postToDiscord
   }
 };

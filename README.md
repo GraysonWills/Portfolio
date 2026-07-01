@@ -172,7 +172,7 @@ When adding any new authoring page/route, include hotkeys by default:
   - worker callback endpoint for scheduled jobs
   - stale schedule suppression by schedule-name matching to prevent delayed/duplicate sends
 - Social distribution OAuth:
-  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, TikTok, Reddit, Pinterest, Mastodon, Tumblr, and Medium
+  - provider status/start/disconnect routes for X/Twitter, LinkedIn, Facebook, Instagram, Threads, TikTok, Reddit, Pinterest, Mastodon, Tumblr, Medium, and Google APIs
   - OAuth callback handling with short-lived state records
   - Connect button redirects to provider login, callback exchanges authorization code for posting token artifacts, and raw tokens are encrypted in DynamoDB
   - X/Twitter OAuth currently requests post read/write, user read, refresh-token, and optional Direct Message scopes (`dm.read`, `dm.write`); existing X connections missing newly requested scopes are marked `needs-reconnect`
@@ -185,8 +185,9 @@ When adding any new authoring page/route, include hotkeys by default:
   - Instagram, Threads, and Mastodon can also import generated access tokens so the backend can keep using official APIs while the local browser remains blocked from normal social browsing
   - Tumblr selects a blog after OAuth and creates link/text posts through the official API
   - Medium publishing is wired for existing API integrations and creates draft/public/unlisted posts with canonical blog URLs
+  - Google APIs OAuth stores encrypted refreshable credentials for Gmail draft/reply/send capability, YouTube upload capability, Google Ads access, Analytics read access, and app-created Drive files; actual Gmail/YouTube/marketing automations should run through dedicated backend workers and approval controls
   - Discord uses a server-side webhook URL instead of OAuth for announcement-channel posts
-  - YouTube, Substack, and Bluesky are intentionally disabled in V1 until a suitable official posting connector is added
+  - YouTube appears as a Google-backed future upload target rather than a standalone OAuth provider; Substack and Bluesky are intentionally disabled in V1 until a suitable official posting connector is added
   - setup helper: `/Users/grayson/Desktop/Portfolio/scripts/setup_social_auth_stack.sh`
   - provider credential helper: `/Users/grayson/Desktop/Portfolio/scripts/set_social_provider_credentials.sh`
   - device focus helper: `/Users/grayson/Desktop/Portfolio/scripts/social_site_blocker.sh` manages this Mac's social browsing block and timed OAuth setup windows

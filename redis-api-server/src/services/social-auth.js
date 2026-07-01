@@ -13,6 +13,19 @@ const DEFAULT_SOCIAL_AUTH_TABLE = 'portfolio-social-auth';
 const STATE_TTL_SECONDS = 10 * 60;
 const MAX_RETURN_URL_CHARS = 600;
 const TOKEN_REFRESH_SKEW_MS = 10 * 60 * 1000;
+const DEFAULT_GOOGLE_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/youtube',
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/adwords',
+  'https://www.googleapis.com/auth/analytics.readonly',
+  'https://www.googleapis.com/auth/drive.file'
+];
 
 const PROVIDERS = {
   x: {
@@ -156,6 +169,24 @@ const PROVIDERS = {
     scopes: ['basicProfile', 'publishPost'],
     pkce: false,
     scopeSeparator: ','
+  },
+  google: {
+    id: 'google',
+    label: 'Google APIs',
+    family: 'google',
+    clientIdEnv: ['SOCIAL_GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_ID'],
+    clientSecretEnv: ['SOCIAL_GOOGLE_CLIENT_SECRET', 'GOOGLE_CLIENT_SECRET'],
+    scopeEnv: ['SOCIAL_GOOGLE_SCOPES', 'GOOGLE_OAUTH_SCOPES'],
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: DEFAULT_GOOGLE_SCOPES,
+    pkce: true,
+    scopeSeparator: ' ',
+    authParams: {
+      access_type: 'offline',
+      include_granted_scopes: 'true',
+      prompt: 'consent'
+    }
   }
 };
 
@@ -184,6 +215,15 @@ function getEnvValue(names) {
   return '';
 }
 
+function getConfiguredScopes(config) {
+  const configured = getEnvValue(config.scopeEnv || []);
+  if (!configured) return config.scopes || [];
+  return configured
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
 function normalizeProviderId(provider) {
   const value = String(provider || '').trim().toLowerCase();
   const normalized = PROVIDER_ALIASES[value] || value;
@@ -198,11 +238,13 @@ function normalizeProviderId(provider) {
 function getProviderConfig(provider) {
   const id = normalizeProviderId(provider);
   const config = PROVIDERS[id];
+  const scopes = getConfiguredScopes(config);
   const instanceUrl = getEnvValue(config.instanceUrlEnv || []).replace(/\/+$/, '');
   const authUrl = id === 'mastodon' && instanceUrl ? `${instanceUrl}/oauth/authorize` : config.authUrl;
   const tokenUrl = id === 'mastodon' && instanceUrl ? `${instanceUrl}/oauth/token` : config.tokenUrl;
   return {
     ...config,
+    scopes,
     clientId: getEnvValue(config.clientIdEnv),
     clientSecret: getEnvValue(config.clientSecretEnv),
     configId: getEnvValue(config.configIdEnv || []),
@@ -405,7 +447,10 @@ function getMissingScopes(config, item) {
 }
 
 function providerSupportsRefresh(config) {
-  return config.family === 'x' || config.family === 'instagram' || config.family === 'threads';
+  return config.family === 'x'
+    || config.family === 'instagram'
+    || config.family === 'threads'
+    || config.family === 'google';
 }
 
 function tokenNeedsRefresh(config, item) {
@@ -422,6 +467,9 @@ async function refreshStoredConnection(config, item) {
   if (config.family === 'x') {
     if (!currentToken?.refresh_token) return item;
     nextToken = await refreshXAccessToken(config, currentToken.refresh_token);
+  } else if (config.family === 'google') {
+    if (!currentToken?.refresh_token) return item;
+    nextToken = await refreshGoogleAccessToken(config, currentToken.refresh_token);
   } else if (config.family === 'instagram') {
     if (!currentToken?.access_token) return item;
     nextToken = await refreshImportedInstagramToken(currentToken.access_token);
@@ -642,7 +690,8 @@ async function completeOAuth(provider, { code, state }) {
     || config.family === 'tiktok'
     || config.family === 'reddit'
     || config.family === 'mastodon'
-    || config.family === 'medium';
+    || config.family === 'medium'
+    || config.family === 'google';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -792,7 +841,7 @@ async function exchangeCodeForToken(config, code, verifier) {
     client_id: config.clientId
   });
   if (verifier) params.set('code_verifier', verifier);
-  if (['linkedin', 'instagram', 'mastodon', 'tumblr', 'medium'].includes(config.family)) params.set('client_secret', config.clientSecret);
+  if (['linkedin', 'instagram', 'mastodon', 'tumblr', 'medium', 'google'].includes(config.family)) params.set('client_secret', config.clientSecret);
 
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.family === 'x' && config.clientSecret) {
@@ -823,6 +872,19 @@ async function refreshXAccessToken(config, refreshToken) {
     method: 'POST',
     headers,
     body: params.toString()
+  });
+}
+
+async function refreshGoogleAccessToken(config, refreshToken) {
+  return fetchJson(config.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: config.clientId,
+      client_secret: config.clientSecret
+    }).toString()
   });
 }
 
@@ -869,6 +931,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'mastodon') url = `${config.apiBaseUrl}/api/v1/accounts/verify_credentials`;
   if (config.family === 'tumblr') url = 'https://api.tumblr.com/v2/user/info';
   if (config.family === 'medium') url = 'https://api.medium.com/v1/me';
+  if (config.family === 'google') url = 'https://openidconnect.googleapis.com/v1/userinfo';
   if (!url) return '';
 
   const payload = await fetchJson(url, {
@@ -889,6 +952,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'mastodon') return payload?.acct ? `@${payload.acct}` : payload?.display_name || 'Mastodon account';
   if (config.family === 'tumblr') return payload?.response?.user?.name || 'Tumblr account';
   if (config.family === 'medium') return payload?.data?.username ? `@${payload.data.username}` : payload?.data?.name || 'Medium account';
+  if (config.family === 'google') return payload?.email || payload?.name || 'Google account';
   return '';
 }
 
@@ -1081,6 +1145,22 @@ async function fetchProviderProfile(config, accessToken) {
       picture: user.imageUrl || '',
       extra: {
         url: user.url || ''
+      }
+    };
+  }
+
+  if (config.family === 'google') {
+    const payload = await fetchJson('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    return {
+      id: String(payload?.sub || payload?.email || ''),
+      label: String(payload?.email || payload?.name || 'Google account'),
+      handle: payload?.email ? String(payload.email) : '',
+      platform: config.id,
+      picture: payload?.picture || '',
+      extra: {
+        hostedDomain: payload?.hd || ''
       }
     };
   }
@@ -1397,7 +1477,7 @@ async function listProviderAccounts(provider, user) {
   }
 
   let accounts = [];
-  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium'].includes(config.family)) {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
@@ -1438,7 +1518,7 @@ async function selectProviderAccount(provider, user, { accountId } = {}) {
   }
 
   let accounts = [];
-  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium'].includes(config.family)) {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);

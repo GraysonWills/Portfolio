@@ -246,6 +246,200 @@ test('builds LinkedIn provider config with profile and posting scopes', () => {
   assert.deepEqual(config.scopes, ['openid', 'profile', 'email', 'r_profile_basicinfo', 'w_member_social']);
 });
 
+test('builds Google provider config with broad API scopes and offline OAuth params', () => {
+  const config = socialAuth.getProviderConfig('google');
+  assert.equal(config.id, 'google');
+  assert.equal(config.family, 'google');
+  assert.equal(config.authUrl, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(config.tokenUrl, 'https://oauth2.googleapis.com/token');
+  assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/google/callback');
+  assert.equal(config.pkce, true);
+  assert.deepEqual(config.authParams, {
+    access_type: 'offline',
+    include_granted_scopes: 'true',
+    prompt: 'consent'
+  });
+  assert.ok(config.scopes.includes('https://www.googleapis.com/auth/gmail.modify'));
+  assert.ok(config.scopes.includes('https://www.googleapis.com/auth/youtube.upload'));
+  assert.ok(config.scopes.includes('https://www.googleapis.com/auth/adwords'));
+});
+
+test('allows Google scopes to be narrowed from environment', () => {
+  const previousScopes = process.env.SOCIAL_GOOGLE_SCOPES;
+  process.env.SOCIAL_GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/youtube.upload';
+
+  try {
+    const config = socialAuth.getProviderConfig('google');
+    assert.deepEqual(config.scopes, [
+      'openid',
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/youtube.upload'
+    ]);
+  } finally {
+    if (previousScopes === undefined) delete process.env.SOCIAL_GOOGLE_SCOPES;
+    else process.env.SOCIAL_GOOGLE_SCOPES = previousScopes;
+  }
+});
+
+test('builds Google OAuth authorize URLs with PKCE and offline consent', async (t) => {
+  const previousClientId = process.env.SOCIAL_GOOGLE_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_GOOGLE_CLIENT_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousClientId === undefined) delete process.env.SOCIAL_GOOGLE_CLIENT_ID;
+    else process.env.SOCIAL_GOOGLE_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_GOOGLE_CLIENT_SECRET;
+    else process.env.SOCIAL_GOOGLE_CLIENT_SECRET = previousClientSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_GOOGLE_CLIENT_ID = 'google-client-id';
+  process.env.SOCIAL_GOOGLE_CLIENT_SECRET = 'google-client-secret';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  const result = await freshSocialAuth.startOAuth('google', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+
+  const url = new URL(result.authUrl);
+  assert.equal(`${url.origin}${url.pathname}`, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(url.searchParams.get('client_id'), 'google-client-id');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/google/callback');
+  assert.equal(url.searchParams.get('access_type'), 'offline');
+  assert.equal(url.searchParams.get('include_granted_scopes'), 'true');
+  assert.equal(url.searchParams.get('prompt'), 'consent');
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.ok(url.searchParams.get('scope').includes('https://www.googleapis.com/auth/gmail.modify'));
+  assert.ok(url.searchParams.get('scope').includes('https://www.googleapis.com/auth/youtube.upload'));
+});
+
+test('refreshes Google access tokens using the stored encrypted refresh token', async (t) => {
+  const originalFetch = global.fetch;
+  const previousClientId = process.env.SOCIAL_GOOGLE_CLIENT_ID;
+  const previousClientSecret = process.env.SOCIAL_GOOGLE_CLIENT_SECRET;
+  const previousTokenSecret = process.env.SOCIAL_AUTH_TOKEN_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (previousClientId === undefined) delete process.env.SOCIAL_GOOGLE_CLIENT_ID;
+    else process.env.SOCIAL_GOOGLE_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.SOCIAL_GOOGLE_CLIENT_SECRET;
+    else process.env.SOCIAL_GOOGLE_CLIENT_SECRET = previousClientSecret;
+    if (previousTokenSecret === undefined) delete process.env.SOCIAL_AUTH_TOKEN_SECRET;
+    else process.env.SOCIAL_AUTH_TOKEN_SECRET = previousTokenSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.SOCIAL_GOOGLE_CLIENT_ID = 'google-client-id';
+  process.env.SOCIAL_GOOGLE_CLIENT_SECRET = 'google-client-secret';
+  process.env.SOCIAL_AUTH_TOKEN_SECRET = 'test-social-token-secret-32-chars-minimum';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+  const user = {
+    sub: 'author-sub',
+    username: 'author'
+  };
+  const tokenRequests = [];
+
+  global.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href === 'https://oauth2.googleapis.com/token') {
+      const params = new URLSearchParams(String(options.body || ''));
+      tokenRequests.push({
+        grantType: params.get('grant_type'),
+        refreshToken: params.get('refresh_token'),
+        clientSecret: params.get('client_secret')
+      });
+      assert.equal(params.get('client_id'), 'google-client-id');
+      assert.equal(params.get('client_secret'), 'google-client-secret');
+
+      if (params.get('grant_type') === 'authorization_code') {
+        assert.equal(params.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/google/callback');
+        assert.ok(params.get('code_verifier'));
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            access_token: 'old-google-access-token',
+            refresh_token: 'google-refresh-token',
+            token_type: 'Bearer',
+            expires_in: 1,
+            scope: freshSocialAuth.getProviderConfig('google').scopes.join(' ')
+          })
+        };
+      }
+
+      if (params.get('grant_type') === 'refresh_token') {
+        assert.equal(params.get('refresh_token'), 'google-refresh-token');
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            access_token: 'new-google-access-token',
+            token_type: 'Bearer',
+            expires_in: 3600,
+            scope: freshSocialAuth.getProviderConfig('google').scopes.join(' ')
+          })
+        };
+      }
+    }
+
+    if (href === 'https://openidconnect.googleapis.com/v1/userinfo') {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          sub: 'google-sub',
+          email: 'author@example.test',
+          name: 'Author Name',
+          picture: 'https://example.test/avatar.png'
+        })
+      };
+    }
+
+    throw new Error(`Unexpected fetch ${href}`);
+  };
+
+  const start = await freshSocialAuth.startOAuth('google', user, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+  const state = new URL(start.authUrl).searchParams.get('state');
+  await freshSocialAuth.completeOAuth('google', {
+    code: 'oauth-code',
+    state
+  });
+
+  const statuses = await freshSocialAuth.getProviderStatus(user);
+  const googleStatus = statuses.find((status) => status.provider === 'google');
+  assert.equal(googleStatus.status, 'connected');
+  assert.equal(googleStatus.connected, true);
+  assert.equal(googleStatus.accountLabel, 'author@example.test');
+  assert.equal(googleStatus.credentialArtifacts.hasRefreshToken, true);
+  assert.equal(googleStatus.credentialArtifacts.expiresInSeconds, 3600);
+
+  const credential = await freshSocialAuth.getPostingCredential('google', user);
+  assert.equal(credential.token.access_token, 'new-google-access-token');
+  assert.equal(credential.token.refresh_token, 'google-refresh-token');
+  assert.deepEqual(tokenRequests.map((request) => request.grantType), ['authorization_code', 'refresh_token']);
+
+  const refreshed = memory.valuesForTable('social-auth-test').find((item) => item.provider === 'google');
+  assert.equal(refreshed.credentialArtifacts.expiresInSeconds, 3600);
+  assert.equal(JSON.stringify(refreshed).includes('new-google-access-token'), false);
+  assert.equal(JSON.stringify(refreshed).includes('google-refresh-token'), false);
+});
+
 test('marks existing LinkedIn connections as needing reconnect when r_profile_basicinfo is missing', async (t) => {
   const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
 
