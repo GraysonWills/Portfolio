@@ -48,6 +48,26 @@ export class HeaderComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Nav pills shown in the desktop bar: the primary routes only.
+   * The account / sign-in item lives in the right-side actions instead.
+   */
+  get navMenuItems(): MenuItem[] {
+    return this.menuItems.filter(item => item.routerLink !== '/account');
+  }
+
+  /**
+   * Resolve a full GitHub URL from the (optional) contactInfo.github field,
+   * tolerating either a bare handle/domain or an absolute URL.
+   */
+  getGithubUrl(): string {
+    const raw = String(this.contactInfo?.github || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('github.com') || raw.includes('/')) return `https://${raw}`;
+    return `https://github.com/${raw}`;
+  }
+
+  /**
    * Load header content from Redis
    */
   private loadHeaderContent(): void {

@@ -1,0 +1,141 @@
+.mc-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 28px 80px;
+}
+
+.mc-cockpit {
+  background: var(--mc-bg);
+  border: 1px solid var(--mc-line);
+  border-radius: var(--r);
+  padding: 20px 22px 24px;
+  box-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.6);
+}
+
+.mc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mc-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mc-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mc-green);
+  box-shadow: 0 0 0 4px rgba(63, 178, 127, 0.18);
+  display: block;
+}
+
+.mc-title {
+  font-family: var(--f-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  font-size: 24px;
+  color: var(--mc-ink);
+  margin: 0;
+}
+
+.mc-ver {
+  font-family: var(--f-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--mc-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.mc-sub {
+  font-family: var(--f-body);
+  font-size: 14px;
+  color: var(--mc-muted);
+  margin: 8px 0 0;
+}
+
+.mc-head-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.mc-btn-ghost {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12px;
+  color: #c7d3e4;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--btn-r);
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+.mc-btn-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--btn-r);
+  padding: 10px 15px;
+  cursor: pointer;
+  color: var(--mc-bg);
+  background: var(--mc-grad);
+
+  &.on {
+    background: var(--mc-ink);
+  }
+}
+
+.mc-subnav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.mc-tab {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+
+  &.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+}
+
+.mc-endpoints {
+  margin-left: auto;
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-faint);
+  letter-spacing: 0.04em;
+  padding-right: 8px;
+}

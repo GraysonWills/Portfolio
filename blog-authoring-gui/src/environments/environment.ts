@@ -7,6 +7,7 @@ export const environment = {
   // Update this to your Redis API server URL
   // For local development: http://localhost:3000/api
   // For production: https://your-api-domain.com/api
+  meshApiUrl: 'http://100.119.247.118:8088',
   redisApiUrl: 'http://localhost:3000/api',
   useContentV2Stream: true,
   useBlogV2Cards: true,

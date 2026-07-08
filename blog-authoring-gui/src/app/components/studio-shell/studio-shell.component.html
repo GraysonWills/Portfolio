@@ -1,0 +1,29 @@
+<div class="shell as-card">
+  <div class="shell-top">
+    <div>
+      <div class="brand-row">
+        <span class="brand-mark">GW</span>
+        <h1 class="brand-title">Blog Authoring Studio</h1>
+        <span class="conn-pill" [class.off]="apiConnected === false">
+          ● {{ connectionLabel || (apiConnected === false ? 'Disconnected' : 'API Connected') }}
+        </span>
+      </div>
+      <div class="brand-sub">author.grayson-wills.com · Draft → Refine → Schedule → Publish</div>
+    </div>
+    <div class="shell-actions">
+      <button class="as-btn-primary" type="button" (click)="onCreatePost()">+ Create New Post</button>
+      <a class="as-btn-ghost strong" [href]="publicSiteUrl" target="_blank" rel="noopener">View Public Site ↗</a>
+    </div>
+  </div>
+  <div class="shell-tabs">
+    <button
+      *ngFor="let t of tabs"
+      type="button"
+      class="tab"
+      [class.active]="t.key === active"
+      [routerLink]="t.route">
+      {{ t.label }}
+    </button>
+    <button class="as-btn-ghost logout" type="button" (click)="logout()">Logout ↗</button>
+  </div>
+</div>

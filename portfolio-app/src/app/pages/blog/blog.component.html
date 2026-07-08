@@ -2,67 +2,85 @@
   <div class="container">
     <!-- Page Header -->
     <section class="page-header" appScrollReveal aria-label="Blog overview">
-      <h1 class="page-title">Blog</h1>
-      <p class="page-subtitle">Insights, tutorials, and technical articles</p>
+      <div class="pw-section-label"><span>Blog</span></div>
+      <h1 class="pw-display page-title">Blog</h1>
+      <p class="page-subtitle">Essays, reflections, and the occasional technical note. Written for me first — shared in case it's useful to you.</p>
     </section>
 
-    <!-- Subscribe -->
+    <!-- Subscribe Hero -->
     <section class="subscribe-section" appScrollReveal aria-label="Subscribe to blog updates">
-      <div class="subscribe-card">
-        <div class="subscribe-copy">
-          <h2>Stay Updated</h2>
-          <p>Get an email when new posts go live. Double opt-in, unsubscribe anytime.</p>
-        </div>
-        <div class="subscribe-form">
-          <input
-            type="email"
-            pInputText
-            [(ngModel)]="subscribeEmail"
-            (keyup.enter)="subscribe()"
-            placeholder="you@example.com"
-            class="subscribe-input"
-            aria-label="Email address" />
-          <button
-            class="subscribe-btn"
-            (click)="subscribe()"
-            [disabled]="isSubscribing"
-            [attr.aria-busy]="isSubscribing ? 'true' : 'false'">
-            {{ isSubscribing ? 'Sending...' : 'Subscribe' }}
-          </button>
+      <div class="subscribe-hero">
+        <div class="subscribe-hero-grid" aria-hidden="true"></div>
+        <div class="subscribe-hero-inner">
+          <div class="subscribe-copy">
+            <div class="subscribe-kicker">// stay updated</div>
+            <h2 class="subscribe-title">Subscribe to the blog</h2>
+            <p class="subscribe-blurb">One short email when a new post goes live. No spam, double opt-in, unsubscribe in a click.</p>
+          </div>
+
+          <div class="subscribe-confirm" *ngIf="subscribedInline" role="status" aria-live="polite">
+            ✓ You're on the list — check your inbox to confirm.
+          </div>
+
+          <div class="subscribe-form" *ngIf="!subscribedInline">
+            <input
+              type="email"
+              pInputText
+              [(ngModel)]="subscribeEmail"
+              (keyup.enter)="subscribe()"
+              placeholder="you@example.com"
+              class="subscribe-input"
+              aria-label="Email address" />
+            <button
+              class="subscribe-btn"
+              (click)="subscribe()"
+              [disabled]="isSubscribing"
+              [attr.aria-busy]="isSubscribing ? 'true' : 'false'">
+              {{ isSubscribing ? 'Sending...' : 'Subscribe' }}
+            </button>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- Search and Controls -->
     <section class="controls-section" *ngIf="!isLoading">
-      <div class="search-container">
-        <input 
-          type="text" 
-          pInputText 
-          [(ngModel)]="searchQuery" 
+      <div class="search-bar">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <path d="M21 21l-4-4"/>
+        </svg>
+        <input
+          type="text"
+          pInputText
+          [(ngModel)]="searchQuery"
           (input)="filterPosts()"
-          placeholder="Search blog posts..."
+          placeholder="Search blog posts, tags..."
           class="search-input"
           aria-label="Search blog posts">
-        <i class="pi pi-search search-icon" aria-hidden="true"></i>
       </div>
-      <button
-        class="layout-toggle-btn"
-        (click)="toggleLayout()"
-        [attr.aria-label]="layout === 'grid' ? 'Switch to list view' : 'Switch to grid view'">
-        <i [class]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'"></i>
-        <span>{{ layout === 'grid' ? 'List' : 'Grid' }}</span>
-      </button>
+      <div class="controls-right">
+        <button
+          class="layout-toggle-btn"
+          (click)="toggleLayout()"
+          [attr.aria-label]="layout === 'grid' ? 'Switch to list view' : 'Switch to grid view'">
+          <i [class]="layout === 'grid' ? 'pi pi-list' : 'pi pi-th-large'" aria-hidden="true"></i>
+          <span>{{ layout === 'grid' ? 'List' : 'Grid' }}</span>
+        </button>
+        <span class="posts-count">{{ filteredPosts.length }} posts</span>
+      </div>
     </section>
 
     <!-- Loading Skeleton -->
     <section *ngIf="isLoading" class="loading-skeleton" aria-label="Loading blog posts">
-      <div class="skeleton-card" *ngFor="let i of [1,2,3]">
+      <div class="skeleton-card" *ngFor="let i of [1,2,3,4,5,6]">
         <div class="skeleton-image"></div>
-        <div class="skeleton-line short"></div>
-        <div class="skeleton-line title"></div>
-        <div class="skeleton-line"></div>
-        <div class="skeleton-line medium"></div>
+        <div class="skeleton-body">
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-line title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line medium"></div>
+        </div>
       </div>
     </section>
 
@@ -89,8 +107,8 @@
     <!-- Blog Posts -->
     <section class="posts-section" *ngIf="!isLoading" aria-label="Blog posts">
       <div [class]="'posts-' + layout" role="list">
-        <article *ngFor="let post of visiblePosts; trackBy: trackByPost" 
-                class="blog-card" 
+        <article *ngFor="let post of visiblePosts; trackBy: trackByPost"
+                class="blog-card"
                 role="listitem"
                 [routerLink]="['/blog', post.listItemID]"
                 (click)="trackPostOpen(post.source)"
@@ -99,30 +117,29 @@
           <ng-container *ngTemplateOutlet="blogPostCard; context: {post: post}"></ng-container>
         </article>
       </div>
-      
+
       <div *ngIf="filteredPosts.length === 0" class="no-posts" appScrollReveal>
         <i class="pi pi-inbox empty-icon" aria-hidden="true"></i>
         <p>No blog posts found. Check back soon!</p>
       </div>
 
       <div *ngIf="shouldShowPagination && filteredPosts.length > 0" class="blog-pagination" appScrollReveal>
-        <div class="pagination-summary">{{ paginationRangeLabel }}</div>
+        <span class="pagination-summary">{{ paginationRangeLabel }}</span>
         <div class="pagination-controls" aria-label="Blog pagination">
           <button
             type="button"
-            class="pagination-btn pagination-nav"
+            class="pagination-nav pagination-prev"
             (click)="goToPreviousPage()"
             [disabled]="!canGoToPreviousPage"
             aria-label="Go to previous page">
-            <i class="pi pi-arrow-left"></i>
-            <span>Previous</span>
+            ← Prev
           </button>
 
           <div class="pagination-pages" role="navigation" aria-label="Blog pages">
             <button
               *ngFor="let pageNumber of pageNumbers"
               type="button"
-              class="pagination-btn pagination-page"
+              class="pagination-page"
               [class.active]="pageNumber === currentPage"
               (click)="goToPage(pageNumber)"
               [disabled]="isPageTransitioning && pageNumber !== currentPage"
@@ -133,12 +150,11 @@
 
           <button
             type="button"
-            class="pagination-btn pagination-nav"
+            class="pagination-nav pagination-next"
             (click)="goToNextPage()"
             [disabled]="!canGoToNextPage"
             aria-label="Go to next page">
-            <span>Next</span>
-            <i class="pi pi-arrow-right"></i>
+            Next →
           </button>
         </div>
       </div>
@@ -149,30 +165,27 @@
 
 <ng-template #blogPostCard let-post="post">
   <div class="blog-post-content">
-    <img *ngIf="post.image" 
-         [src]="post.image" 
-         [alt]="post.title + ' cover image'" 
-         class="blog-image"
-         loading="lazy">
+    <div class="blog-image-area">
+      <img *ngIf="post.image"
+           [src]="post.image"
+           [alt]="post.title + ' cover image'"
+           class="blog-image"
+           loading="lazy">
+    </div>
     <div class="blog-details">
       <div class="blog-meta">
-        <span *ngIf="post.publishDate" class="publish-date">
-          <i class="pi pi-calendar" aria-hidden="true"></i>
-          {{ post.publishDate | date:'mediumDate' }}
-        </span>
-        <span *ngIf="post.readTime" class="read-time">
-          <i class="pi pi-clock" aria-hidden="true"></i>
-          {{ post.readTime }} min read
-        </span>
+        <span *ngIf="post.publishDate">{{ post.publishDate | date:'mediumDate' }}</span>
+        <span *ngIf="post.publishDate && post.readTime" class="meta-dot">·</span>
+        <span *ngIf="post.readTime">{{ post.readTime }} min read</span>
       </div>
       <h3 class="blog-title">{{ post.title }}</h3>
       <p class="blog-summary">{{ post.summary }}</p>
       <div class="blog-footer">
         <div class="blog-tags" *ngIf="post.tags?.length">
-          <span *ngFor="let tag of post.tags.slice(0, 2); trackBy: trackByTag" class="blog-tag">{{ tag }}</span>
+          <span *ngFor="let tag of post.tags.slice(0, 2); trackBy: trackByTag" class="pw-chip blog-tag">{{ tag }}</span>
         </div>
         <span class="read-more-link" [attr.aria-label]="'Read full article: ' + post.title">
-          Read More <i class="pi pi-arrow-right"></i>
+          Read →
         </span>
       </div>
     </div>

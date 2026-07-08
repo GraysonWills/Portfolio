@@ -1,212 +1,140 @@
-<div class="distribution-container">
-  <div class="distribution-header">
-    <div class="header-title">
-      <span class="eyebrow">Blog Authoring</span>
-      <h1>Social Distribution</h1>
-      <p>Account health, post setup, scheduling, and delivery receipts</p>
-    </div>
-    <div class="header-actions">
-      <p-button
-        label="Dashboard"
-        icon="pi pi-home"
-        styleClass="p-button-outlined"
-        (onClick)="goToDashboard()">
-      </p-button>
-      <p-button
-        label="Site Content"
-        icon="pi pi-sliders-h"
-        styleClass="p-button-outlined"
-        (onClick)="goToContentStudio()">
-      </p-button>
-      <p-button
-        label="Subscribers"
-        icon="pi pi-users"
-        styleClass="p-button-outlined"
-        (onClick)="goToSubscribers()">
-      </p-button>
-      <p-button
-        label="AI Queue"
-        icon="pi pi-bolt"
-        styleClass="p-button-outlined"
-        (onClick)="goToAiQueue()">
-      </p-button>
-      <p-button
-        label="Comments"
-        icon="pi pi-comments"
-        styleClass="p-button-outlined"
-        (onClick)="goToComments()">
-      </p-button>
-      <p-button
-        label="Collections"
-        icon="pi pi-folder"
-        styleClass="p-button-outlined"
-        (onClick)="goToCollections()">
-      </p-button>
-      <p-button
-        label="Logout"
-        icon="pi pi-sign-out"
-        styleClass="p-button-outlined"
-        (onClick)="logout()">
-      </p-button>
-    </div>
-  </div>
+<app-studio-shell active="distribution"></app-studio-shell>
 
-  <section class="summary-grid" aria-label="Distribution summary">
-    <article class="summary-tile">
-      <span class="tile-icon quiet"><i class="pi pi-eye-slash"></i></span>
-      <div>
-        <strong>Quiet Mode</strong>
-        <span>Engagement hidden</span>
-      </div>
-    </article>
-    <article class="summary-tile">
-      <span class="tile-icon ready"><i class="pi pi-check"></i></span>
-      <div>
-        <strong>{{ connectedCount }}</strong>
-        <span>connected accounts</span>
-      </div>
-    </article>
-    <article class="summary-tile">
-      <span class="tile-icon review"><i class="pi pi-key"></i></span>
-      <div>
-        <strong>{{ needsLoginCount }}</strong>
-        <span>need login</span>
-      </div>
-    </article>
-    <article class="summary-tile">
-      <span class="tile-icon queue"><i class="pi pi-send"></i></span>
-      <div>
-        <strong>{{ selectedPlatforms.length }}</strong>
-        <span>selected targets</span>
-      </div>
-    </article>
-    <article class="summary-tile">
-      <span class="tile-icon automate"><i class="pi pi-sitemap"></i></span>
-      <div>
-        <strong>{{ publishAutomationCount }}</strong>
-        <span>publish automations</span>
-      </div>
-    </article>
+<div class="distribution-page">
+  <!-- Stat cards -->
+  <section class="dist-stats" aria-label="Distribution summary">
+    <div class="stat-card stat-dark">
+      <div class="stat-title">Quiet Mode</div>
+      <div class="stat-sub">Engagement hidden</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value green">{{ connectedCount }}</div>
+      <div class="stat-label">connected</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value warm">{{ needsLoginCount }}</div>
+      <div class="stat-label">need login</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value blue">{{ selectedPlatforms.length }}</div>
+      <div class="stat-label">selected targets</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value ink">{{ publishAutomationCount }}</div>
+      <div class="stat-label">automations</div>
+    </div>
   </section>
 
-  <nav class="workspace-tabs" aria-label="Distribution workspace">
+  <!-- Pill sub-nav -->
+  <nav class="workspace-tabs as-card" aria-label="Distribution workspace">
     <button
       type="button"
+      class="tab-pill"
       *ngFor="let tab of workspaceTabs"
       [class.active]="activeWorkspaceTab === tab.id"
       (click)="setWorkspaceTab(tab.id)">
-      <i class="pi" [ngClass]="tab.icon"></i>
-      <span>{{ tab.label }}</span>
+      {{ tab.label }}
     </button>
   </nav>
 
-  <section class="account-section" aria-labelledby="account-heading" *ngIf="activeWorkspaceTab === 'connections'">
-    <div class="section-heading">
+  <!-- CONNECTIONS -->
+  <section class="pane as-card" aria-labelledby="account-heading" *ngIf="activeWorkspaceTab === 'connections'">
+    <div class="pane-head">
       <div>
         <h2 id="account-heading">Social Accounts</h2>
-        <span>Connection status, token health, reconnects, and disconnects</span>
+        <span class="pane-sub">Connection status, token health, reconnects, and disconnects</span>
       </div>
-      <p-button
-        label="Check Status"
-        icon="pi pi-refresh"
-        styleClass="p-button-outlined p-button-sm"
+      <button
+        type="button"
+        class="as-btn-ghost"
         [disabled]="socialAuthLoading"
-        (onClick)="refreshConnections()">
-      </p-button>
+        (click)="refreshConnections()">
+        Check Status
+      </button>
     </div>
 
-    <div *ngIf="socialAuthError" class="auth-alert">
-      <i class="pi pi-exclamation-triangle"></i>
-      <span>{{ socialAuthError }}</span>
-    </div>
+    <div class="pane-alert" *ngIf="socialAuthError">{{ socialAuthError }}</div>
 
     <div class="account-grid">
       <article
         class="account-card"
-        *ngFor="let platform of platforms; trackBy: trackByPlatform"
-        [ngClass]="getStateClass(platform)">
+        *ngFor="let platform of platforms; trackBy: trackByPlatform">
         <div class="account-top">
-          <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
-          <p-tag
-            [value]="platform.connectionLabel"
-            [severity]="getConnectionSeverity(platform.connectionState)">
-          </p-tag>
+          <span class="account-mono">{{ platform.mark }}</span>
+          <span class="as-badge" [ngClass]="getConnectionBadgeClass(platform)">{{ platform.connectionLabel }}</span>
         </div>
-        <div class="account-title">
-          <strong>{{ platform.name }}</strong>
-          <span>{{ platform.handle }}</span>
-        </div>
-        <p>{{ platform.connectionDetail }}</p>
-        <div class="account-meta">
-          <span><i class="pi pi-clock"></i>{{ platform.lastChecked }}</span>
-          <span><i class="pi pi-calendar-clock"></i>{{ platform.expiresIn }}</span>
-        </div>
+        <div class="account-name">{{ platform.name }}</div>
+        <div class="account-handle">{{ platform.handle }}</div>
+        <p class="account-note">{{ platform.connectionDetail }}</p>
+        <div class="account-meta">checked {{ platform.lastChecked }} · token {{ platform.expiresIn }}</div>
+
         <div class="account-actions">
-          <p-button
+          <button
+            type="button"
+            class="acct-action as-link-action green"
             *ngIf="platformCanUseOAuth(platform) && (platform.connectionState === 'expired' || platform.connectionState === 'not-connected')"
-            label="Connect"
-            icon="pi pi-link"
-            styleClass="p-button-sm"
             [disabled]="!!platform.disabled || socialAuthLoading"
-            (onClick)="connectPlatform(platform)">
-          </p-button>
-          <p-button
+            (click)="connectPlatform(platform)">
+            Connect
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action blue"
             *ngIf="platformCanUseOAuth(platform) && platform.connectionState === 'attention'"
-            label="Reconnect"
-            icon="pi pi-refresh"
-            styleClass="p-button-sm p-button-outlined"
             [disabled]="socialAuthLoading"
-            (onClick)="connectPlatform(platform)">
-          </p-button>
-          <p-button
+            (click)="connectPlatform(platform)">
+            Reconnect
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action blue"
             *ngIf="platformCanUseOAuth(platform) && platform.connectionState !== 'not-connected' && platform.connectionState !== 'expired'"
-            label="Accounts"
-            icon="pi pi-list"
-            styleClass="p-button-sm p-button-outlined"
             [disabled]="socialAccountsLoading"
-            (onClick)="loadProviderAccounts(platform)">
-          </p-button>
-          <p-button
+            (click)="loadProviderAccounts(platform)">
+            Accounts
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action muted"
             *ngIf="platformCanUseOAuth(platform) && platformIsConnected(platform)"
-            label="Disconnect"
-            icon="pi pi-times"
-            styleClass="p-button-sm p-button-outlined"
             [disabled]="socialAuthLoading"
-            (onClick)="disconnectPlatform(platform)">
-          </p-button>
-          <p-button
+            (click)="disconnectPlatform(platform)">
+            Disconnect
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action blue"
             *ngIf="canImportAccessToken(platform)"
-            label="Import Token"
-            icon="pi pi-key"
-            styleClass="p-button-sm p-button-outlined"
             [disabled]="tokenImportLoading"
-            (onClick)="openTokenImport(platform)">
-          </p-button>
-          <p-button
+            (click)="openTokenImport(platform)">
+            Import Token
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action blue"
             *ngIf="platformUsesManualImport(platform)"
-            label="Copy Blog URL"
-            icon="pi pi-copy"
-            styleClass="p-button-sm p-button-outlined"
-            (onClick)="copyMediumImportUrl()">
-          </p-button>
-          <p-button
+            (click)="copyMediumImportUrl()">
+            Copy Blog URL
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action green"
             *ngIf="platformUsesManualImport(platform)"
-            label="Open Import"
-            icon="pi pi-external-link"
-            styleClass="p-button-sm"
-            (onClick)="openMediumImport()">
-          </p-button>
+            (click)="openMediumImport()">
+            Open Import
+          </button>
           <span
-            *ngIf="platform.disabled || (!platformCanUseOAuth(platform) && !platformUsesManualImport(platform))"
-            class="manual-note">
+            class="manual-note"
+            *ngIf="platform.disabled || (!platformCanUseOAuth(platform) && !platformUsesManualImport(platform))">
             Manual setup
           </span>
         </div>
 
         <div class="token-import" *ngIf="tokenImportProviderId === platform.id">
           <label *ngIf="tokenImportNeedsInstance(platform)">
-            <span>Instance URL</span>
+            <span class="field-label">Instance URL</span>
             <input
+              class="as-input input-sm"
               type="url"
               autocomplete="off"
               spellcheck="false"
@@ -214,71 +142,73 @@
               placeholder="https://mastodon.social">
           </label>
           <label>
-            <span>Access token</span>
+            <span class="field-label">Access token</span>
             <input
+              class="as-input input-sm"
               type="password"
               autocomplete="off"
               spellcheck="false"
               [(ngModel)]="tokenImportValue"
               [placeholder]="tokenImportPlaceholder(platform)">
           </label>
-          <p class="token-import-hint">{{ tokenImportHint(platform) }}</p>
-          <div class="token-import-actions">
-            <p-button
-              label="Save Token"
-              icon="pi pi-lock"
-              styleClass="p-button-sm"
+          <p class="token-hint">{{ tokenImportHint(platform) }}</p>
+          <div class="token-actions">
+            <button
+              type="button"
+              class="as-btn-green btn-sm"
               [disabled]="tokenImportLoading || !tokenImportValue.trim()"
-              (onClick)="importPlatformToken(platform)">
-            </p-button>
-            <p-button
-              label="Cancel"
-              icon="pi pi-times"
-              styleClass="p-button-sm p-button-text"
+              (click)="importPlatformToken(platform)">
+              Save Token
+            </button>
+            <button
+              type="button"
+              class="as-btn-ghost"
               [disabled]="tokenImportLoading"
-              (onClick)="cancelTokenImport()">
-            </p-button>
+              (click)="cancelTokenImport()">
+              Cancel
+            </button>
           </div>
         </div>
 
         <div class="account-picker" *ngIf="accountsByProvider[platform.id]?.length">
           <label>
-            <span>Posting identity</span>
-            <select [(ngModel)]="selectedAccountIds[platform.id]">
+            <span class="field-label">Posting identity</span>
+            <select class="as-input input-sm" [(ngModel)]="selectedAccountIds[platform.id]">
               <option value="">Choose account</option>
               <option *ngFor="let account of accountsByProvider[platform.id]" [ngValue]="account.id">
                 {{ account.label }} {{ account.handle ? '(' + account.handle + ')' : '' }}
               </option>
             </select>
           </label>
-          <p-button
-            label="Use Account"
-            icon="pi pi-check"
-            styleClass="p-button-sm"
+          <button
+            type="button"
+            class="as-btn-green btn-sm"
             [disabled]="socialAccountsLoading || !selectedAccountIds[platform.id]"
-            (onClick)="selectProviderAccount(platform)">
-          </p-button>
+            (click)="selectProviderAccount(platform)">
+            Use Account
+          </button>
         </div>
+
         <div
           class="account-empty"
           *ngIf="accountLoadAttemptedByProvider[platform.id] && !accountsByProvider[platform.id]?.length && platformCanUseOAuth(platform) && platform.connectionState !== 'not-connected' && platform.connectionState !== 'expired'">
-          <i class="pi pi-info-circle"></i>
-          <span>No posting identities were returned for this connection.</span>
+          No posting identities were returned for this connection.
         </div>
       </article>
     </div>
   </section>
 
-  <section class="automation-section" aria-labelledby="templates-heading" *ngIf="activeWorkspaceTab === 'templates'">
-    <div class="section-heading">
+  <!-- TEMPLATES -->
+  <section class="pane as-card" aria-labelledby="templates-heading" *ngIf="activeWorkspaceTab === 'templates'">
+    <div class="pane-head">
       <div>
         <h2 id="templates-heading">Post Templates</h2>
-        <span>Reusable copy formats for publish and schedule events</span>
+        <span class="pane-sub">Reusable copy formats for publish and schedule events</span>
       </div>
-      <div class="section-actions">
-        <p-button label="New" icon="pi pi-plus" styleClass="p-button-sm" (onClick)="createAutomationTemplate()"></p-button>
-        <p-button label="Duplicate" icon="pi pi-copy" styleClass="p-button-sm p-button-outlined" (onClick)="duplicateSelectedTemplate()"></p-button>
-        <p-button label="Save" icon="pi pi-save" styleClass="p-button-sm p-button-outlined" (onClick)="saveAutomationSettings()"></p-button>
+      <div class="pane-actions">
+        <button type="button" class="as-btn-primary btn-sm" (click)="createAutomationTemplate()">New</button>
+        <button type="button" class="as-btn-ghost" (click)="duplicateSelectedTemplate()">Duplicate</button>
+        <button type="button" class="as-btn-ghost" (click)="saveAutomationSettings()">Save</button>
       </div>
     </div>
 
@@ -298,65 +228,67 @@
       <article class="template-editor" *ngIf="selectedTemplate as template">
         <div class="form-grid">
           <div class="form-group">
-            <label for="template-name">Template Name</label>
-            <input id="template-name" pInputText type="text" [(ngModel)]="template.name">
+            <label class="field-label" for="template-name">Template Name</label>
+            <input id="template-name" class="as-input input-sm" type="text" [(ngModel)]="template.name">
           </div>
           <div class="form-group">
-            <label for="template-platform">Default Platform</label>
-            <select id="template-platform" [(ngModel)]="template.platformId">
+            <label class="field-label" for="template-platform">Default Platform</label>
+            <select id="template-platform" class="as-input input-sm" [(ngModel)]="template.platformId">
               <option value="all">All platforms</option>
               <option *ngFor="let platform of platforms" [ngValue]="platform.id">{{ platform.name }}</option>
             </select>
           </div>
           <div class="form-group">
-            <label for="template-destination">Post Type</label>
-            <input id="template-destination" pInputText type="text" [(ngModel)]="template.destination">
+            <label class="field-label" for="template-destination">Post Type</label>
+            <input id="template-destination" class="as-input input-sm" type="text" [(ngModel)]="template.destination">
           </div>
           <label class="inline-toggle">
             <input type="checkbox" [(ngModel)]="template.useCoverImage">
             <span>Use blog cover image when available</span>
           </label>
           <div class="form-group full-span">
-            <label for="template-body">Template Body</label>
-            <textarea id="template-body" rows="8" [(ngModel)]="template.body"></textarea>
+            <label class="field-label" for="template-body">Template Body</label>
+            <textarea id="template-body" class="as-input input-sm" rows="8" [(ngModel)]="template.body"></textarea>
           </div>
           <div class="form-group full-span">
-            <label for="template-hashtags">Hashtags</label>
-            <input id="template-hashtags" pInputText type="text" [(ngModel)]="template.hashtags">
+            <label class="field-label" for="template-hashtags">Hashtags</label>
+            <input id="template-hashtags" class="as-input input-sm" type="text" [(ngModel)]="template.hashtags">
           </div>
         </div>
 
         <div class="variable-row" aria-label="Template variables">
-          <button type="button" *ngFor="let variable of automationVariables" (click)="insertTemplateVariable(variable)">
+          <button
+            type="button"
+            class="as-chip variable-chip"
+            *ngFor="let variable of automationVariables"
+            (click)="insertTemplateVariable(variable)">
             {{ '{{' + variable + '}}' }}
           </button>
         </div>
 
         <div class="rendered-preview">
-          <span>Preview</span>
+          <span class="as-mono-label">Preview</span>
           <p>{{ getSelectedTemplatePreview() }}</p>
         </div>
       </article>
     </div>
   </section>
 
-  <section class="automation-section" aria-labelledby="rules-heading" *ngIf="activeWorkspaceTab === 'rules'">
-    <div class="section-heading">
+  <!-- RULES -->
+  <section class="pane as-card" aria-labelledby="rules-heading" *ngIf="activeWorkspaceTab === 'rules'">
+    <div class="pane-head">
       <div>
         <h2 id="rules-heading">Automation Rules</h2>
-        <span>Trigger templates from blog events and stage the resulting queue</span>
+        <span class="pane-sub">Trigger templates from blog events and stage the resulting queue</span>
       </div>
-      <div class="section-actions">
-        <p-button label="Add Rule" icon="pi pi-plus" styleClass="p-button-sm" (onClick)="addAutomationRule()"></p-button>
-        <p-button label="Save" icon="pi pi-save" styleClass="p-button-sm p-button-outlined" (onClick)="saveAutomationSettings()"></p-button>
-        <p-button label="Reset" icon="pi pi-refresh" styleClass="p-button-sm p-button-outlined" (onClick)="resetAutomationSettings()"></p-button>
+      <div class="pane-actions">
+        <button type="button" class="as-btn-primary btn-sm" (click)="addAutomationRule()">Add Rule</button>
+        <button type="button" class="as-btn-ghost" (click)="saveAutomationSettings()">Save</button>
+        <button type="button" class="as-btn-ghost" (click)="resetAutomationSettings()">Reset</button>
       </div>
     </div>
 
-    <div class="automation-notice">
-      <i class="pi pi-info-circle"></i>
-      <span>{{ automationNotice }}</span>
-    </div>
+    <div class="automation-notice">{{ automationNotice }}</div>
 
     <div class="rules-layout">
       <div class="rules-list">
@@ -366,29 +298,29 @@
               <input type="checkbox" [(ngModel)]="rule.enabled">
               <span>{{ rule.enabled ? 'Enabled' : 'Paused' }}</span>
             </label>
-            <p-button icon="pi pi-trash" styleClass="p-button-sm p-button-text p-button-danger" (onClick)="deleteAutomationRule(rule)"></p-button>
+            <button type="button" class="acct-action as-link-action danger" (click)="deleteAutomationRule(rule)">Delete</button>
           </div>
 
           <div class="form-grid compact">
             <div class="form-group">
-              <label>Rule Name</label>
-              <input pInputText type="text" [(ngModel)]="rule.name">
+              <label class="field-label">Rule Name</label>
+              <input class="as-input input-sm" type="text" [(ngModel)]="rule.name">
             </div>
             <div class="form-group">
-              <label>Trigger</label>
-              <select [(ngModel)]="rule.trigger">
+              <label class="field-label">Trigger</label>
+              <select class="as-input input-sm" [(ngModel)]="rule.trigger">
                 <option *ngFor="let trigger of triggerOptions" [ngValue]="trigger.value">{{ trigger.label }}</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Template</label>
-              <select [(ngModel)]="rule.templateId">
+              <label class="field-label">Template</label>
+              <select class="as-input input-sm" [(ngModel)]="rule.templateId">
                 <option *ngFor="let template of automationTemplates" [ngValue]="template.id">{{ template.name }}</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Delay Minutes</label>
-              <input pInputText type="number" min="0" max="240" [(ngModel)]="rule.delayMinutes">
+              <label class="field-label">Delay Minutes</label>
+              <input class="as-input input-sm" type="number" min="0" max="240" [(ngModel)]="rule.delayMinutes">
             </div>
           </div>
 
@@ -420,18 +352,18 @@
       <aside class="automation-preview">
         <div class="preview-controls">
           <label>
-            Preview Trigger
-            <select [(ngModel)]="automationPreviewTrigger">
+            <span class="field-label">Preview Trigger</span>
+            <select class="as-input input-sm" [(ngModel)]="automationPreviewTrigger">
               <option *ngFor="let trigger of triggerOptions" [ngValue]="trigger.value">{{ trigger.label }}</option>
             </select>
           </label>
-          <p-button label="Stage Queue" icon="pi pi-calendar-plus" styleClass="p-button-sm" (onClick)="queueAutomationRules()"></p-button>
+          <button type="button" class="as-btn-green btn-sm" (click)="queueAutomationRules()">Stage Queue</button>
         </div>
 
         <article class="automation-preview-card" *ngFor="let preview of getAutomationPreviews(); trackBy: trackByPreview">
           <div>
             <strong>{{ getPlatformName(preview.platformId) }}</strong>
-            <span>{{ preview.templateName }} · {{ formatPreviewRunAt(preview) }}</span>
+            <span class="preview-meta">{{ preview.templateName }} · {{ formatPreviewRunAt(preview) }}</span>
           </div>
           <p>{{ preview.caption }}</p>
           <small>{{ preview.requiresReview ? 'Review required' : 'Auto-send when connected' }} · {{ preview.quietMode ? 'quiet receipts' : 'delivery receipts' }}</small>
@@ -444,97 +376,62 @@
     </div>
   </section>
 
+  <!-- COMPOSER -->
   <section class="composer-grid" *ngIf="activeWorkspaceTab === 'composer'">
-    <p-card class="schedule-card">
-      <div class="card-heading">
+    <article class="pane as-card">
+      <div class="pane-head">
         <div>
           <h2>Post Setup</h2>
-          <span>{{ selectedPostTitle }}</span>
+          <span class="pane-sub">{{ selectedPostTitle }}</span>
         </div>
-        <p-tag value="Draft" severity="info"></p-tag>
+        <span class="as-badge blue">Draft</span>
       </div>
 
       <div class="form-grid">
         <div class="form-group">
-          <label for="post-title">Blog Post</label>
-          <input
-            id="post-title"
-            pInputText
-            type="text"
-            [(ngModel)]="selectedPostTitle">
+          <label class="field-label" for="post-title">Blog Post</label>
+          <input id="post-title" class="as-input input-sm" type="text" [(ngModel)]="selectedPostTitle">
         </div>
         <div class="form-group">
-          <label for="distribution-time">Schedule Time</label>
-          <input
-            id="distribution-time"
-            pInputText
-            type="datetime-local"
-            [(ngModel)]="publishTime">
+          <label class="field-label" for="distribution-time">Schedule Time</label>
+          <input id="distribution-time" class="as-input input-sm" type="datetime-local" [(ngModel)]="publishTime">
         </div>
         <div class="form-group full-span">
-          <label for="post-url">Canonical Link</label>
-          <input
-            id="post-url"
-            pInputText
-            type="url"
-            [(ngModel)]="postUrl">
+          <label class="field-label" for="post-url">Canonical Link</label>
+          <input id="post-url" class="as-input input-sm" type="url" [(ngModel)]="postUrl">
         </div>
         <div class="form-group full-span">
-          <label for="master-caption">Caption</label>
-          <textarea
-            id="master-caption"
-            rows="5"
-            [(ngModel)]="masterCaption">
-          </textarea>
+          <label class="field-label" for="master-caption">Caption</label>
+          <textarea id="master-caption" class="as-input input-sm" rows="5" [(ngModel)]="masterCaption"></textarea>
         </div>
         <div class="form-group">
-          <label for="hashtags">Hashtags</label>
-          <input
-            id="hashtags"
-            pInputText
-            type="text"
-            [(ngModel)]="hashtagText">
+          <label class="field-label" for="hashtags">Hashtags</label>
+          <input id="hashtags" class="as-input input-sm" type="text" [(ngModel)]="hashtagText">
         </div>
         <div class="form-group">
-          <label for="media-brief">Media</label>
-          <input
-            id="media-brief"
-            pInputText
-            type="text"
-            [(ngModel)]="mediaBrief">
+          <label class="field-label" for="media-brief">Media</label>
+          <input id="media-brief" class="as-input input-sm" type="text" [(ngModel)]="mediaBrief">
         </div>
         <div class="form-group">
-          <label for="post-category">Category</label>
-          <input
-            id="post-category"
-            pInputText
-            type="text"
-            [(ngModel)]="postCategory">
+          <label class="field-label" for="post-category">Category</label>
+          <input id="post-category" class="as-input input-sm" type="text" [(ngModel)]="postCategory">
         </div>
         <div class="form-group">
-          <label for="reading-time">Reading Time</label>
-          <input
-            id="reading-time"
-            pInputText
-            type="text"
-            [(ngModel)]="readingTime">
+          <label class="field-label" for="reading-time">Reading Time</label>
+          <input id="reading-time" class="as-input input-sm" type="text" [(ngModel)]="readingTime">
         </div>
         <div class="form-group full-span">
-          <label for="cover-image">Cover Image</label>
-          <input
-            id="cover-image"
-            pInputText
-            type="text"
-            [(ngModel)]="coverImageUrl">
+          <label class="field-label" for="cover-image">Cover Image</label>
+          <input id="cover-image" class="as-input input-sm" type="text" [(ngModel)]="coverImageUrl">
         </div>
       </div>
 
       <div class="target-heading">
         <div>
           <h3>Targets</h3>
-          <span>Choose platforms and destination type</span>
+          <span class="pane-sub">Choose platforms and destination type</span>
         </div>
-        <strong>{{ selectedPlatforms.length }} selected</strong>
+        <span class="target-count">{{ selectedPlatforms.length }} selected</span>
       </div>
 
       <div class="target-grid">
@@ -550,26 +447,19 @@
                 [checked]="platform.selected"
                 [disabled]="!!platform.disabled"
                 (change)="togglePlatform(platform)">
-              <span class="platform-mark" [ngClass]="platform.accentClass">{{ platform.mark }}</span>
+              <span class="account-mono sm">{{ platform.mark }}</span>
               <span>
-                <strong>{{ platform.name }}</strong>
+                <strong class="target-name">{{ platform.name }}</strong>
                 <small>{{ getPlatformSummary(platform) }}</small>
               </span>
             </label>
-            <p-tag
-              [value]="platform.connectionLabel"
-              [severity]="getConnectionSeverity(platform.connectionState)">
-            </p-tag>
+            <span class="as-badge" [ngClass]="getConnectionBadgeClass(platform)">{{ platform.connectionLabel }}</span>
           </div>
 
           <label class="destination-select">
-            <span>Post Type</span>
-            <select
-              [(ngModel)]="platform.destination"
-              [disabled]="!!platform.disabled">
-              <option
-                *ngFor="let destination of platform.destinationOptions"
-                [ngValue]="destination.value">
+            <span class="field-label">Post Type</span>
+            <select class="as-input input-sm" [(ngModel)]="platform.destination" [disabled]="!!platform.disabled">
+              <option *ngFor="let destination of platform.destinationOptions" [ngValue]="destination.value">
                 {{ destination.label }}
               </option>
             </select>
@@ -584,21 +474,17 @@
 
       <div class="action-row">
         <span class="draft-notice">{{ draftNotice }}</span>
-        <p-button
-          label="Schedule Selected"
-          icon="pi pi-calendar-plus"
-          (onClick)="scheduleSelectedTargets()">
-        </p-button>
+        <button type="button" class="as-btn-primary" (click)="scheduleSelectedTargets()">Schedule Selected</button>
       </div>
-    </p-card>
+    </article>
 
-    <p-card class="quiet-card">
-      <div class="card-heading">
+    <article class="pane as-card">
+      <div class="pane-head">
         <div>
           <h2>Quiet Delivery</h2>
-          <span>Receipts without reactions</span>
+          <span class="pane-sub">Receipts without reactions</span>
         </div>
-        <span class="quiet-badge"><i class="pi pi-shield"></i> Locked</span>
+        <span class="as-badge neutral">Locked</span>
       </div>
 
       <div class="quiet-list">
@@ -612,7 +498,7 @@
 
       <div class="preview-card">
         <div class="preview-author">
-          <span class="avatar">GW</span>
+          <span class="account-mono">GW</span>
           <div>
             <strong>Grayson Wills</strong>
             <span>&#64;graysonwills</span>
@@ -628,31 +514,29 @@
           </div>
         </div>
       </div>
-    </p-card>
+    </article>
   </section>
 
-  <section class="queue-section" id="distribution-queue" *ngIf="activeWorkspaceTab === 'queue'">
-    <div class="section-heading">
+  <!-- QUEUE -->
+  <section class="pane as-card" id="distribution-queue" *ngIf="activeWorkspaceTab === 'queue'">
+    <div class="pane-head">
       <div>
         <h2>Delivery Queue</h2>
-        <span>Status, retry, and receipts only</span>
+        <span class="pane-sub">Status, retry, and receipts only</span>
       </div>
-      <div class="section-actions">
-        <p-button
-          label="Refresh"
-          icon="pi pi-refresh"
-          styleClass="p-button-sm p-button-outlined"
+      <div class="pane-actions">
+        <button
+          type="button"
+          class="as-btn-ghost"
           [disabled]="deliveryLoading"
-          (onClick)="refreshDeliveries()">
-        </p-button>
-        <p-tag value="Metrics hidden" severity="secondary"></p-tag>
+          (click)="refreshDeliveries()">
+          Refresh
+        </button>
+        <span class="as-badge neutral">Metrics hidden</span>
       </div>
     </div>
 
-    <div *ngIf="deliveryError" class="auth-alert">
-      <i class="pi pi-exclamation-triangle"></i>
-      <span>{{ deliveryError }}</span>
-    </div>
+    <div class="pane-alert" *ngIf="deliveryError">{{ deliveryError }}</div>
 
     <div class="queue-table">
       <div class="queue-row queue-head">
@@ -666,29 +550,31 @@
       </div>
       <div class="queue-row" *ngFor="let item of queueItems; trackBy: trackByQueueItem">
         <span class="post-title">{{ item.postTitle }}</span>
-        <span><span class="platform-dot" [ngClass]="item.platformClass"></span>{{ item.platform }}</span>
+        <span class="queue-platform"><span class="platform-dot" [ngClass]="item.platformClass"></span>{{ item.platform }}</span>
         <span>{{ item.destination }}</span>
-        <span>{{ item.runAt }}</span>
-        <span><p-tag [value]="item.status" [severity]="item.statusClass"></p-tag></span>
-        <span>
+        <span class="queue-runat">{{ item.runAt }}</span>
+        <span><span class="as-badge" [ngClass]="getQueueBadgeClass(item.statusClass)">{{ item.status }}</span></span>
+        <span class="queue-receipt">
           {{ item.receipt }}
           <small *ngIf="item.error">{{ item.error }}</small>
         </span>
         <span class="queue-actions">
-          <p-button
+          <button
+            type="button"
+            class="acct-action as-link-action blue"
             *ngIf="item.canSend"
-            icon="pi pi-send"
-            styleClass="p-button-sm p-button-text"
             [disabled]="deliveryLoading"
-            (onClick)="sendQueuedDelivery(item)">
-          </p-button>
-          <p-button
+            (click)="sendQueuedDelivery(item)">
+            Send
+          </button>
+          <button
+            type="button"
+            class="acct-action as-link-action danger"
             *ngIf="item.canDelete"
-            icon="pi pi-trash"
-            styleClass="p-button-sm p-button-text p-button-danger"
             [disabled]="deliveryLoading"
-            (onClick)="deleteQueuedDelivery(item)">
-          </p-button>
+            (click)="deleteQueuedDelivery(item)">
+            Delete
+          </button>
         </span>
       </div>
     </div>

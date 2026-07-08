@@ -1,5 +1,6 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { ApiHealth, BlogApiService, BlogCardV2 } from '../../services/blog-api.service';
 import { TransactionLogService } from '../../services/transaction-log.service';
@@ -46,6 +47,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   appOrigin: string = '';
   readonly isProd = environment.production;
   private cleanupHotkeys: (() => void) | null = null;
+  private queryParamsSub: Subscription | null = null;
   private visiblePostCount = 0;
   private readonly postPageSize = 12;
   private readonly scrollLoadBufferPx = 500;
@@ -97,6 +99,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     private messageService: MessageService,
     private confirmationService: ConfirmationService,
     private router: Router,
+    private route: ActivatedRoute,
     private hotkeys: HotkeysService
   ) {}
 
@@ -110,6 +113,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.connectionStatus = 'connected';
     this.loadBlogPosts();
     this.registerHotkeys();
+    this.watchCreateQueryParam();
+  }
+
+  /**
+   * Support /dashboard?create=1 (used by the studio shell on other pages)
+   * by opening the editor for a new post, then stripping the param.
+   */
+  private watchCreateQueryParam(): void {
+    this.queryParamsSub = this.route.queryParamMap.subscribe((params) => {
+      if (params.get('create') !== '1') return;
+      this.createNewPost();
+      this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { create: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true
+      });
+    });
   }
 
   @HostListener('window:scroll')
@@ -127,6 +148,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.cleanupHotkeys?.();
     this.cleanupHotkeys = null;
+    this.queryParamsSub?.unsubscribe();
+    this.queryParamsSub = null;
   }
 
   /**
@@ -301,24 +324,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.router.navigate(['/content']);
   }
 
-  goToSubscribers(): void {
-    this.router.navigate(['/subscribers']);
-  }
-
-  goToDistribution(): void {
-    this.router.navigate(['/distribution']);
-  }
-
   goToAiQueue(): void {
     this.router.navigate(['/ai']);
-  }
-
-  goToComments(): void {
-    this.router.navigate(['/comments']);
-  }
-
-  goToCollections(): void {
-    this.router.navigate(['/collections']);
   }
 
   /**
@@ -636,14 +643,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.txLog.clear();
   }
 
-  /**
-   * Logout
-   */
-  logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/login']);
-  }
-
   private registerHotkeys(): void {
     this.cleanupHotkeys?.();
     this.cleanupHotkeys = this.hotkeys.register('dashboard', [
@@ -861,6 +860,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
       default:
         return 'info';
     }
+  }
+
+  /**
+   * Design badge palette (Author Studio.dc.html sBadge):
+   * published → green pill, draft/scheduled → amber pill.
+   */
+  getStatusBadgeClass(status: string): string {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'published') return 'green';
+    if (normalized === 'draft' || normalized === 'scheduled') return 'amber';
+    return 'neutral';
   }
 
   getPostTags(post: ContentGroup): string[] {

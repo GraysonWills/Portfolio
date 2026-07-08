@@ -154,3 +154,6 @@ typings/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# local preview tooling (Claude Code)
+.claude/

@@ -9,6 +9,7 @@ import { CollectionsComponent } from '../../pages/collections/collections.compon
 import { CommentsComponent } from '../../pages/comments/comments.component';
 import { DistributionComponent } from '../../pages/distribution/distribution.component';
 import { AiQueueComponent } from '../../pages/ai-queue/ai-queue.component';
+import { MissionControlComponent } from '../../pages/mission-control/mission-control.component';
 
 const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
@@ -18,6 +19,7 @@ const routes: Routes = [
   { path: 'collections', component: CollectionsComponent, canActivate: [AuthGuard] },
   { path: 'distribution', component: DistributionComponent, canActivate: [AuthGuard] },
   { path: 'ai', component: AiQueueComponent, canActivate: [AuthGuard] },
+  { path: 'mission-control', component: MissionControlComponent, canActivate: [AuthGuard] },
 ];
 
 @NgModule({

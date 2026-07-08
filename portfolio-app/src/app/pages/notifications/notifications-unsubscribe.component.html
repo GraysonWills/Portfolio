@@ -14,19 +14,18 @@
         </p>
         <div class="confirm-actions">
           <button
-            pButton
             type="button"
-            label="Confirm Unsubscribe"
-            icon="pi pi-times-circle"
+            class="notif-btn danger"
             (click)="confirmUnsubscribe()">
+            <i class="pi pi-times-circle" aria-hidden="true"></i>
+            Confirm Unsubscribe
           </button>
           <button
-            pButton
             type="button"
-            class="p-button-outlined"
-            label="Keep Me Subscribed"
-            icon="pi pi-arrow-left"
+            class="notif-btn"
             (click)="cancel()">
+            <i class="pi pi-arrow-left" aria-hidden="true"></i>
+            Keep Me Subscribed
           </button>
         </div>
       </div>

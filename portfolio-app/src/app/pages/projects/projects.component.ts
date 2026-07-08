@@ -297,6 +297,38 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Get the category's descriptive blurb (shown in the empty-group state).
+   * The category text row stores a JSON { name, description }; the description
+   * is threaded through into metadata by mapCategoriesToContent.
+   */
+  getCategoryBlurb(category: ContentGroup): string {
+    const raw = this.projectsContent.find(
+      item => item.PageContentID === PageContentID.ProjectsCategoryText &&
+              item.ListItemID === category.listItemID
+    );
+    if (raw?.Text) {
+      try {
+        const data = JSON.parse(raw.Text);
+        if (data?.description) return String(data.description);
+      } catch {
+        /* fall through to default */
+      }
+    }
+    return 'Full write-ups and source for this area live on GitHub.';
+  }
+
+  /**
+   * GitHub destination for the empty-group "View on GitHub" pill.
+   * Uses a per-category override if the data ever supplies one; otherwise
+   * falls back to the GitHub profile landing.
+   */
+  getCategoryGithubUrl(category: ContentGroup): string {
+    const metadata = (category.metadata || {}) as Record<string, unknown>;
+    const override = metadata['githubUrl'];
+    return typeof override === 'string' && override ? override : 'https://github.com';
+  }
+
+  /**
    * Get project count for a category
    */
   getProjectCount(category: ContentGroup): number {

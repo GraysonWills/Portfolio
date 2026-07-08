@@ -440,6 +440,10 @@ export class CollectionsComponent implements OnInit, OnDestroy {
     return this.categories.find((category) => category.id === id)?.name || entry.metadata?.categoryName || 'Uncategorized';
   }
 
+  getCategoryEntryCount(categoryId: string): number {
+    return this.entries.filter((entry) => entry.metadata?.categoryId === categoryId).length;
+  }
+
   refresh(): void {
     this.loadData();
   }
@@ -447,31 +451,6 @@ export class CollectionsComponent implements OnInit, OnDestroy {
   closeEditor(): void {
     this.editorOpen = false;
     this.editorDraft = this.createEmptyDraft(this.selectedCategoryId || this.visibleCategories[0]?.id || 'general');
-  }
-
-  goToDashboard(): void {
-    this.router.navigate(['/dashboard']);
-  }
-
-  goToContentStudio(): void {
-    this.router.navigate(['/content']);
-  }
-
-  goToSubscribers(): void {
-    this.router.navigate(['/subscribers']);
-  }
-
-  goToComments(): void {
-    this.router.navigate(['/comments']);
-  }
-
-  goToDistribution(): void {
-    this.router.navigate(['/distribution']);
-  }
-
-  logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/login']);
   }
 
   private loadEntriesOnly(): void {

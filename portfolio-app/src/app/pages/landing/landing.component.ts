@@ -2,14 +2,41 @@ import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { RedisService } from '../../services/redis.service';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { RedisContent, PageContentID, PageID } from '../../models/redis-content.model';
+import { firstValueFrom } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { AnalyticsService } from '../../services/analytics.service';
 import { RouteViewStateService } from '../../services/route-view-state.service';
+import { SupportService } from '../../services/support.service';
+import { SubscriptionService } from '../../services/subscription.service';
 
 interface LandingViewState extends Record<string, unknown> {
   scrollY?: number;
   activeHeroIndex?: number;
   updatedAt?: number;
+}
+
+interface FeaturedRole {
+  title: string;
+  org: string;
+  place: string;
+  period: string;
+  lead: string;
+}
+
+interface LandingPostCard {
+  listItemID: string;
+  title: string;
+  dateLabel: string;
+  readLabel: string;
+  excerpt: string;
+}
+
+interface LandingProjectCard {
+  title: string;
+  description: string;
+  tags: string[];
+  photo?: string;
+  url?: string;
 }
 
 @Component({
@@ -26,9 +53,19 @@ export class LandingComponent implements OnInit, OnDestroy {
   topSkills: string[] = [];
   certifications: Array<{name: string; issuer: string; date?: string}> = [];
   education: Array<{degree: string; institution: string; location: string; graduationDate?: string}> = [];
+  featuredRoles: FeaturedRole[] = [];
+  featuredProjects: LandingProjectCard[] = [];
+  latestPosts: LandingPostCard[] = [];
+  websiteUrl = '';
   heroSlides: Array<{ photo: string; alt: string }> = [];
   activeHeroIndex: number = 0;
   isResumeCooldown = false;
+
+  // Inline subscribe band
+  subscribeEmail = '';
+  isSubscribed = false;
+  isSubscribing = false;
+  subscribeError = '';
   private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
   private resumeCooldownHandle: ReturnType<typeof setTimeout> | null = null;
   private readonly heroAutoplayMs = 5000;
@@ -63,7 +100,9 @@ export class LandingComponent implements OnInit, OnDestroy {
     private linkedInService: LinkedInDataService,
     private messageService: MessageService,
     private analytics: AnalyticsService,
-    private routeViewState: RouteViewStateService
+    private routeViewState: RouteViewStateService,
+    private support: SupportService,
+    private subscriptionService: SubscriptionService
   ) {}
 
   ngOnInit(): void {
@@ -71,6 +110,8 @@ export class LandingComponent implements OnInit, OnDestroy {
     this.routeViewState.restoreScrollImmediate(this.routeKey);
     this.loadLandingContent();
     this.loadLinkedInData();
+    this.loadFeaturedProjects();
+    this.loadLatestPosts();
     this.refreshHeroSlides();
     this.startHeroAutoplay();
   }
@@ -132,8 +173,16 @@ export class LandingComponent implements OnInit, OnDestroy {
           this.summary = profile.summary;
         }
         this.contactInfo = profile.contact;
+        this.websiteUrl = profile.contact?.website || '';
         this.topSkills = profile.topSkills;
         this.certifications = profile.certifications;
+        this.featuredRoles = (profile.experience || []).slice(0, 3).map((exp) => ({
+          title: exp.title,
+          org: exp.company,
+          place: exp.location,
+          period: exp.endDate ? `${exp.startDate} — ${exp.endDate}` : exp.startDate,
+          lead: (exp.description && exp.description[0]) || ''
+        }));
         this.tryRestoreViewState();
       },
       error: (error) => {
@@ -144,6 +193,126 @@ export class LandingComponent implements OnInit, OnDestroy {
     this.linkedInService.getEducation().subscribe({
       next: (edu) => { this.education = edu; },
       error: () => {}
+    });
+  }
+
+  private loadLatestPosts(): void {
+    this.redisService.getBlogCardsV2({
+      limit: 3,
+      status: 'published',
+      includeFuture: false,
+      cacheScope: 'route:/:landing-latest'
+    }).subscribe({
+      next: (response) => {
+        const cards = Array.isArray(response?.items) ? response.items : [];
+        this.latestPosts = cards.slice(0, 3).map((card) => ({
+          listItemID: card.listItemID,
+          title: card.title || 'Untitled',
+          dateLabel: this.formatPostDate(card.publishDate),
+          readLabel: `${Math.max(1, Math.round(Number(card.readTimeMinutes) || 1))} min read`,
+          excerpt: card.summary || ''
+        }));
+      },
+      error: (error) => {
+        console.error('Error loading latest posts:', error);
+      }
+    });
+  }
+
+  private async loadFeaturedProjects(): Promise<void> {
+    try {
+      const categories = await firstValueFrom(this.redisService.getProjectsCategoriesV3({
+        limit: 6,
+        cacheScope: 'route:/:landing-featured-projects'
+      }));
+
+      const categoryRows = Array.isArray(categories?.items) ? categories.items : [];
+      const categoryIds = categoryRows
+        .map((cat, index) => ({ id: String(cat?.listItemID || '').trim(), order: Number(cat?.order) || index + 1 }))
+        .filter((c) => !!c.id)
+        .sort((a, b) => a.order - b.order)
+        .map((c) => c.id);
+
+      if (!categoryIds.length) return;
+
+      const itemsByCategory = await firstValueFrom(
+        this.redisService.getProjectItemsV3(categoryIds, { cacheScope: 'route:/:landing-featured-project-items' })
+      );
+
+      const cards: LandingProjectCard[] = [];
+      for (const id of categoryIds) {
+        const rows = Array.isArray(itemsByCategory?.[id]) ? itemsByCategory[id] : [];
+        const textItems = rows
+          .filter((r) => r?.PageContentID === PageContentID.ProjectsText)
+          .sort((a, b) => (Number(a?.Metadata?.['order']) || 0) - (Number(b?.Metadata?.['order']) || 0));
+        const photoItems = rows
+          .filter((r) => r?.PageContentID === PageContentID.ProjectsPhoto)
+          .sort((a, b) => (Number(a?.Metadata?.['order']) || 0) - (Number(b?.Metadata?.['order']) || 0));
+
+        textItems.forEach((textItem, index) => {
+          let data: Record<string, unknown> = {};
+          try {
+            data = JSON.parse(textItem.Text || '{}');
+          } catch {
+            data = { title: 'Project', description: textItem.Text || '' };
+          }
+          const tags = Array.isArray(data['techStack'])
+            ? (data['techStack'] as unknown[]).map((t) => String(t)).filter(Boolean).slice(0, 4)
+            : [];
+          cards.push({
+            title: String(data['title'] || 'Project'),
+            description: String(data['description'] || ''),
+            tags,
+            photo: photoItems[index]?.Photo || (data['photo'] ? String(data['photo']) : undefined),
+            url: (data['liveUrl'] || data['githubUrl']) ? String(data['liveUrl'] || data['githubUrl']) : undefined
+          });
+        });
+        if (cards.length >= 3) break;
+      }
+
+      this.featuredProjects = cards.slice(0, 3);
+    } catch (error) {
+      console.error('Error loading featured projects:', error);
+    }
+  }
+
+  private formatPostDate(input: string | null): string {
+    if (!input) return '';
+    const date = new Date(input);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  openSupport(): void {
+    this.support.open();
+  }
+
+  subscribe(): void {
+    const email = (this.subscribeEmail || '').trim();
+    this.subscribeError = '';
+    if (!/.+@.+\..+/.test(email)) {
+      this.subscribeError = 'Please enter a valid email address.';
+      return;
+    }
+    if (this.isSubscribing || this.isSubscribed) {
+      return;
+    }
+    this.isSubscribing = true;
+    this.analytics.track('subscribe_requested', {
+      route: '/',
+      page: 'home',
+      metadata: { location: 'landing-inline' }
+    });
+    this.subscriptionService.request(email, ['blog_posts'], 'landing-inline').subscribe({
+      next: () => {
+        this.isSubscribing = false;
+        this.isSubscribed = true;
+      },
+      error: (error) => {
+        console.error('Error requesting subscription:', error);
+        this.isSubscribing = false;
+        this.subscribeError = 'Something went wrong. Please try again.';
+      }
     });
   }
 

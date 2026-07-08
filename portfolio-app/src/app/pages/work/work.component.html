@@ -1,172 +1,146 @@
 <div class="work-page">
-  <div class="container">
-    <!-- Page Header -->
-    <section class="page-header" appScrollReveal aria-label="Work experience overview">
-      <h1 class="page-title">Work Experience</h1>
-      <p class="page-subtitle">Professional journey and career highlights</p>
-    </section>
+  <!-- Page Header -->
+  <section class="pw-section work-header" appScrollReveal aria-label="Work experience overview">
+    <div class="pw-section-label"><span>Work</span></div>
+    <h1 class="pw-display work-title">Work Experience</h1>
+    <p class="work-lede">Six years across GM, energy, and NASA — plus the community work that keeps it grounded.</p>
+  </section>
 
-    <!-- Loading State -->
-    <div *ngIf="isLoading" class="loading-section" aria-label="Loading work experience">
-      <div class="skeleton-section">
-        <div class="skeleton-title"></div>
-        <div class="skeleton-bar"></div>
+  <!-- Loading State -->
+  <div *ngIf="isLoading" class="pw-section loading-section" aria-label="Loading work experience">
+    <div class="skeleton-card">
+      <div class="skeleton-title"></div>
+      <div class="skeleton-bar"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton-title"></div>
+      <div class="skeleton-timeline-item" *ngFor="let i of [1,2,3]"></div>
+    </div>
+  </div>
+
+  <!-- Career Momentum -->
+  <section class="pw-section" *ngIf="!isLoading" appScrollReveal aria-label="Career momentum">
+    <div class="pw-card momentum-card">
+      <div class="pw-section-label momentum-label"><span>Career Momentum</span></div>
+      <p class="momentum-intro">A working snapshot of hands-on exposure across recent roles and shipped projects. These bars reflect applied growth — not mastery claims.</p>
+
+      <div class="momentum-average">
+        <span class="momentum-average-label">Average applied experience</span>
+        <span class="momentum-average-pct">{{ getCareerProgress() }}%</span>
       </div>
-      <div class="skeleton-section">
-        <div class="skeleton-title"></div>
-        <div class="skeleton-timeline-item" *ngFor="let i of [1,2,3]"></div>
+
+      <div class="momentum-grid" *ngIf="careerMetrics.length > 0">
+        <article class="momentum-tile" *ngFor="let metric of careerMetrics" [ngClass]="'lvl-' + getMomentumLevel(metric)">
+          <div class="momentum-tile-head">
+            <span class="momentum-area">{{ metric.label }}</span>
+            <span class="momentum-pill">{{ metric.level }}</span>
+          </div>
+          <div class="momentum-track" role="progressbar" [attr.aria-valuenow]="metric.value" aria-valuemin="0" aria-valuemax="100">
+            <div class="momentum-fill" [style.width.%]="metric.value"></div>
+          </div>
+          <div class="momentum-pct-row">
+            <span class="momentum-pct">{{ metric.value }}%</span>
+          </div>
+          <p class="momentum-blurb">{{ metric.summary }}</p>
+        </article>
       </div>
     </div>
+  </section>
 
-    <!-- Career Progress -->
-    <section class="progress-section" *ngIf="!isLoading" appScrollReveal aria-label="Career progress">
-      <h2 class="section-title">Career Momentum</h2>
-      <p class="progress-intro">Working snapshot of hands-on experience across recent roles and shipped projects. These bars reflect applied exposure and growth, not mastery claims.</p>
-      <div class="career-progress-total">
-        <span>Average Applied Experience</span>
-        <strong>{{ getCareerProgress() }}%</strong>
-      </div>
-      <div class="career-metrics-grid" *ngIf="careerMetrics.length > 0">
-        <article class="career-metric-card" *ngFor="let metric of careerMetrics">
-          <div class="metric-header">
-            <h3>{{ metric.label }}</h3>
-            <span class="metric-level" [ngClass]="'tone-' + getMetricTone(metric)">{{ metric.level }}</span>
-          </div>
-          <div class="metric-bar-track" role="progressbar" [attr.aria-valuenow]="metric.value" aria-valuemin="0" aria-valuemax="100">
-            <div class="metric-bar-fill" [style.width.%]="metric.value" [ngClass]="'tone-' + getMetricTone(metric)"></div>
-          </div>
-          <div class="metric-footer">
-            <span>{{ metric.summary }}</span>
-            <strong>{{ metric.value }}%</strong>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <!-- Timeline Section -->
-    <section class="timeline-section" 
-             *ngIf="!isLoading && timelineEvents.length > 0" 
-             aria-label="Professional timeline" 
-             appScrollReveal>
-      <h2 class="section-title">Professional Timeline</h2>
-      <ng-container *ngIf="!isCompactTimeline; else mobileTimeline">
-        <p-timeline [value]="timelineEvents" [align]="timelineAlign" styleClass="custom-timeline">
-          <ng-template let-event pTemplate="opposite">
-            <div class="timeline-opposite">
-              <span class="timeline-period">{{ event.period }}</span>
-              <span class="timeline-location">{{ event.location }}</span>
-            </div>
-          </ng-template>
-          <ng-template let-event pTemplate="marker">
-            <span class="timeline-marker" [style.background]="event.markerColor"></span>
-          </ng-template>
-          <ng-template let-event pTemplate="content">
-            <article class="timeline-content-card">
-              <header class="timeline-card-header">
-                <h3>{{ event.title }}</h3>
-                <span class="current-pill" *ngIf="event.isCurrent">Current</span>
-              </header>
-              <p class="timeline-company">{{ event.company }} • {{ event.location }}</p>
-              <ul class="timeline-description" *ngIf="event.description.length > 0">
-                <li *ngFor="let detail of event.description">{{ detail }}</li>
-              </ul>
-              <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
-                <h4>Key Wins</h4>
-                <ul>
-                  <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
-                </ul>
+  <!-- Professional Timeline -->
+  <section class="pw-section"
+           *ngIf="!isLoading && timelineEvents.length > 0"
+           aria-label="Professional timeline"
+           appScrollReveal>
+    <div class="pw-section-label timeline-label"><span>Professional Timeline</span></div>
+    <div class="timeline-wrap">
+      <ol class="timeline-rail" role="list">
+        <li class="timeline-item" *ngFor="let event of timelineEvents" role="listitem">
+          <span class="timeline-dot" aria-hidden="true"></span>
+          <article class="pw-card timeline-card">
+            <div class="timeline-card-top">
+              <div class="timeline-card-heading">
+                <div class="timeline-meta">{{ event.period }} · {{ event.location }}</div>
+                <div class="timeline-role">{{ event.title }}</div>
+                <div class="timeline-org">{{ event.company }}</div>
               </div>
-            </article>
-          </ng-template>
-        </p-timeline>
-      </ng-container>
-    </section>
-
-    <!-- Community Leadership & Service -->
-    <section class="community-section"
-             *ngIf="!isLoading && communityRoles.length > 0"
-             aria-label="Community leadership and service"
-             appScrollReveal>
-      <h2 class="section-title">Community Leadership & Service</h2>
-      <div class="community-grid">
-        <article class="community-card" *ngFor="let role of communityRoles">
-          <header class="community-header">
-            <div>
-              <h3>{{ role.role }}</h3>
-              <p class="community-org">{{ role.organization }}</p>
+              <span class="timeline-current" *ngIf="event.isCurrent">Current</span>
             </div>
-            <div class="community-meta">
-              <span class="community-period">{{ role.period }}</span>
-              <p-tag *ngIf="role.cause" [value]="role.cause" severity="info"></p-tag>
-              <span class="current-pill" *ngIf="role.isCurrent">Current</span>
-            </div>
-          </header>
-          <p class="community-summary">{{ role.summary }}</p>
-        </article>
-      </div>
-    </section>
+            <ul class="timeline-bullets" *ngIf="event.description.length > 0">
+              <li *ngFor="let detail of event.description">{{ detail }}</li>
+            </ul>
+            <ng-container *ngIf="event.achievements.length > 0">
+              <div class="timeline-wins-label">Key Wins</div>
+              <ul class="timeline-wins">
+                <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
+              </ul>
+            </ng-container>
+          </article>
+        </li>
+      </ol>
+    </div>
+  </section>
 
-    <!-- Skills Section -->
-    <section class="skills-section" 
-             *ngIf="!isLoading && topSkills.length > 0" 
-             aria-label="Technical skills" 
-             appScrollReveal>
-      <h2 class="section-title">Technical Skills</h2>
-      <div class="skills-grid" role="list" aria-label="List of technical skills">
-        <p-chip 
-          *ngFor="let skill of topSkills" 
-          [label]="skill"
-          class="skill-chip"
-          role="listitem">
-        </p-chip>
-      </div>
-    </section>
-
-    <!-- Certifications Section -->
-    <section class="certifications-section" 
-             *ngIf="!isLoading && certifications.length > 0" 
-             aria-label="Professional certifications"
-             appScrollReveal>
-      <h2 class="section-title">Certifications</h2>
-      <div class="certifications-grid" role="list">
-        <p-card *ngFor="let cert of certifications" class="cert-card" role="listitem">
-          <div class="cert-content">
-            <i class="pi pi-verified cert-icon" aria-hidden="true"></i>
-            <h3>{{ cert.name }}</h3>
-            <p>{{ cert.issuer }}</p>
-            <p-tag *ngIf="cert.date" [value]="cert.date" severity="success"></p-tag>
-          </div>
-        </p-card>
-      </div>
-    </section>
-  </div>
-</div>
-
-<ng-template #mobileTimeline>
-  <div class="timeline-mobile-list" role="list">
-    <div class="timeline-mobile-item" *ngFor="let event of timelineEvents" role="listitem">
-      <span class="timeline-mobile-marker" [style.background]="event.markerColor" aria-hidden="true"></span>
-      <div class="timeline-mobile-rail" aria-hidden="true"></div>
-      <article class="timeline-content-card timeline-content-card-mobile">
-        <header class="timeline-card-header timeline-card-header-mobile">
-          <div class="timeline-mobile-meta">
-            <span class="timeline-period">{{ event.period }}</span>
-            <span class="timeline-location">{{ event.location }}</span>
-          </div>
-          <span class="current-pill" *ngIf="event.isCurrent">Current</span>
-        </header>
-        <h3 class="timeline-mobile-title">{{ event.title }}</h3>
-        <p class="timeline-company">{{ event.company }}</p>
-        <ul class="timeline-description" *ngIf="event.description.length > 0">
-          <li *ngFor="let detail of event.description">{{ detail }}</li>
-        </ul>
-        <div class="timeline-achievements" *ngIf="event.achievements.length > 0">
-          <h4>Key Wins</h4>
-          <ul>
-            <li *ngFor="let achievement of event.achievements">{{ achievement }}</li>
-          </ul>
+  <!-- Community Leadership & Service -->
+  <section class="pw-section"
+           *ngIf="!isLoading && communityRoles.length > 0"
+           aria-label="Community leadership and service"
+           appScrollReveal>
+    <div class="pw-section-label community-label"><span>Community Leadership &amp; Service</span></div>
+    <div class="community-grid">
+      <article class="pw-card community-card" *ngFor="let role of communityRoles">
+        <div class="community-top">
+          <span class="community-role">{{ role.role }}</span>
+          <span class="community-now" *ngIf="role.isCurrent">Now</span>
         </div>
+        <div class="community-org">{{ role.organization }}</div>
+        <div class="community-period">{{ role.period }}</div>
+        <div class="community-field" *ngIf="role.cause">{{ role.cause }}</div>
+        <p class="community-blurb">{{ role.summary }}</p>
       </article>
     </div>
-  </div>
-</ng-template>
+  </section>
+
+  <!-- Technical Skills (feature preserved; restyled in design language) -->
+  <section class="pw-section"
+           *ngIf="!isLoading && topSkills.length > 0"
+           aria-label="Technical skills"
+           appScrollReveal>
+    <div class="pw-section-label skills-label"><span>Technical Skills</span></div>
+    <div class="skills-grid" role="list" aria-label="List of technical skills">
+      <span class="pw-skill-chip skill-chip" *ngFor="let skill of topSkills" role="listitem">{{ skill }}</span>
+    </div>
+  </section>
+
+  <!-- Certifications (feature preserved; restyled in design language) -->
+  <section class="pw-section"
+           *ngIf="!isLoading && certifications.length > 0"
+           aria-label="Professional certifications"
+           appScrollReveal>
+    <div class="pw-section-label certs-label"><span>Certifications</span></div>
+    <div class="certifications-grid" role="list">
+      <article class="pw-card cert-card" *ngFor="let cert of certifications" role="listitem">
+        <i class="pi pi-verified cert-icon" aria-hidden="true"></i>
+        <h3 class="cert-name">{{ cert.name }}</h3>
+        <p class="cert-issuer">{{ cert.issuer }}</p>
+        <span class="cert-date pw-chip" *ngIf="cert.date">{{ cert.date }}</span>
+      </article>
+    </div>
+  </section>
+
+  <!-- Keep Exploring -->
+  <section class="pw-section explore-section" *ngIf="!isLoading" appScrollReveal aria-label="Keep exploring">
+    <div class="explore-grid">
+      <a routerLink="/projects" class="explore-card explore-card-surface">
+        <div class="explore-kicker">Next</div>
+        <div class="pw-display explore-title">See the projects →</div>
+        <p class="explore-blurb">The things I've actually built, with the stack behind each.</p>
+      </a>
+      <a routerLink="/blog" class="explore-card explore-card-grad">
+        <div class="explore-kicker explore-kicker-invert">Read</div>
+        <div class="pw-display explore-title">Read the blog →</div>
+        <p class="explore-blurb explore-blurb-invert">Essays and field notes on doing the work honestly. Subscribe in a click.</p>
+      </a>
+    </div>
+  </section>
+</div>

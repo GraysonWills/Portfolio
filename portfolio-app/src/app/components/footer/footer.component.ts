@@ -3,6 +3,9 @@ import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { SiteConsentService } from '../../services/site-consent.service';
+import { SubscriptionService } from '../../services/subscription.service';
+import { AnalyticsService } from '../../services/analytics.service';
+import { SupportService } from '../../services/support.service';
 
 @Component({
   selector: 'app-footer',
@@ -16,10 +19,19 @@ export class FooterComponent implements OnInit {
   currentYear: number = new Date().getFullYear();
   private brokenIconIds = new Set<string>();
 
+  // Stay Updated subscribe form
+  subscribeEmail = '';
+  isSubscribed = false;
+  isSubscribing = false;
+  subscribeError = '';
+
   constructor(
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
-    private consent: SiteConsentService
+    private consent: SiteConsentService,
+    private subscriptionService: SubscriptionService,
+    private analytics: AnalyticsService,
+    private support: SupportService
   ) {}
 
   ngOnInit(): void {
@@ -81,6 +93,21 @@ export class FooterComponent implements OnInit {
     return null;
   }
 
+  /**
+   * Classify a footer icon into one of the inline SVG kinds, or 'image'
+   * (falls back to the icon's own Photo) when it is not a known network.
+   */
+  getIconKind(icon: RedisContent): 'github' | 'linkedin' | 'email' | 'image' {
+    const label = String(icon?.Text || '').trim().toLowerCase();
+    const url = String(this.getIconUrl(icon) || '').trim().toLowerCase();
+
+    if (label.includes('github') || url.includes('github.com')) return 'github';
+    if (label.includes('linkedin') || url.includes('linkedin.com')) return 'linkedin';
+    if (label.includes('email') || url.startsWith('mailto:')) return 'email';
+    if (icon?.Photo && !this.brokenIconIds.has(String(icon?.ID || ''))) return 'image';
+    return 'email';
+  }
+
   useImageIcon(icon: RedisContent): boolean {
     return !this.getIconClass(icon) && !!icon?.Photo && !this.brokenIconIds.has(String(icon?.ID || ''));
   }
@@ -103,5 +130,41 @@ export class FooterComponent implements OnInit {
 
   openCookieSettings(): void {
     this.consent.requestPreferencesReview();
+  }
+
+  /**
+   * Request a newsletter subscription from the footer form. Mirrors the
+   * landing-page inline subscribe wiring (analytics + SubscriptionService).
+   */
+  subscribe(): void {
+    const email = (this.subscribeEmail || '').trim();
+    this.subscribeError = '';
+    if (!/.+@.+\..+/.test(email)) {
+      this.subscribeError = 'Please enter a valid email address.';
+      return;
+    }
+    if (this.isSubscribing || this.isSubscribed) {
+      return;
+    }
+    this.isSubscribing = true;
+    this.analytics.track('subscribe_requested', {
+      metadata: { location: 'footer' }
+    });
+    this.subscriptionService.request(email, ['blog_posts'], 'footer').subscribe({
+      next: () => {
+        this.isSubscribing = false;
+        this.isSubscribed = true;
+      },
+      error: (error) => {
+        console.error('Error requesting subscription:', error);
+        this.isSubscribing = false;
+        this.subscribeError = 'Something went wrong. Please try again.';
+      }
+    });
+  }
+
+  /** Open the global support (buy-me-a-coffee) modal. */
+  openSupport(): void {
+    this.support.open();
   }
 }

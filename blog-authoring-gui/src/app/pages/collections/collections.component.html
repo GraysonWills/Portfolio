@@ -1,54 +1,15 @@
-<div class="collections-container">
-  <div class="collections-header">
-    <div class="header-title">
-      <h1>Collections Studio</h1>
-      <p>Author non-blog text content, organize by category tabs, and control public visibility.</p>
-    </div>
-    <div class="header-actions">
-      <p-button
-        label="Dashboard"
-        icon="pi pi-home"
-        styleClass="p-button-outlined"
-        (onClick)="goToDashboard()">
-      </p-button>
-      <p-button
-        label="Site Content"
-        icon="pi pi-sliders-h"
-        styleClass="p-button-outlined"
-        (onClick)="goToContentStudio()">
-      </p-button>
-      <p-button
-        label="Subscribers"
-        icon="pi pi-users"
-        styleClass="p-button-outlined"
-        (onClick)="goToSubscribers()">
-      </p-button>
-      <p-button
-        label="Comments"
-        icon="pi pi-comments"
-        styleClass="p-button-outlined"
-        (onClick)="goToComments()">
-      </p-button>
-      <p-button
-        label="Distribution"
-        icon="pi pi-send"
-        styleClass="p-button-outlined"
-        (onClick)="goToDistribution()">
-      </p-button>
-      <p-button
-        label="Logout"
-        icon="pi pi-sign-out"
-        styleClass="p-button-outlined"
-        (onClick)="logout()">
-      </p-button>
-    </div>
-  </div>
+<app-studio-shell active="collections"></app-studio-shell>
 
-  <p-card class="category-manager-card">
-    <div class="card-header">
-      <h3>Category Tabs</h3>
-      <label class="checkbox-inline">
-        <input type="checkbox" [(ngModel)]="showArchivedCategories">
+<div class="collections-page">
+  <!-- ================= Collections Studio: categories ================= -->
+  <section class="studio-card as-card">
+    <h2 class="studio-title">Collections Studio</h2>
+    <p class="studio-desc">Author non-blog content, organize it by category, and control public visibility.</p>
+
+    <div class="tabs-label-row">
+      <span class="as-mono-label">Category Tabs</span>
+      <label class="archived-toggle">
+        <input type="checkbox" [(ngModel)]="showArchivedCategories" />
         Show archived tabs
       </label>
     </div>
@@ -56,88 +17,87 @@
     <div class="category-create-row">
       <input
         id="collections-new-category-name"
-        pInputText
+        class="as-input cat-name-input"
         type="text"
         [(ngModel)]="newCategoryName"
-        placeholder="New category name (e.g., Lyrics, Poems, Interviews)">
+        placeholder="New category name (e.g., Lyrics, Poems)" />
       <input
-        pInputText
+        class="as-input cat-desc-input"
         type="text"
         [(ngModel)]="newCategoryDescription"
-        placeholder="Optional description">
-      <p-button
-        label="Add Category"
-        icon="pi pi-plus"
-        [loading]="isSaving"
-        (onClick)="addCategory()">
-      </p-button>
-    </div>
-
-    <div class="category-tabs">
+        placeholder="Optional description" />
       <button
         type="button"
-        class="category-tab"
-        *ngFor="let category of visibleCategories"
-        [class.active]="category.id === selectedCategoryId"
-        [class.archived]="category.isArchived"
-        (click)="selectCategory(category.id)">
-        {{ category.name }}
-        <span *ngIf="category.isArchived">(Archived)</span>
+        class="as-btn-green add-category-btn"
+        [disabled]="isSaving"
+        (click)="addCategory()">
+        {{ isSaving ? 'Saving…' : '+ Add Category' }}
       </button>
     </div>
 
-    <div class="category-selected-row" *ngIf="selectedCategory as category">
-      <div class="selected-meta">
-        <strong>{{ category.name }}</strong>
-        <small>{{ category.description || 'No description set.' }}</small>
-      </div>
-      <div class="selected-actions">
-        <p-button
-          *ngIf="!category.isArchived"
-          label="Archive Tab"
-          icon="pi pi-eye-slash"
-          styleClass="p-button-outlined p-button-sm"
-          [loading]="isSaving"
-          (onClick)="archiveCategory(category, true)">
-        </p-button>
-        <p-button
-          *ngIf="category.isArchived"
-          label="Restore Tab"
-          icon="pi pi-eye"
-          styleClass="p-button-outlined p-button-sm"
-          [loading]="isSaving"
-          (onClick)="archiveCategory(category, false)">
-        </p-button>
-      </div>
+    <div
+      class="category-row"
+      *ngFor="let category of visibleCategories"
+      [class.active]="category.id === selectedCategoryId"
+      [class.archived]="category.isArchived">
+      <button type="button" class="category-info" (click)="selectCategory(category.id)">
+        <span class="category-name">
+          {{ category.name }}
+          <span class="archived-note" *ngIf="category.isArchived">(archived)</span>
+        </span>
+        <span class="category-desc">
+          {{ category.description || 'No description set.' }}
+          · {{ getCategoryEntryCount(category.id) }} {{ getCategoryEntryCount(category.id) === 1 ? 'entry' : 'entries' }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="as-btn-ghost archive-btn"
+        *ngIf="!category.isArchived"
+        [disabled]="isSaving"
+        (click)="archiveCategory(category, true)">
+        Archive Tab
+      </button>
+      <button
+        type="button"
+        class="as-btn-ghost archive-btn"
+        *ngIf="category.isArchived"
+        [disabled]="isSaving"
+        (click)="archiveCategory(category, false)">
+        Restore Tab
+      </button>
     </div>
-  </p-card>
+    <div class="category-row" *ngIf="visibleCategories.length === 0">
+      <span class="category-desc">No category tabs yet. Add one above.</span>
+    </div>
+  </section>
 
-  <p-card class="entries-card">
-    <div class="card-header">
-      <h3>Collection Entries</h3>
-      <div class="entry-header-actions">
-        <p-button
-          label="New Entry"
-          icon="pi pi-file-edit"
-          (onClick)="openCreateEntry()">
-        </p-button>
-        <p-button
-          label="Refresh"
-          icon="pi pi-refresh"
-          styleClass="p-button-outlined"
-          [loading]="isLoading"
-          (onClick)="refresh()">
-        </p-button>
+  <!-- ================= Collection Entries ================= -->
+  <section class="entries-card as-card">
+    <div class="entries-head">
+      <h2 class="entries-title">Collection Entries</h2>
+      <div class="entries-head-actions">
+        <button
+          type="button"
+          class="as-btn-ghost refresh-btn"
+          [disabled]="isLoading"
+          (click)="refresh()">
+          {{ isLoading ? 'Refreshing…' : 'Refresh' }}
+        </button>
+        <button type="button" class="as-btn-green new-entry-btn" (click)="openCreateEntry()">
+          + New Entry
+        </button>
       </div>
     </div>
 
     <div class="entry-filters">
       <input
-        pInputText
+        class="as-input entry-search"
         type="text"
         [(ngModel)]="searchQuery"
-        placeholder="Search title, summary, body text, tags...">
+        placeholder="Search title, body, tags..." />
       <p-dropdown
+        class="filter-dropdown"
         [options]="typeOptions"
         [(ngModel)]="selectedTypeFilter"
         optionLabel="label"
@@ -145,6 +105,7 @@
         appendTo="body">
       </p-dropdown>
       <p-dropdown
+        class="filter-dropdown"
         [options]="visibilityOptions"
         [(ngModel)]="selectedVisibilityFilter"
         optionLabel="label"
@@ -153,55 +114,46 @@
       </p-dropdown>
     </div>
 
-    <div class="loading-row" *ngIf="isLoading">Loading entries...</div>
-    <div class="loading-row" *ngIf="!isLoading && filteredEntries.length === 0">No entries match your filters.</div>
+    <div class="status-row" *ngIf="isLoading">Loading entries…</div>
+    <div class="status-row" *ngIf="!isLoading && filteredEntries.length === 0">No entries match your filters.</div>
 
     <div class="entries-grid" *ngIf="!isLoading && filteredEntries.length > 0">
       <article class="entry-card" *ngFor="let entry of filteredEntries">
         <div class="entry-top">
-          <h4>{{ entry.metadata.title }}</h4>
-          <div class="entry-tags">
-            <p-tag [value]="entry.metadata.entryType" severity="info"></p-tag>
-            <p-tag [value]="entry.metadata.visibility" [severity]="entry.metadata.isPublic ? 'success' : 'secondary'"></p-tag>
-          </div>
+          <span class="entry-title">{{ entry.metadata.title }}</span>
+          <span class="as-badge blue">{{ entry.metadata.entryType }}</span>
+          <span class="visibility-pill" [class.public]="entry.metadata.isPublic">
+            {{ entry.metadata.isPublic ? 'public' : 'hidden' }}
+          </span>
         </div>
 
         <div class="entry-meta">
-          <span><i class="pi pi-folder"></i> {{ getEntryCategoryName(entry) }}</span>
-          <span *ngIf="entry.metadata.updatedAt"><i class="pi pi-clock"></i> {{ entry.metadata.updatedAt | date:'short' }}</span>
+          {{ getEntryCategoryName(entry) }}<ng-container *ngIf="entry.metadata.updatedAt"> · {{ entry.metadata.updatedAt | date:'short' }}</ng-container>
         </div>
 
         <p class="entry-summary" *ngIf="entry.metadata.summary">{{ entry.metadata.summary }}</p>
-        <p class="entry-preview">{{ entry.item.Text || '' }}</p>
+        <p class="entry-body">{{ entry.item.Text || '' }}</p>
 
-        <div class="entry-keywords" *ngIf="entry.metadata.tags?.length">
-          <p-tag *ngFor="let tag of entry.metadata.tags" [value]="tag" severity="secondary"></p-tag>
+        <div class="entry-tags" *ngIf="entry.metadata.tags?.length">
+          <span class="as-chip" *ngFor="let tag of entry.metadata.tags">{{ tag }}</span>
         </div>
 
         <div class="entry-actions">
-          <p-button
-            label="Edit"
-            icon="pi pi-pencil"
-            styleClass="p-button-outlined p-button-sm"
-            (onClick)="openEditEntry(entry)">
-          </p-button>
-          <p-button
-            [label]="entry.metadata.isPublic ? 'Hide' : 'Unhide'"
-            [icon]="entry.metadata.isPublic ? 'pi pi-eye-slash' : 'pi pi-eye'"
-            styleClass="p-button-outlined p-button-sm"
-            (onClick)="toggleEntryVisibility(entry)">
-          </p-button>
-          <p-button
-            label="Delete"
-            icon="pi pi-trash"
-            styleClass="p-button-danger p-button-sm"
-            (onClick)="deleteEntry(entry)">
-          </p-button>
+          <button type="button" class="as-link-action blue entry-action" (click)="openEditEntry(entry)">
+            Edit
+          </button>
+          <button type="button" class="as-link-action muted entry-action" (click)="toggleEntryVisibility(entry)">
+            {{ entry.metadata.isPublic ? 'Hide' : 'Unhide' }}
+          </button>
+          <button type="button" class="as-link-action danger entry-action delete-action" (click)="deleteEntry(entry)">
+            Delete
+          </button>
         </div>
       </article>
     </div>
-  </p-card>
+  </section>
 
+  <!-- ================= Entry editor dialog ================= -->
   <p-dialog
     [(visible)]="editorOpen"
     [modal]="true"

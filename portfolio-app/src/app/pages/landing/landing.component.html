@@ -1,12 +1,13 @@
 <div class="landing-page">
-  <!-- Hero Section -->
-  <section class="hero-section" aria-label="Hero banner">
-    <div class="hero-slider" aria-live="polite">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" aria-label="Hero banner">
+    <!-- Live image carousel sits behind the gradient; preserves aria + autoplay -->
+    <div class="hero-slider" aria-live="polite" aria-hidden="true">
       <div
         *ngFor="let slide of heroSlides; let i = index"
         class="hero-image-container"
-        [class.active]="i === activeHeroIndex"
-        [attr.aria-hidden]="i === activeHeroIndex ? 'false' : 'true'">
+        [class.active]="i === activeHeroIndex">
         <img
           [src]="slide.photo"
           [alt]="slide.alt"
@@ -15,6 +16,44 @@
           decoding="async"
           [attr.fetchpriority]="i === activeHeroIndex ? 'high' : 'low'"
           (error)="onHeroImageError($event)" />
+      </div>
+    </div>
+
+    <!-- Decorative overlays -->
+    <div class="hero-grid" aria-hidden="true"></div>
+    <div class="hero-square hero-square--1" aria-hidden="true"></div>
+    <div class="hero-square hero-square--2" aria-hidden="true"></div>
+    <div class="hero-square hero-square--3" aria-hidden="true"></div>
+    <div class="hero-glow" aria-hidden="true"></div>
+
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <div class="hero-kicker">// data analyst · ai engineer · warren, mi</div>
+        <h1 class="hero-title">Grayson<br>Wills</h1>
+        <p class="hero-lede">
+          Data Analyst &amp; AI Engineer at General Motors. I build reliable data systems,
+          ship pragmatic AI, and write about doing the work honestly.
+        </p>
+        <div class="hero-actions">
+          <button
+            type="button"
+            class="hero-btn hero-btn--solid"
+            (click)="contactInfo.email && openEmail(contactInfo.email)"
+            aria-label="Send an email">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+            Contact Me
+          </button>
+          <button
+            type="button"
+            class="hero-btn hero-btn--ghost"
+            (click)="downloadResume()"
+            [disabled]="isResumeCooldown"
+            aria-label="Download resume document">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download Résumé
+          </button>
+          <a class="hero-blog-link" routerLink="/blog">Read the blog →</a>
+        </div>
       </div>
 
       <div class="hero-indicators" *ngIf="heroSlides.length > 1" aria-label="Hero slides">
@@ -28,87 +67,235 @@
         </button>
       </div>
     </div>
+  </section>
 
-    <!-- Static overlay — stays put when slides change -->
-    <div class="hero-overlay">
-      <div class="hero-content">
-        <h1 class="hero-title">Grayson Wills</h1>
-        <p class="hero-subtitle">Data Analyst &amp; AI Engineer &#64; General Motors</p>
-        <div class="hero-actions">
-          <p-button
-            label="Contact Me"
-            icon="pi pi-envelope"
-            (onClick)="contactInfo.email && openEmail(contactInfo.email)"
-            styleClass="p-button-lg p-button-rounded"
-            ariaLabel="Send an email">
-          </p-button>
-          <p-button
-            label="Download Resume"
-            icon="pi pi-download"
-            (onClick)="downloadResume()"
-            styleClass="p-button-lg p-button-rounded hero-resume-button"
-            [disabled]="isResumeCooldown"
-            ariaLabel="Download resume document">
-          </p-button>
+  <!-- ============ FUNNEL CARDS ============ -->
+  <section class="pw-shell funnel-shell" aria-label="Explore">
+    <div class="funnel-grid">
+      <a class="funnel-card" routerLink="/work">
+        <div class="funnel-card-top">
+          <span class="funnel-num">01</span>
+          <svg class="funnel-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="funnel-title">Work</div>
+        <p class="funnel-blurb">Roles, timeline, and the measurable impact behind each one.</p>
+      </a>
+      <a class="funnel-card" routerLink="/projects">
+        <div class="funnel-card-top">
+          <span class="funnel-num">02</span>
+          <svg class="funnel-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="funnel-title">Projects</div>
+        <p class="funnel-blurb">Everything I've designed, built, and shipped — with the stack.</p>
+      </a>
+      <a class="funnel-card funnel-card--grad" routerLink="/blog">
+        <div class="funnel-card-top">
+          <span class="funnel-num">03</span>
+          <svg class="funnel-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="funnel-title">Blog</div>
+        <p class="funnel-blurb">Essays and field notes — and the easiest place to subscribe.</p>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <section class="pw-shell about-shell" aria-label="About me" appScrollReveal>
+    <div class="pw-section-label"><span>About Me</span></div>
+    <div class="about-grid">
+      <div class="about-portrait">
+        <img
+          *ngIf="heroSlides.length"
+          [src]="heroSlides[0].photo"
+          [alt]="heroSlides[0].alt"
+          (error)="onHeroImageError($event)" />
+      </div>
+      <div class="about-body">
+        <h2 class="pw-display about-headline">Engineer first,<br>communicator always.</h2>
+        <p class="about-para">{{ summary }}</p>
+        <div class="about-facts">
+          <div class="about-fact">
+            <div class="about-fact-key">Based in</div>
+            <div class="about-fact-val">Warren, MI</div>
+          </div>
+          <div class="about-fact">
+            <div class="about-fact-key">Focus</div>
+            <div class="about-fact-val">Data · AI · CV</div>
+          </div>
+          <div class="about-fact">
+            <div class="about-fact-key">Open to</div>
+            <div class="about-fact-val">Collaborations</div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- About / Summary Section -->
-  <section class="section" aria-label="About me" appScrollReveal>
-    <div class="container-narrow reveal">
-      <h2 class="section-title">About Me</h2>
-      <p class="summary-text">{{ summary }}</p>
+  <!-- ============ TOP SKILLS ============ -->
+  <section class="pw-shell skills-shell" aria-label="Skills" *ngIf="topSkills.length > 0" appScrollReveal>
+    <div class="pw-section-label"><span>Top Skills</span></div>
+    <div class="skills-wrap">
+      <span class="pw-skill-chip" *ngFor="let skill of topSkills">{{ skill }}</span>
     </div>
   </section>
 
-  <!-- Skills Section -->
-  <section class="section-alt" aria-label="Skills" *ngIf="topSkills.length > 0" appScrollReveal>
-    <div class="container reveal">
-      <h2 class="section-title">Top Skills</h2>
-      <div class="skills-grid reveal-stagger" appScrollReveal>
-        <p-chip
-          *ngFor="let skill of topSkills"
-          [label]="skill"
-          class="skill-chip">
-        </p-chip>
+  <!-- ============ CREDENTIALS ============ -->
+  <section
+    class="pw-shell credentials-shell"
+    aria-label="Credentials"
+    *ngIf="education.length > 0 || certifications.length > 0"
+    appScrollReveal>
+    <div class="pw-section-label"><span>Credentials</span></div>
+    <div class="credentials-grid">
+      <div class="credential-card" *ngFor="let edu of education">
+        <svg class="credential-icon credential-icon--warm" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke-width="1.8" aria-hidden="true"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 3 3 6 3s6-1.5 6-3v-4.5"/></svg>
+        <div class="credential-title">{{ edu.degree }}</div>
+        <div class="credential-org">{{ edu.institution }}</div>
+        <div class="credential-meta">
+          {{ edu.location }}<ng-container *ngIf="edu.graduationDate"> · Class of {{ edu.graduationDate }}</ng-container>
+        </div>
+      </div>
+      <div class="credential-card" *ngFor="let cert of certifications">
+        <svg class="credential-icon credential-icon--blue" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M9 14l-2 7 5-3 5 3-2-7"/></svg>
+        <div class="credential-title">{{ cert.name }}</div>
+        <div class="credential-org">{{ cert.issuer }}</div>
+        <div class="credential-meta">Certification<ng-container *ngIf="cert.date"> · {{ cert.date }}</ng-container></div>
       </div>
     </div>
   </section>
 
-  <!-- Certifications Section -->
-  <section class="section" aria-label="Certifications" *ngIf="certifications.length > 0" appScrollReveal>
-    <div class="container reveal">
-      <h2 class="section-title">Certifications</h2>
-      <div class="certifications-grid">
-        <p-card *ngFor="let cert of certifications" class="cert-card" appScrollReveal>
-          <div class="cert-content">
-            <i class="pi pi-verified cert-icon" aria-hidden="true"></i>
-            <h3>{{ cert.name }}</h3>
-            <p>{{ cert.issuer }}</p>
-            <p-tag *ngIf="cert.date" [value]="cert.date" severity="success"></p-tag>
-          </div>
-        </p-card>
+  <!-- ============ FEATURED WORK ============ -->
+  <section class="pw-shell feature-shell" aria-label="Featured work" *ngIf="featuredRoles.length > 0" appScrollReveal>
+    <div class="feature-head">
+      <div>
+        <div class="pw-section-label"><span>Selected Roles</span></div>
+        <h2 class="pw-display feature-title">Where I've worked</h2>
       </div>
+      <a class="feature-link" routerLink="/work">Full timeline →</a>
+    </div>
+    <div class="roles-grid">
+      <a class="role-card" routerLink="/work" *ngFor="let role of featuredRoles">
+        <div class="role-period">{{ role.period }}</div>
+        <div class="role-title">{{ role.title }}</div>
+        <div class="role-org">{{ role.org }}<ng-container *ngIf="role.place"> · {{ role.place }}</ng-container></div>
+        <p class="role-lead" *ngIf="role.lead">{{ role.lead }}</p>
+      </a>
     </div>
   </section>
 
-  <!-- Education Section -->
-  <section class="section-alt" aria-label="Education" *ngIf="education.length > 0" appScrollReveal>
-    <div class="container reveal">
-      <h2 class="section-title">Education</h2>
-      <div class="education-grid">
-        <p-card *ngFor="let edu of education" class="edu-card">
-          <div class="edu-content">
-            <i class="pi pi-graduation-cap edu-icon" aria-hidden="true"></i>
-            <h3>{{ edu.degree }}</h3>
-            <p class="edu-institution">{{ edu.institution }}</p>
-            <p class="edu-location">{{ edu.location }}</p>
-            <p-tag *ngIf="edu.graduationDate" [value]="'Class of ' + edu.graduationDate" severity="info"></p-tag>
-          </div>
-        </p-card>
+  <!-- ============ FEATURED PROJECTS ============ -->
+  <section class="pw-shell feature-shell" aria-label="Featured projects" *ngIf="featuredProjects.length > 0" appScrollReveal>
+    <div class="feature-head">
+      <div>
+        <div class="pw-section-label"><span>Selected Projects</span></div>
+        <h2 class="pw-display feature-title">Things I've built</h2>
       </div>
+      <a class="feature-link" routerLink="/projects">All projects →</a>
+    </div>
+    <div class="projects-grid">
+      <ng-container *ngFor="let project of featuredProjects">
+        <a
+          class="project-card"
+          *ngIf="project.url; else internalProject"
+          [href]="project.url"
+          target="_blank"
+          rel="noopener noreferrer">
+          <ng-container *ngTemplateOutlet="projectCardBody; context: { $implicit: project }"></ng-container>
+        </a>
+        <ng-template #internalProject>
+          <a class="project-card" routerLink="/projects">
+            <ng-container *ngTemplateOutlet="projectCardBody; context: { $implicit: project }"></ng-container>
+          </a>
+        </ng-template>
+      </ng-container>
+    </div>
+
+    <ng-template #projectCardBody let-project>
+      <div class="project-image" aria-hidden="true">
+        <img *ngIf="project.photo" [src]="project.photo" [alt]="project.title" (error)="onHeroImageError($event)" />
+      </div>
+      <div class="project-body">
+        <div class="project-title">{{ project.title }}</div>
+        <p class="project-desc" *ngIf="project.description">{{ project.description }}</p>
+        <div class="project-tags" *ngIf="project.tags.length > 0">
+          <span class="project-tag" *ngFor="let tag of project.tags">{{ tag }}</span>
+        </div>
+      </div>
+    </ng-template>
+  </section>
+
+  <!-- ============ LATEST WRITING + INLINE SUBSCRIBE ============ -->
+  <section class="pw-shell writing-shell" aria-label="Latest writing" appScrollReveal>
+    <div class="feature-head">
+      <div>
+        <div class="pw-section-label"><span>From the Blog</span></div>
+        <h2 class="pw-display feature-title">Latest writing</h2>
+      </div>
+      <a class="feature-link" routerLink="/blog">Read all →</a>
+    </div>
+
+    <div class="posts-grid" *ngIf="latestPosts.length > 0">
+      <a
+        class="post-card"
+        *ngFor="let post of latestPosts"
+        [routerLink]="['/blog', post.listItemID]">
+        <div class="post-image" aria-hidden="true"></div>
+        <div class="post-body">
+          <div class="post-meta">{{ post.dateLabel }}<ng-container *ngIf="post.dateLabel && post.readLabel"> · </ng-container>{{ post.readLabel }}</div>
+          <div class="post-title">{{ post.title }}</div>
+          <p class="post-excerpt">{{ post.excerpt }}</p>
+        </div>
+      </a>
+    </div>
+    <p class="posts-empty" *ngIf="latestPosts.length === 0">
+      New writing is on the way. <a routerLink="/blog">Visit the blog →</a>
+    </p>
+
+    <!-- inline subscribe -->
+    <div class="subscribe-band">
+      <div class="subscribe-copy">
+        <div class="subscribe-title">Never miss a post.</div>
+        <div class="subscribe-sub">A short email when something new goes live. Double opt-in, unsubscribe anytime.</div>
+      </div>
+
+      <div class="subscribe-success" *ngIf="isSubscribed">
+        ✓ You're on the list — check your inbox.
+      </div>
+
+      <form class="subscribe-form" *ngIf="!isSubscribed" (ngSubmit)="subscribe()">
+        <label class="sr-only" for="landing-subscribe-email">Email address</label>
+        <input
+          id="landing-subscribe-email"
+          class="subscribe-input"
+          type="email"
+          name="landingSubscribeEmail"
+          [(ngModel)]="subscribeEmail"
+          placeholder="you@example.com"
+          autocomplete="email"
+          [attr.aria-invalid]="subscribeError ? 'true' : null" />
+        <button type="submit" class="subscribe-btn" [disabled]="isSubscribing">
+          {{ isSubscribing ? 'Sending…' : 'Subscribe' }}
+        </button>
+      </form>
+    </div>
+    <p class="subscribe-error" *ngIf="subscribeError" role="alert">{{ subscribeError }}</p>
+  </section>
+
+  <!-- ============ SUPPORT ============ -->
+  <section class="pw-shell support-shell" aria-label="Support">
+    <div class="support-band">
+      <div class="support-grid" aria-hidden="true"></div>
+      <div class="support-left">
+        <div class="support-icon" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+        </div>
+        <div class="support-copy">
+          <div class="support-title">Enjoying the work?</div>
+          <div class="support-sub">If a project, essay, or tool here helped you, a coffee keeps the writing and the open work coming.</div>
+        </div>
+      </div>
+      <button type="button" class="support-btn" (click)="openSupport()">Buy me a coffee →</button>
     </div>
   </section>
+
 </div>

@@ -1,0 +1,179 @@
+// Family colors mirror FAMILY_COLORS in mission-control-mock.service.ts
+$fam-colors: (
+  "neutral": #8aa0bd,
+  "blue": #5b9be8,
+  "amber": #e0a83a,
+  "purple": #b083ea,
+  "green": #3fb27f,
+  "red": #e0574a,
+);
+
+.feed {
+  margin-top: 16px;
+}
+
+.feed-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.feed-title {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--mc-bright);
+}
+
+.feed-sub {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-faint);
+  margin-top: 3px;
+
+  .feed-endpoint {
+    color: var(--mc-blue);
+  }
+}
+
+.feed-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-green);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mc-green);
+  display: block;
+  box-shadow: 0 0 0 3px rgba(63, 178, 127, 0.2);
+}
+
+.pause-btn {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 11.5px;
+  color: #c7d3e4;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.feed-chips {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.feed-chip {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+
+  &.active {
+    color: var(--mc-bg);
+    background: var(--mc-blue);
+    border-color: transparent;
+  }
+}
+
+.feed-list {
+  background: var(--mc-bg2);
+  border: 1px solid var(--mc-line2);
+  border-radius: 14px;
+  max-height: 440px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.feed-row {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.fam-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: block;
+  flex-shrink: 0;
+}
+
+@each $k, $c in $fam-colors {
+  .fam-dot.fam-#{$k} {
+    background: $c;
+    box-shadow: 0 0 0 3px rgba($c, 0.13);
+  }
+}
+
+.ev-type {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  color: var(--mc-ink);
+  font-weight: 700;
+  min-width: 210px;
+}
+
+.ev-producer {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-faint);
+}
+
+.ev-note {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.ev-meta {
+  margin-left: auto;
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-faint);
+  white-space: nowrap;
+}
+
+.feed-hint {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-faint);
+  margin-top: 10px;
+  padding: 0 4px;
+}
+
+.live-pill.demo { color: var(--mc-amber); }
+.live-dot.off { background: var(--mc-amber); box-shadow: 0 0 0 3px rgba(224, 168, 58, 0.2); }

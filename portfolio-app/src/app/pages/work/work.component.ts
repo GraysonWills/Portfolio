@@ -387,6 +387,20 @@ export class WorkComponent implements OnInit, OnDestroy {
     return 'emerging';
   }
 
+  /**
+   * Presentation helper: maps a metric's level label to the design's
+   * momentum-tile accent class (Building=warm, Working=blue, Early=#b5544a,
+   * Applied=green). Falls back to the value-driven level when the label is
+   * unexpected so real Redis data always resolves a colour.
+   */
+  getMomentumLevel(metric: CareerMetric): 'building' | 'working' | 'early' | 'applied' {
+    const raw = (metric.level || '').trim().toLowerCase();
+    if (raw === 'building' || raw === 'working' || raw === 'early' || raw === 'applied') {
+      return raw;
+    }
+    return this.getMetricLevel(metric.value).toLowerCase() as 'building' | 'working' | 'early' | 'applied';
+  }
+
   private parseTimelineItem(item: RedisContent, index: number): WorkTimelineEvent | null {
     try {
       const parsed = JSON.parse(item.Text || '{}');

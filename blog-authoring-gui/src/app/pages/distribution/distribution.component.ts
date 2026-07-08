@@ -1000,6 +1000,29 @@ export class DistributionComponent implements OnInit {
     return 'secondary';
   }
 
+  /** Maps a platform's connection state to the shared .as-badge color class. */
+  getConnectionBadgeClass(platform: DistributionPlatform): string {
+    if (platform.connectionState === 'connected') return 'green';
+    if (platform.connectionState === 'attention') return 'amber';
+    if (platform.connectionState === 'expired') return 'red';
+    if (platform.connectionState === 'not-connected') {
+      return platform.connectionLabel === 'Setup needed' ? 'amber' : 'red';
+    }
+    if (this.platformCanUseWebhook(platform)) return 'blue';
+    return 'neutral';
+  }
+
+  /** Maps a queue status severity to the shared .as-badge color class. */
+  getQueueBadgeClass(statusClass: QueueStatusClass): string {
+    switch (statusClass) {
+      case 'success': return 'green';
+      case 'info': return 'blue';
+      case 'warn': return 'amber';
+      case 'danger': return 'red';
+      default: return 'neutral';
+    }
+  }
+
   platformIsConnected(platform: DistributionPlatform): boolean {
     return platform.connectionState === 'connected'
       || platform.connectionState === 'attention'
@@ -1047,30 +1070,6 @@ export class DistributionComponent implements OnInit {
 
   platformCanUseWebhook(platform: DistributionPlatform): boolean {
     return this.webhookProviderIds.has(platform.id);
-  }
-
-  goToDashboard(): void {
-    this.router.navigate(['/dashboard']);
-  }
-
-  goToContentStudio(): void {
-    this.router.navigate(['/content']);
-  }
-
-  goToSubscribers(): void {
-    this.router.navigate(['/subscribers']);
-  }
-
-  goToAiQueue(): void {
-    this.router.navigate(['/ai']);
-  }
-
-  goToCollections(): void {
-    this.router.navigate(['/collections']);
-  }
-
-  goToComments(): void {
-    this.router.navigate(['/comments']);
   }
 
   logout(): void {

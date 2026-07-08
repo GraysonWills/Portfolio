@@ -1,0 +1,22 @@
+<div class="mcr">
+  <div class="mcr-table">
+    <div class="mcr-head">
+      <span>Worker</span><span>Alias</span><span>Consumes</span><span>Emits</span><span>Autonomy</span><span>Heartbeat</span>
+    </div>
+    <div class="mcr-row" *ngFor="let r of rows">
+      <span class="mcr-id">{{ r.id }}</span>
+      <span class="mcr-alias">{{ r.alias }}</span>
+      <span class="mcr-consumes">{{ r.consumes }}</span>
+      <span class="mcr-emits">{{ r.emits }}</span>
+      <span class="mcr-autonomy">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        L0
+      </span>
+      <span class="mcr-hb">
+        <span class="mcr-hb-dot" [ngClass]="'hb-' + r.hb"></span>
+        {{ hbText(r.hb) }}
+      </span>
+    </div>
+  </div>
+  <div class="mcr-hint"><span class="mcr-demo" *ngIf="demo">demo data — mesh unreachable · </span>Synced on deploy &middot; unknown event types fail the deploy &middot; orphans warn (announcement.* are terminal emits).</div>
+</div>

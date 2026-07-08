@@ -1,132 +1,49 @@
-<div class="dashboard-container">
-  <!-- Header -->
-  <div class="dashboard-header">
-    <div class="header-title">
-      <h1>Blog Authoring Studio</h1>
-      <p>Draft → refine → schedule → publish</p>
-    </div>
-    <div class="header-actions">
-      <span class="connection-badge" [ngClass]="getConnectionStatusClass()">
-        <i [ngClass]="getConnectionStatusIcon()"></i>
-        {{
-          connectionStatus === 'connected'
-            ? ('API Connected' + (apiHealth?.contentBackend ? ' (' + apiHealth?.contentBackend + ')' : ''))
-            : connectionStatus === 'testing'
-              ? 'Testing...'
-              : 'Disconnected'
-        }}
-      </span>
-      <p-button 
-        label="Create New Post" 
-        icon="pi pi-plus"
-        (onClick)="createNewPost()"
-        styleClass="p-button-primary">
-      </p-button>
-      <p-button
-        label="Site Content"
-        icon="pi pi-sliders-h"
-        (onClick)="goToContentStudio()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button
-        label="Subscribers"
-        icon="pi pi-users"
-        (onClick)="goToSubscribers()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button
-        label="Distribution"
-        icon="pi pi-send"
-        (onClick)="goToDistribution()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button
-        label="AI Queue"
-        icon="pi pi-bolt"
-        (onClick)="goToAiQueue()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button
-        label="Comments"
-        icon="pi pi-comments"
-        (onClick)="goToComments()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button
-        label="Collections"
-        icon="pi pi-folder"
-        (onClick)="goToCollections()"
-        styleClass="p-button-outlined">
-      </p-button>
-      <p-button 
-        icon="pi pi-cog"
-        (onClick)="toggleSettings()"
-        styleClass="p-button-outlined p-button-rounded"
-        pTooltip="Settings">
-      </p-button>
-      <p-button 
-        icon="pi pi-list"
-        (onClick)="toggleTransactionLog()"
-        styleClass="p-button-outlined p-button-rounded"
-        pTooltip="Transaction Log"
-        [badge]="txLog.getEntries().length > 0 ? txLog.getEntries().length.toString() : ''">
-      </p-button>
-      <p-button 
-        label="Logout" 
-        icon="pi pi-sign-out"
-        (onClick)="logout()"
-        styleClass="p-button-outlined">
-      </p-button>
-    </div>
+<div class="dash-page">
+  <app-studio-shell
+    active="dashboard"
+    [apiConnected]="connectionStatus === 'connected'"
+    (createPost)="createNewPost()">
+  </app-studio-shell>
+
+  <!-- Utility row: page tools the shell nav doesn't cover -->
+  <div class="dash-utility">
+    <button type="button" class="as-btn-ghost" (click)="goToContentStudio()">Site Content</button>
+    <button type="button" class="as-btn-ghost" (click)="goToAiQueue()">AI Queue</button>
+    <button type="button" class="as-btn-ghost" [class.on]="showSettings" (click)="toggleSettings()">Settings</button>
+    <button type="button" class="as-btn-ghost" [class.on]="showTransactionLog" (click)="toggleTransactionLog()">
+      Transaction Log<span class="log-count" *ngIf="txLog.getEntries().length > 0">{{ txLog.getEntries().length }}</span>
+    </button>
   </div>
 
   <!-- Settings Panel -->
-  <p-card *ngIf="showSettings" class="settings-panel">
-    <div class="settings-header">
+  <div class="as-card dash-panel" *ngIf="showSettings">
+    <div class="panel-head">
       <h3>API Connection Settings</h3>
     </div>
-    <div class="settings-body">
-      <div class="form-group">
-        <label for="endpoint">API Endpoint</label>
-        <div class="endpoint-input">
-          <input 
-            type="text" 
-            id="endpoint" 
-            [(ngModel)]="apiEndpoint"
-            pInputText
-            placeholder="http://localhost:3000/api"
-            class="full-width"
-            [disabled]="isProd">
-          <p-button 
-            label="Save & Test" 
-            icon="pi pi-check"
-            (onClick)="saveEndpoint()"
-            styleClass="p-button-sm"
-            *ngIf="!isProd">
-          </p-button>
-        </div>
-        <small class="help-text">
-          App: <code>{{ appOrigin }}</code>
-          <span *ngIf="apiHealth?.contentBackend"> • Content store: <code>{{ apiHealth?.contentBackend }}</code></span>
-          <span *ngIf="apiHealth?.version"> • API v<code>{{ apiHealth?.version }}</code></span>
-        </small>
-        <small class="help-text" *ngIf="isProd">
-          Endpoint is locked in production builds.
-        </small>
-      </div>
+    <label class="as-mono-label panel-label" for="endpoint">API Endpoint</label>
+    <div class="endpoint-row">
+      <input
+        type="text"
+        id="endpoint"
+        class="as-input endpoint-field"
+        [(ngModel)]="apiEndpoint"
+        placeholder="http://localhost:3000/api"
+        [disabled]="isProd">
+      <button type="button" class="as-btn-green" (click)="saveEndpoint()" *ngIf="!isProd">Save &amp; Test</button>
     </div>
-  </p-card>
+    <p class="panel-help">
+      App: <code>{{ appOrigin }}</code>
+      <span *ngIf="apiHealth?.contentBackend"> · Content store: <code>{{ apiHealth?.contentBackend }}</code></span>
+      <span *ngIf="apiHealth?.version"> · API v<code>{{ apiHealth?.version }}</code></span>
+    </p>
+    <p class="panel-help" *ngIf="isProd">Endpoint is locked in production builds.</p>
+  </div>
 
   <!-- Transaction Log Panel -->
-  <p-card *ngIf="showTransactionLog" class="transaction-log-panel">
-    <div class="log-header">
+  <div class="as-card dash-panel" *ngIf="showTransactionLog">
+    <div class="panel-head">
       <h3>Transaction Log</h3>
-      <p-button 
-        label="Clear" 
-        icon="pi pi-trash"
-        (onClick)="clearTransactionLog()"
-        styleClass="p-button-text p-button-sm p-button-danger">
-      </p-button>
+      <button type="button" class="as-btn-ghost clear-btn" (click)="clearTransactionLog()">Clear</button>
     </div>
     <div class="log-body">
       <div *ngIf="txLog.getEntries().length === 0" class="no-logs">
@@ -138,122 +55,79 @@
         <span class="log-detail">{{ entry.detail }}</span>
       </div>
     </div>
-  </p-card>
+  </div>
 
   <!-- Connection Status -->
-  <div class="connection-status" *ngIf="isConnecting">
-    <i class="pi pi-spin pi-spinner"></i> Testing API connection...
+  <div class="conn-testing" *ngIf="isConnecting">
+    Testing API connection…
   </div>
 
   <!-- Blog Posts List -->
   <div class="posts-container" *ngIf="!showEditor">
-    <div class="pipeline-strip" *ngIf="postViews.length > 0">
-      <div class="pipeline-item draft">
-        <span class="pipeline-label">Draft</span>
-        <span class="pipeline-count">{{ getPostCountByStatus('draft') }}</span>
+    <div class="stats-row" *ngIf="postViews.length > 0">
+      <div class="stat-card draft">
+        <span class="stat-label">Draft</span>
+        <span class="stat-value">{{ getPostCountByStatus('draft') }}</span>
       </div>
-      <div class="pipeline-item scheduled">
-        <span class="pipeline-label">Scheduled</span>
-        <span class="pipeline-count">{{ getPostCountByStatus('scheduled') }}</span>
+      <div class="stat-card scheduled">
+        <span class="stat-label">Scheduled</span>
+        <span class="stat-value">{{ getPostCountByStatus('scheduled') }}</span>
       </div>
-      <div class="pipeline-item published">
-        <span class="pipeline-label">Published</span>
-        <span class="pipeline-count">{{ getPostCountByStatus('published') }}</span>
+      <div class="stat-card published">
+        <span class="stat-label">Published</span>
+        <span class="stat-value">{{ getPostCountByStatus('published') }}</span>
       </div>
-      <div class="pipeline-item total">
-        <span class="pipeline-label">Total</span>
-        <span class="pipeline-count">{{ postViews.length }}</span>
+      <div class="stat-card total">
+        <span class="stat-label">Total</span>
+        <span class="stat-value">{{ postViews.length }}</span>
       </div>
     </div>
 
-    <div *ngIf="postViews.length === 0" class="no-posts">
+    <div *ngIf="postViews.length === 0" class="as-card no-posts">
       <p>No blog posts found. Create your first post!</p>
     </div>
 
     <div class="posts-grid" *ngIf="postViews.length > 0">
-      <p-card *ngFor="let post of visiblePostViews; trackBy: trackByPost" class="post-card">
-        <div class="post-media" *ngIf="post.image as imageUrl">
-          <img [src]="imageUrl" [alt]="post.title + ' cover image'" loading="lazy">
+      <article class="post-card" *ngFor="let post of visiblePostViews; trackBy: trackByPost">
+        <div class="post-cover">
+          <img *ngIf="post.image as imageUrl" [src]="imageUrl" [alt]="post.title + ' cover image'" loading="lazy">
         </div>
-        <div class="post-content">
-          <div class="post-header">
-            <h3>{{ post.title }}</h3>
-            <p-tag 
-              [value]="post.status"
-              [severity]="getStatusSeverity(post.status)">
-            </p-tag>
+        <div class="post-body">
+          <div class="post-head">
+            <h3 class="post-title">{{ post.title }}</h3>
+            <span class="as-badge" [ngClass]="getStatusBadgeClass(post.status)">{{ post.status }}</span>
           </div>
-          
-          <p class="post-summary">{{ post.summary }}</p>
-          
-          <div class="post-meta">
-            <span class="post-date">
-              <i class="pi pi-calendar"></i>
-              {{ post.publishDate | date:'mediumDate' }}
-            </span>
-            <div class="post-tags" *ngIf="post.tags.length > 0">
-              <p-tag 
-                *ngFor="let tag of post.tags; trackBy: trackByTag"
-                [value]="tag"
-                styleClass="p-mr-1">
-              </p-tag>
-            </div>
+
+          <p class="post-excerpt">{{ post.summary }}</p>
+
+          <div class="post-date">{{ post.publishDate | date:'mediumDate' }}</div>
+
+          <div class="post-chips" *ngIf="post.tags.length > 0">
+            <span class="as-chip" *ngFor="let tag of post.tags; trackBy: trackByTag">{{ tag }}</span>
+          </div>
+
+          <div class="post-links">
+            <button type="button" class="link-mini" (click)="openPreview(post, 'full')">Preview Full</button>
+            <button type="button" class="link-mini" (click)="openPortfolioPreview(post, 'list')">Site Card ↗</button>
+            <button type="button" class="link-mini" (click)="openPortfolioPreview(post, 'post')">Site Full ↗</button>
           </div>
 
           <div class="post-actions">
-            <p-button
-              label="Site Card"
-              icon="pi pi-external-link"
-              (onClick)="openPortfolioPreview(post, 'list')"
-              styleClass="p-button-outlined p-button-sm">
-            </p-button>
-            <p-button
-              label="Site Full"
-              icon="pi pi-external-link"
-              (onClick)="openPortfolioPreview(post, 'post')"
-              styleClass="p-button-outlined p-button-sm">
-            </p-button>
-            <p-button
-              label="Preview Card"
-              icon="pi pi-image"
-              (onClick)="openPreview(post, 'card')"
-              styleClass="p-button-outlined p-button-sm">
-            </p-button>
-            <p-button
-              label="Preview Full"
-              icon="pi pi-eye"
-              (onClick)="openPreview(post, 'full')"
-              styleClass="p-button-outlined p-button-sm">
-            </p-button>
-            <p-button 
-              label="Edit" 
-              icon="pi pi-pencil"
-              (onClick)="editPost(post)"
-              styleClass="p-button-outlined p-button-sm">
-            </p-button>
-            <p-button 
-              label="Delete" 
-              icon="pi pi-trash"
-              (onClick)="deletePost(post)"
-              styleClass="p-button-outlined p-button-danger p-button-sm">
-            </p-button>
+            <button type="button" class="as-link-action blue" (click)="editPost(post)">Edit</button>
+            <button type="button" class="as-link-action muted" (click)="openPreview(post, 'card')">Preview</button>
+            <button type="button" class="as-link-action danger act-delete" (click)="deletePost(post)">Delete</button>
           </div>
         </div>
-      </p-card>
+      </article>
     </div>
 
-    <div *ngIf="hasMorePosts" style="display:flex;justify-content:center;margin-top:1rem;">
-      <p-button
-        label="Load More Posts"
-        icon="pi pi-angle-down"
-        styleClass="p-button-outlined"
-        (onClick)="loadMorePosts()">
-      </p-button>
+    <div class="load-more" *ngIf="hasMorePosts">
+      <button type="button" class="as-btn-ghost" (click)="loadMorePosts()">Load More Posts ↓</button>
     </div>
   </div>
 
   <!-- Blog Editor -->
-  <app-blog-editor 
+  <app-blog-editor
     *ngIf="showEditor"
     [initialData]="selectedPost"
     (saved)="onEditorSaved()"
@@ -270,18 +144,16 @@
     [style]="{ width: 'min(980px, 94vw)' }"
     [header]="'Blog Preview: ' + (previewMode === 'card' ? 'Title Card' : 'Full Post')">
     <div class="preview-toolbar">
-      <p-button
-        label="Title Card"
-        icon="pi pi-image"
-        (onClick)="setPreviewMode('card')"
-        [styleClass]="previewMode === 'card' ? 'p-button-sm' : 'p-button-sm p-button-outlined'">
-      </p-button>
-      <p-button
-        label="Full Post"
-        icon="pi pi-eye"
-        (onClick)="setPreviewMode('full')"
-        [styleClass]="previewMode === 'full' ? 'p-button-sm' : 'p-button-sm p-button-outlined'">
-      </p-button>
+      <button
+        type="button"
+        class="preview-toggle"
+        [class.active]="previewMode === 'card'"
+        (click)="setPreviewMode('card')">Title Card</button>
+      <button
+        type="button"
+        class="preview-toggle"
+        [class.active]="previewMode === 'full'"
+        (click)="setPreviewMode('full')">Full Post</button>
     </div>
 
     <section *ngIf="previewPost && previewMode === 'card'" class="preview-card-frame">
@@ -297,7 +169,7 @@
         <h3>{{ getPostTitle(previewPost) }}</h3>
         <p>{{ getPostSummary(previewPost) }}</p>
         <div class="preview-tags" *ngIf="getPostTags(previewPost).length > 0">
-          <p-tag *ngFor="let tag of getPostTags(previewPost)" [value]="tag"></p-tag>
+          <span class="as-chip" *ngFor="let tag of getPostTags(previewPost)">{{ tag }}</span>
         </div>
       </div>
     </section>
@@ -315,7 +187,7 @@
           <span><i class="pi pi-bookmark"></i> {{ getPostStatus(previewPost) }}</span>
         </div>
         <div class="preview-tags" *ngIf="getPostTags(previewPost).length > 0">
-          <p-tag *ngFor="let tag of getPostTags(previewPost)" [value]="tag"></p-tag>
+          <span class="as-chip" *ngFor="let tag of getPostTags(previewPost)">{{ tag }}</span>
         </div>
       </header>
       <div class="preview-post-body" [innerHTML]="getPreviewContentHtml(previewPost)"></div>

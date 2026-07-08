@@ -169,31 +169,6 @@ export class CommentsComponent implements OnInit, OnDestroy {
     });
   }
 
-  goToDashboard(): void {
-    this.router.navigate(['/dashboard']);
-  }
-
-  goToContentStudio(): void {
-    this.router.navigate(['/content']);
-  }
-
-  goToSubscribers(): void {
-    this.router.navigate(['/subscribers']);
-  }
-
-  goToCollections(): void {
-    this.router.navigate(['/collections']);
-  }
-
-  goToDistribution(): void {
-    this.router.navigate(['/distribution']);
-  }
-
-  logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/login']);
-  }
-
   trackByComment(index: number, comment: BlogCommentAdmin): string {
     return comment.commentId || `${index}`;
   }

@@ -106,6 +106,12 @@ export class AppComponent implements OnInit {
         description: 'Go to Distribution',
         action: () => this.router.navigate(['/distribution']),
         allowInInputs: true
+      },
+      {
+        combo: 'mod+alt+7',
+        description: 'Go to Mission Control',
+        action: () => this.router.navigate(['/mission-control']),
+        allowInInputs: true
       }
     ]);
   }

@@ -1,50 +1,180 @@
-/* ═══════════════════════════════════════════════════
-   Portfolio Global Styles — Design System
-   ═══════════════════════════════════════════════════ */
+/* ============================================================
+   Grayson Wills site design system (Theme A of
+   design/Grayson Wills Site.dc.html) — warm editorial:
+   Space Grotesk / Newsreader / Space Mono
+   ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
-
-/* ── CSS Custom Properties (Design Tokens) ── */
+/* ── Design tokens (canonical names from the design file) ── */
 :root {
-  --primary: #0b4f9f;
-  --primary-dark: #083b77;
-  --secondary: #bf5700;
-  --secondary-dark: #8f3e00;
-  --accent: #f18f3b;
-  --success: #2f9e6f;
-  --gradient-primary: linear-gradient(132deg, #0b4f9f 0%, #2a7de1 55%, #bf5700 100%);
-  --gradient-hero: linear-gradient(132deg, rgba(11, 79, 159, 0.9) 0%, rgba(42, 125, 225, 0.86) 48%, rgba(191, 87, 0, 0.84) 100%);
+  --f-display: 'Space Grotesk', sans-serif;
+  --f-body: 'Newsreader', Georgia, serif;
+  --f-mono: 'Space Mono', monospace;
+  --dw: 700;
+  --bg: #f5f3ee;
+  --bg2: #eceff3;
+  --surface: #fffdfa;
+  --surface2: #f7f5f0;
+  --ink: #16273c;
+  --muted: #546475;
+  --faint: #8b98a8;
+  --line: #e6e0d6;
+  --line2: #efeae2;
+  --blue: #1f4f86;
+  --warm: #c26a3a;
+  --green: #1e7d52;
+  --green-bg: #e7f5ee;
+  --green-line: #bfe4d0;
+  --red: #c0473c;
+  --grad: linear-gradient(120deg, #133456 0%, #295c8e 46%, #c1673a 100%);
+  --hero-grad: linear-gradient(120deg, #0f2c4d 0%, #1c4a7d 42%, #b46236 100%);
+  --grid-color: rgba(255, 255, 255, 0.06);
+  --chip-bg: #eaf0f7;
+  --chip-ink: #285182;
+  --r: 22px;
+  --r-md: 16px;
+  --r-sm: 11px;
+  --btn-r: 999px;
+  --shadow: 0 24px 60px -34px rgba(18, 40, 70, 0.42);
+  --shadow-sm: 0 12px 32px -22px rgba(18, 40, 70, 0.4);
+  --head-bg: rgba(247, 245, 241, 0.82);
+  --head-border: #e8e2d8;
+  --footer-bg: #0b1b30;
 
-  --text-primary: #0f1722;
-  --text-secondary: #243244;
-  --text-muted: #4d5f74;
+  /* ── legacy aliases: unconverted corners inherit the new palette ── */
+  --primary: var(--blue);
+  --primary-dark: #163a62;
+  --secondary: var(--warm);
+  --secondary-dark: #96502a;
+  --accent: #d9803f;
+  --success: var(--green);
+  --gradient-primary: var(--grad);
+  --gradient-hero: var(--hero-grad);
+
+  --text-primary: var(--ink);
+  --text-secondary: #2c3c52;
+  --text-muted: var(--muted);
   --text-inverse: #ffffff;
 
-  --bg-primary: #f8fafc;
-  --bg-secondary: #edf3f9;
-  --bg-tertiary: #dce4ec;
-  --bg-card: #ffffff;
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface2);
+  --bg-tertiary: #e3ddd2;
+  --bg-card: var(--surface);
 
-  --shadow-sm: 0 4px 14px rgba(15, 23, 34, 0.08);
-  --shadow-md: 0 10px 28px rgba(15, 23, 34, 0.11);
-  --shadow-lg: 0 16px 42px rgba(15, 23, 34, 0.15);
-  --shadow-hover: 0 20px 44px rgba(11, 79, 159, 0.2);
+  --shadow-md: 0 16px 40px -26px rgba(18, 40, 70, 0.36);
+  --shadow-lg: 0 22px 52px -28px rgba(18, 40, 70, 0.42);
+  --shadow-hover: 0 22px 44px -24px rgba(31, 79, 134, 0.35);
 
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r);
   --radius-xl: 28px;
 
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 
-  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+  --font-sans: var(--f-body);
+  --font-display: var(--f-display);
 
-  --container-max: 1200px;
+  --container-max: 1180px;
   --container-narrow: 800px;
   --site-header-offset: 72px;
+}
+
+/* ── Shared site primitives (from the design) ── */
+.pw-section-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  &::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    background: var(--warm);
+    border-radius: 3px;
+    display: block;
+  }
+
+  span {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--warm);
+    font-weight: 700;
+  }
+}
+
+.pw-display {
+  font-family: var(--f-display);
+  font-weight: var(--dw);
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.pw-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.pw-btn-grad {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--grad);
+  border: none;
+  border-radius: var(--btn-r);
+  padding: 10px 17px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+}
+
+.pw-btn-ghost {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-r);
+  padding: 9px 15px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pw-chip {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chip-ink);
+  background: var(--chip-bg);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.pw-skill-chip {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--chip-ink);
+  background: var(--chip-bg);
+  border: 1px solid var(--line2);
+  border-radius: var(--btn-r);
+  padding: 8px 15px;
 }
 
 /* ── Reset and Base ── */

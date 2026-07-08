@@ -1,0 +1,39 @@
+<div class="feed">
+  <div class="feed-head">
+    <div>
+      <div class="feed-title">Live event feed</div>
+      <div class="feed-sub">SSE · <span class="feed-endpoint">GET /events/stream</span> · newest on top</div>
+    </div>
+    <div class="feed-actions">
+      <span class="live-pill" [class.demo]="demo"><span class="live-dot" [class.off]="!live && !demo"></span>{{ demo ? 'Demo' : (live ? 'Live' : 'Reconnecting…') }}</span>
+      <button class="pause-btn" type="button" (click)="togglePause()">{{ paused ? 'Resume' : 'Pause' }}</button>
+    </div>
+  </div>
+
+  <div class="feed-chips">
+    <button
+      *ngFor="let c of mc.feedChips"
+      type="button"
+      class="feed-chip"
+      [class.active]="filter === c.k"
+      (click)="setFilter(c.k)">
+      {{ c.label }}
+    </button>
+  </div>
+
+  <div class="feed-list">
+    <button
+      *ngFor="let e of filteredEvents"
+      type="button"
+      class="feed-row"
+      (click)="rowClicked(e)">
+      <span class="fam-dot" [ngClass]="'fam-' + e.fam"></span>
+      <span class="ev-type">{{ e.type }}</span>
+      <span class="ev-producer">{{ e.producer }}</span>
+      <span class="ev-note" *ngIf="e.note">{{ e.note }}</span>
+      <span class="ev-meta">#{{ e.corr }} · {{ agoFor(e) }}</span>
+    </button>
+  </div>
+
+  <div class="feed-hint">Click any event to open its job timeline. Correlation id shown as last 6.</div>
+</div>

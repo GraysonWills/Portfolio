@@ -1,33 +1,41 @@
 <footer class="footer-container" role="contentinfo">
+  <div class="footer-glow footer-glow--tr" aria-hidden="true"></div>
+  <div class="footer-glow footer-glow--bl" aria-hidden="true"></div>
+
   <div class="footer-content">
+    <!-- Connect -->
     <div class="footer-section">
-      <h3>Connect</h3>
+      <div class="footer-heading">Connect</div>
       <nav class="social-links" aria-label="Social and contact links">
         <a [href]="'mailto:' + contactInfo.email" class="social-link" aria-label="Send email">
-          <i class="pi pi-envelope" aria-hidden="true"></i>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
           <span>Email</span>
         </a>
-        <a *ngFor="let icon of getFooterIcons()" 
-           [href]="getIconUrl(icon)" 
-           target="_blank" 
-           rel="noopener noreferrer" 
-           class="social-link" 
+        <a *ngFor="let icon of getFooterIcons()"
+           [href]="getIconUrl(icon)"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="social-link"
            [attr.aria-label]="icon.Text + ' profile'">
-          <i *ngIf="!useImageIcon(icon)"
-             [class]="getIconClass(icon) || 'pi pi-link'"
-             aria-hidden="true"></i>
-          <img *ngIf="useImageIcon(icon)"
-               [src]="icon.Photo"
-               [alt]="icon.Text || 'Social icon'"
-               class="footer-icon-inline"
-               loading="lazy"
-               (error)="onFooterIconError(icon)" />
+          <span class="social-link-icon" [ngSwitch]="getIconKind(icon)" aria-hidden="true">
+            <svg *ngSwitchCase="'github'" width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49l-.01-1.9c-2.78.62-3.37-1.2-3.37-1.2-.46-1.18-1.11-1.5-1.11-1.5-.9-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.36-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9l-.01 2.82c0 .27.18.6.69.49A10.26 10.26 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>
+            <svg *ngSwitchCase="'linkedin'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5A2.5 2.5 0 1 1 5 8.5a2.5 2.5 0 0 1 0-5zM3 9h4v12H3zM10 9h3.8v1.7h.05c.53-1 1.83-2.05 3.77-2.05C21.4 8.65 22 11 22 14.1V21h-4v-6.1c0-1.45-.03-3.3-2-3.3-2 0-2.3 1.57-2.3 3.2V21h-4z"/></svg>
+            <svg *ngSwitchCase="'email'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+            <img *ngSwitchDefault
+                 [src]="icon.Photo"
+                 [alt]="icon.Text || 'Social icon'"
+                 class="footer-icon-inline"
+                 loading="lazy"
+                 (error)="onFooterIconError(icon)" />
+          </span>
           <span>{{ icon.Text }}</span>
         </a>
       </nav>
     </div>
+
+    <!-- Explore -->
     <div class="footer-section">
-      <h3>Explore</h3>
+      <div class="footer-heading">Explore</div>
       <nav class="footer-nav" aria-label="Footer navigation">
         <a routerLink="/" class="footer-nav-link">Home</a>
         <a routerLink="/work" class="footer-nav-link">Work</a>
@@ -35,9 +43,44 @@
         <a routerLink="/blog" class="footer-nav-link">Blog</a>
       </nav>
     </div>
-    <div class="footer-section footer-copyright">
-      <p class="copyright">&copy; {{ currentYear }} Grayson Wills. All rights reserved.</p>
-      <button type="button" class="footer-utility-link" (click)="openCookieSettings()">Cookie Settings</button>
+
+    <!-- Stay Updated -->
+    <div class="footer-section footer-section--stay">
+      <div class="footer-heading">Stay Updated</div>
+      <p class="footer-blurb">Get an email when new posts go live — and the occasional bigger update.</p>
+
+      <div *ngIf="isSubscribed" class="subscribe-success" role="status" aria-live="polite">&#10003; Subscribed — welcome aboard.</div>
+
+      <form *ngIf="!isSubscribed" class="subscribe-form" (ngSubmit)="subscribe()">
+        <label class="visually-hidden" for="footer-subscribe-email">Email address</label>
+        <input id="footer-subscribe-email"
+               class="subscribe-input"
+               type="email"
+               name="email"
+               [(ngModel)]="subscribeEmail"
+               placeholder="you@example.com"
+               autocomplete="email"
+               [attr.aria-invalid]="subscribeError ? true : null"
+               aria-describedby="footer-subscribe-error" />
+        <button type="submit" class="subscribe-btn" [disabled]="isSubscribing">Subscribe</button>
+      </form>
+      <p *ngIf="subscribeError" id="footer-subscribe-error" class="subscribe-error" role="alert">{{ subscribeError }}</p>
+
+      <button type="button" class="support-btn" (click)="openSupport()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+        Support My Work
+      </button>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <div class="footer-bottom-inner">
+      <div class="copyright">&copy; {{ currentYear }} Grayson Wills &middot; Warren, Michigan</div>
+      <div class="footer-utility-links">
+        <a href="https://author.grayson-wills.com" target="_blank" rel="noopener noreferrer" class="footer-utility-link">Author Studio &#8599;</a>
+        <button type="button" class="footer-utility-link" (click)="openCookieSettings()">Cookie Settings</button>
+        <a href="#" class="footer-utility-link">Privacy</a>
+      </div>
     </div>
   </div>
 </footer>

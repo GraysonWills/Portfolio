@@ -1,0 +1,47 @@
+<div class="mca">
+  <div class="mca-head">
+    <div>
+      <div class="mca-title">The Grayson Gate</div>
+      <div class="mca-sub">Every draft and every announcement halts here. Nothing auto-approves.</div>
+    </div>
+    <span class="mca-pending-pill">{{ cards.length }} pending<span *ngIf="demo"> · demo</span></span>
+  </div>
+
+  <div class="mca-empty" *ngIf="cards.length === 0">Gate clear.</div>
+
+  <div class="mca-queue">
+    <div class="mca-card" *ngFor="let q of cards">
+      <div class="mca-card-info">
+        <div class="mca-action-row">
+          <span class="mca-action">{{ q.action }}</span>
+          <span class="mca-badge-pending">Pending</span>
+        </div>
+        <div class="mca-target">{{ q.target }}</div>
+        <div class="mca-meta">{{ q.client }} &middot; {{ q.when }}</div>
+      </div>
+      <div class="mca-actions">
+        <button type="button" class="mca-btn-approve"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="approve(q)">Approve</button>
+        <button type="button" class="mca-btn-edit"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="startEdit(q)">Edit &amp; approve</button>
+        <button type="button" class="mca-btn-deny"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="startDeny(q)">Deny</button>
+      </div>
+
+      <div class="mca-deny-row" *ngIf="denyingId === q.requestId">
+        <input class="mca-input" [(ngModel)]="denyNote" placeholder="why? (required for deny)" />
+        <button type="button" class="mca-btn-deny" (click)="confirmDeny()">Confirm deny</button>
+      </div>
+
+      <div class="mca-edit-zone" *ngIf="editingId === q.requestId">
+        <textarea class="mca-editor" [(ngModel)]="editText"></textarea>
+        <button type="button" class="mca-btn-approve" (click)="confirmEdit()">Save &amp; approve edited</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mca-toast" *ngIf="toast">{{ toast }}</div>
+</div>

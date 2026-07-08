@@ -1,0 +1,172 @@
+<div class="mct">
+  <!-- applied banner -->
+  <div class="mct-applied" *ngIf="applied">
+    <span class="mct-applied-check">✓</span>
+    <span class="mct-applied-text">Pull request opened against <span class="mono">mesh/workers/</span> — changes apply on the next deploy, after <span class="mono">validate_mesh</span> passes in CI. The running mesh is untouched.</span>
+    <button class="mct-applied-dismiss" type="button" (click)="clearApplied()">dismiss</button>
+  </div>
+
+  <!-- header row -->
+  <div class="mct-head">
+    <div>
+      <div class="mct-title">Worker Mesh — Topology</div>
+      <div class="mct-meta">{{ mc.workers.length }} workers · {{ mc.registeredTypes.length }} event types · derived from <span>workers/*/manifest.yaml</span></div>
+    </div>
+    <div class="mct-pill">2 approval gates · 1 regen loop</div>
+  </div>
+
+  <!-- graph canvas -->
+  <div class="mct-canvas">
+    <div class="mct-stage">
+      <svg class="mct-svg" viewBox="0 0 1180 580">
+        <defs>
+          <marker
+            *ngFor="let f of families"
+            [attr.id]="'arw-' + f"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" [attr.fill]="famColors[f]" />
+          </marker>
+        </defs>
+        <path
+          *ngFor="let e of renderedEdges"
+          [attr.d]="e.d"
+          fill="none"
+          [attr.stroke]="e.color"
+          [attr.stroke-width]="e.width"
+          [attr.stroke-dasharray]="e.dash"
+          [attr.marker-end]="e.marker"
+          [attr.opacity]="e.opacity" />
+      </svg>
+
+      <!-- inbound source -->
+      <div class="mct-source">◇ watch folder · mesh ingest</div>
+      <!-- terminal platforms -->
+      <div class="mct-term">▶ 6 platforms<br /><span>X · LinkedIn · IG…</span></div>
+
+      <!-- worker nodes -->
+      <div
+        class="mct-node"
+        *ngFor="let n of nodes"
+        [class.gate]="n.isGate"
+        [style.left.px]="n.left"
+        [style.top.px]="n.top">
+        <div class="mct-node-card" [style.border-color]="n.accent">
+          <div class="mct-node-top">
+            <span class="mct-node-role">{{ n.role }}</span>
+            <span class="mct-hb" [style.background]="n.hbColor"></span>
+          </div>
+          <div class="mct-node-id">{{ n.id }}</div>
+          <div class="mct-node-chips">
+            <span class="mct-alias">{{ n.alias }}</span>
+            <span class="mct-lock"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>L0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- edge labels -->
+      <div
+        class="mct-label"
+        *ngFor="let l of edgeLabels"
+        [class.removed]="l.removed"
+        [class.editable]="editMode"
+        [style.left.px]="l.x"
+        [style.top.px]="l.y"
+        [style.color]="l.color"
+        [style.border-color]="l.border">
+        <span>{{ l.text }}</span>
+        <button *ngIf="editMode" class="mct-label-toggle" type="button" (click)="onLabelToggle(l)">{{ l.glyph }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- legend -->
+  <div class="mct-legend">
+    <span class="mct-leg" *ngFor="let g of mc.legend"><span class="mct-leg-dot" [style.background]="famColors[g.fam]"></span>{{ g.label }}</span>
+    <span class="mct-leg-note">dashed = feedback / gate loop · edges = event types · click a node to inspect</span>
+  </div>
+
+  <!-- EDIT MODE UI -->
+  <ng-container *ngIf="editMode">
+    <div class="mct-addbar">
+      <div class="mct-addbar-row">
+        <span class="mct-addbar-label">Add connection</span>
+        <select class="mct-sel" [(ngModel)]="addForm.from">
+          <option value="">from worker…</option>
+          <option *ngFor="let w of workerOptions" [value]="w">{{ w }}</option>
+        </select>
+        <span class="mct-addbar-join">emits →</span>
+        <select class="mct-sel" [(ngModel)]="addForm.type">
+          <option value="">event type…</option>
+          <option *ngFor="let t of mc.registeredTypes" [value]="t">{{ t }}</option>
+        </select>
+        <span class="mct-addbar-join">→ consumed by</span>
+        <select class="mct-sel" [(ngModel)]="addForm.target">
+          <option value="">to worker…</option>
+          <option *ngFor="let w2 of workerOptions" [value]="w2">{{ w2 }}</option>
+        </select>
+        <button class="mct-add-btn" type="button" (click)="commitAdd()">+ Add</button>
+      </div>
+      <div class="mct-addbar-hint">Click <span class="x">⨯</span> on any edge label to remove it. Every change is staged as a manifest diff — the running mesh is never mutated live.</div>
+    </div>
+
+    <div class="mct-panels">
+      <div class="mct-panel">
+        <div class="mct-panel-title">Manifest diff <span class="mct-panel-count">· {{ changeCount }} change(s)</span></div>
+        <div class="mct-diff" *ngIf="changeCount > 0">
+          <div *ngFor="let g of diffGroups">
+            <div class="mct-diff-file">workers/{{ g.worker }}/manifest.yaml</div>
+            <div class="mct-diff-line" *ngFor="let ln of g.lines" [class.add]="ln.add" [class.del]="!ln.add">{{ ln.text }}</div>
+          </div>
+        </div>
+        <div class="mct-diff-empty" *ngIf="changeCount === 0">No changes staged. Remove an edge (⨯) or add a connection to propose one.</div>
+      </div>
+      <div class="mct-panel mct-validation">
+        <div class="mct-panel-title">Validation</div>
+        <div class="mct-val-ok" *ngIf="errors.length === 0">✓ all event types registered</div>
+        <div class="mct-val-err" *ngFor="let er of errors">✕ {{ er }} — deploy fails</div>
+        <div class="mct-val-warn" *ngFor="let wn of warnings">⚠ {{ wn }}</div>
+        <div class="mct-val-actions">
+          <button class="mct-btn-discard" type="button" (click)="discardChanges()">Discard</button>
+          <button class="mct-btn-apply" type="button" (click)="openApply()">Review &amp; apply →</button>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- APPLY MODAL -->
+  <div class="mct-overlay" *ngIf="applyOpen" (click)="closeApply()">
+    <div class="mct-modal" (click)="$event.stopPropagation()">
+      <div class="mct-modal-title">Apply mesh changes</div>
+      <p class="mct-modal-sub">Opens a pull request against <span class="mono">mesh/workers/</span>. Nothing mutates the running mesh — changes take effect on the next deploy, once <span class="mono">validate_mesh</span> passes in CI.</p>
+      <div class="mct-modal-diff">
+        <div class="mct-diff" *ngIf="changeCount > 0">
+          <div *ngFor="let g of diffGroups">
+            <div class="mct-diff-file">workers/{{ g.worker }}/manifest.yaml</div>
+            <div class="mct-diff-line" *ngFor="let ln of g.lines" [class.add]="ln.add" [class.del]="!ln.add">{{ ln.text }}</div>
+          </div>
+        </div>
+        <div class="mct-diff-empty" *ngIf="changeCount === 0">No changes staged.</div>
+      </div>
+      <div class="mct-modal-validate">
+        <span class="mct-val-err" *ngIf="errors.length > 0">✕ validation errors block this apply</span>
+        <span class="mct-val-ok" *ngIf="errors.length === 0">✓ validate_mesh: no errors ({{ changeCount }} change(s))</span>
+      </div>
+      <div class="mct-modal-actions">
+        <button class="mct-btn-cancel" type="button" (click)="closeApply()">Cancel</button>
+        <button
+          class="mct-btn-pr"
+          type="button"
+          [disabled]="changeCount === 0 || errors.length > 0"
+          (click)="confirmApply()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+          Open Pull Request
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

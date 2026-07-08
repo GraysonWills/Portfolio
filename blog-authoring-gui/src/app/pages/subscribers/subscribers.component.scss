@@ -1,216 +1,336 @@
-.subscribers-container {
-  min-height: 100vh;
-  padding: 2rem 1.8rem;
-  background:
-    radial-gradient(circle at 92% 0%, rgba(241, 143, 59, 0.14), transparent 28%),
-    var(--bg-secondary);
+.subscribers-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 28px 80px;
 }
 
-.subscribers-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding: 1.4rem 1.5rem;
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-  border: 1px solid rgba(11, 79, 159, 0.12);
-  box-shadow: var(--shadow-md);
+/* ============ Card 1: Add subscriber ============ */
+.add-card {
+  padding: 26px 28px;
+  margin-bottom: 18px;
 }
 
-.header-title h1 {
-  margin: 0;
-  font-size: clamp(1.5rem, 3vw, 2.2rem);
+.section-label {
+  margin-bottom: 14px;
+}
+
+.field-label {
+  display: block;
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin-bottom: 7px;
 }
 
-.header-title p {
-  margin: 0.35rem 0 0;
-  color: var(--ink-500);
-  font-size: 0.9rem;
-}
+.email-input {
+  width: 100%;
+  font-size: 15px;
+  padding: 13px 16px;
+  margin-bottom: 18px;
 
-.header-actions {
-  display: flex;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.add-subscriber-card,
-.subscriber-list-card {
-  margin-bottom: 1.3rem;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.9rem;
-
-  h3 {
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 1rem;
+  &::placeholder {
+    color: var(--faint);
   }
 }
 
-.add-grid {
-  display: grid;
-  gap: 0.8rem;
-}
-
-.form-group {
-  display: grid;
-  gap: 0.45rem;
-
-  label {
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: var(--ink-700);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
+.topics-label {
+  margin-bottom: 12px;
 }
 
 .topics-row {
   display: flex;
+  gap: 22px;
   flex-wrap: wrap;
-  gap: 1rem;
+}
 
-  label {
-    font-size: 0.88rem;
-    text-transform: none;
-    letter-spacing: normal;
-    display: inline-flex;
+.add-topics {
+  margin-bottom: 20px;
+}
+
+/* Custom checkbox: 19px rounded square — blue with white check when on,
+   bordered square when off (design: SUBSCRIBERS topics rows). */
+.topic-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--f-body);
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+
+  .box {
+    width: 19px;
+    height: 19px;
+    border-radius: 5px;
+    border: 1.5px solid var(--line);
+    background: var(--surface);
+    display: flex;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+
+    &::after {
+      content: '✓';
+      font-size: 12px;
+      line-height: 1;
+      color: #fff;
+      opacity: 0;
+    }
+  }
+
+  input:checked ~ .box {
+    background: var(--blue);
+    border-color: var(--blue);
+
+    &::after {
+      opacity: 1;
+    }
+  }
+
+  input:checked ~ .txt {
+    color: var(--ink);
+  }
+
+  input:focus-visible ~ .box {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+}
+
+.add-btn {
+  font-size: 13px;
+  padding: 13px 22px;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+/* ============ Card 2: Subscriber list ============ */
+.list-card {
+  padding: 26px 28px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 20px;
+    color: var(--ink);
+    margin: 0;
+  }
+}
+
+.head-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pill-input {
+  font-family: var(--f-body);
+  font-size: 13.5px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--btn-r);
+  background: var(--surface2);
+  color: var(--ink);
+  outline: none;
+
+  &::placeholder {
+    color: var(--faint);
+  }
+}
+
+.search-input {
+  width: 200px;
+}
+
+.unsub-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+
+  input {
+    margin: 0;
+    accent-color: var(--blue);
     cursor: pointer;
   }
 }
 
-.actions {
-  justify-content: flex-start;
-}
-
-.filter-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.checkbox-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: var(--ink-700);
+.refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .loading-row {
-  padding: 1rem;
+  padding: 36px 20px;
   text-align: center;
-  color: var(--ink-400);
+  font-family: var(--f-body);
+  font-size: 14px;
+  color: var(--muted);
 }
 
-.subscriber-grid {
-  display: grid;
-  gap: 0.9rem;
+/* ---- Subscriber rows ---- */
+.subscriber-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .subscriber-row {
-  border: 1px solid rgba(11, 79, 159, 0.14);
-  border-radius: 12px;
-  background: rgba(11, 79, 159, 0.03);
-  padding: 0.95rem;
-  display: grid;
-  gap: 0.85rem;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
   content-visibility: auto;
-  contain-intrinsic-size: 240px;
+  contain-intrinsic-size: 100px;
 }
 
-.subscriber-main {
-  display: grid;
-  gap: 0.45rem;
+.row-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .email {
-  font-size: 1rem;
+  font-family: var(--f-display);
   font-weight: 700;
-  color: var(--ink-900);
+  font-size: 15px;
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
-.meta {
+.row-meta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.row-bottom {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem 0.75rem;
   align-items: center;
-  font-size: 0.8rem;
-  color: var(--ink-500);
-}
-
-.topics {
-  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 11px;
   flex-wrap: wrap;
-  gap: 0.4rem;
 }
 
-.subscriber-actions {
+.row-chips {
   display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
-  gap: 0.55rem;
 }
 
+.topic-chip {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--chip-ink);
+  background: var(--chip-bg);
+  border-radius: 6px;
+  padding: 4px 9px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 14px;
+
+  .as-link-action {
+    background: none;
+    border: none;
+    padding: 2px 0;
+    font-size: 12px;
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+  }
+}
+
+/* ---- Inline preference editor (kept feature, restyled) ---- */
 .preference-editor {
-  border-top: 1px dashed rgba(11, 79, 159, 0.2);
-  padding-top: 0.8rem;
+  border-top: 1px dashed var(--line);
+  margin-top: 14px;
+  padding-top: 13px;
   display: grid;
-  gap: 0.55rem;
-
-  h4 {
-    margin: 0;
-    font-size: 0.9rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  small {
-    color: var(--ink-500);
-    font-size: 0.78rem;
-  }
+  gap: 12px;
 }
 
 .editor-actions {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-note {
+  font-family: var(--f-body);
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .load-more-row {
   display: flex;
   justify-content: center;
-  margin-top: 0.9rem;
+  margin-top: 16px;
 }
 
+/* ---- Responsive ---- */
 @media (max-width: 920px) {
-  .subscribers-header {
-    flex-direction: column;
+  .card-head {
     align-items: flex-start;
   }
 
-  .header-actions {
+  .head-controls {
     width: 100%;
-    justify-content: flex-start;
+  }
+
+  .search-input {
+    width: auto;
+    flex: 1 1 160px;
   }
 }
 
 @media (max-width: 640px) {
-  .subscribers-container {
-    padding: 1.1rem 0.9rem;
+  .subscribers-page {
+    padding: 18px 14px 60px;
+  }
+
+  .add-card,
+  .list-card {
+    padding: 20px 16px;
   }
 }

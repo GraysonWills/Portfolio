@@ -49,6 +49,8 @@ export class BlogComponent implements OnInit, OnDestroy {
   isLoading: boolean = true;
   subscribeEmail: string = '';
   isSubscribing: boolean = false;
+  /** Drives the inline "✓ You're on the list" confirmation card (presentation only). */
+  subscribedInline: boolean = false;
   currentPage: number = 1;
   isPageTransitioning: boolean = false;
   private readonly pageSize = 12;
@@ -607,6 +609,7 @@ export class BlogComponent implements OnInit, OnDestroy {
             metadata: { source: 'blog-list' }
           });
           this.subscriptions.setPromptState('requested');
+          this.subscribedInline = true;
           this.messageService.add({
             severity: 'info',
             summary: 'Check Your Email',
@@ -616,6 +619,7 @@ export class BlogComponent implements OnInit, OnDestroy {
         }
 
         this.subscribeEmail = '';
+        this.subscribedInline = true;
         this.subscriptions.setPromptState('requested');
         this.analytics.track('blog_subscribe_requested', {
           route: '/blog',

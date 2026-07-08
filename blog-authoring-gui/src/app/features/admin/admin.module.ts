@@ -24,6 +24,13 @@ import { CollectionsComponent } from '../../pages/collections/collections.compon
 import { CommentsComponent } from '../../pages/comments/comments.component';
 import { DistributionComponent } from '../../pages/distribution/distribution.component';
 import { AiQueueComponent } from '../../pages/ai-queue/ai-queue.component';
+import { MissionControlComponent } from '../../pages/mission-control/mission-control.component';
+import { McTopologyComponent } from '../../pages/mission-control/mc-topology.component';
+import { McFeedComponent } from '../../pages/mission-control/mc-feed.component';
+import { McJobsComponent } from '../../pages/mission-control/mc-jobs.component';
+import { McApprovalsComponent } from '../../pages/mission-control/mc-approvals.component';
+import { McRegistryComponent } from '../../pages/mission-control/mc-registry.component';
+import { StudioShellComponent } from '../../components/studio-shell/studio-shell.component';
 import { BlogEditorComponent } from '../../components/blog-editor/blog-editor.component';
 import { ImageUploaderComponent } from '../../components/image-uploader/image-uploader.component';
 import { AdminRoutingModule } from './admin-routing.module';
@@ -37,6 +44,13 @@ import { AdminRoutingModule } from './admin-routing.module';
     CommentsComponent,
     DistributionComponent,
     AiQueueComponent,
+    MissionControlComponent,
+    McTopologyComponent,
+    McFeedComponent,
+    McJobsComponent,
+    McApprovalsComponent,
+    McRegistryComponent,
+    StudioShellComponent,
     BlogEditorComponent,
     ImageUploaderComponent,
   ],

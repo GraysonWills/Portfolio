@@ -15,6 +15,7 @@ import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { FooterComponent } from './components/footer/footer.component';
 import { HeaderComponent } from './components/header/header.component';
+import { SupportComponent } from './components/support/support.component';
 import { LandingComponent } from './pages/landing/landing.component';
 
 @NgModule({
@@ -22,6 +23,7 @@ import { LandingComponent } from './pages/landing/landing.component';
     AppComponent,
     FooterComponent,
     HeaderComponent,
+    SupportComponent,
     LandingComponent
   ],
   imports: [

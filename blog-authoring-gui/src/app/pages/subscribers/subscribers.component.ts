@@ -236,29 +236,17 @@ export class SubscribersComponent implements OnInit, OnDestroy {
     return this.draftByEmailHash[key] || null;
   }
 
-  goToDashboard(): void {
-    this.router.navigate(['/dashboard']);
+  /** Maps subscriber status to a shared .as-badge color class. */
+  statusBadgeClass(subscriber: NotificationSubscriber): string {
+    const status = String(subscriber?.status || '').toUpperCase();
+    if (status === 'SUBSCRIBED') return 'green';
+    if (status === 'PENDING') return 'amber';
+    return 'neutral';
   }
 
-  goToContentStudio(): void {
-    this.router.navigate(['/content']);
-  }
-
-  goToCollections(): void {
-    this.router.navigate(['/collections']);
-  }
-
-  goToDistribution(): void {
-    this.router.navigate(['/distribution']);
-  }
-
-  goToComments(): void {
-    this.router.navigate(['/comments']);
-  }
-
-  logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/login']);
+  /** Joined topic list for the single topics chip (design: SUBSCRIBERS rows). */
+  topicSummary(subscriber: NotificationSubscriber): string {
+    return (subscriber?.topics || []).join(', ');
   }
 
   focusAddEmail(): void {

@@ -1,154 +1,120 @@
-<div class="comments-container">
-  <div class="comments-header">
-    <div class="header-title">
-      <h1>Comment Management</h1>
-      <p>Review, reply to, and remove blog comments.</p>
-    </div>
-    <div class="header-actions">
-      <p-button
-        label="Dashboard"
-        icon="pi pi-home"
-        styleClass="p-button-outlined"
-        (onClick)="goToDashboard()">
-      </p-button>
-      <p-button
-        label="Site Content"
-        icon="pi pi-sliders-h"
-        styleClass="p-button-outlined"
-        (onClick)="goToContentStudio()">
-      </p-button>
-      <p-button
-        label="Subscribers"
-        icon="pi pi-envelope"
-        styleClass="p-button-outlined"
-        (onClick)="goToSubscribers()">
-      </p-button>
-      <p-button
-        label="Collections"
-        icon="pi pi-folder"
-        styleClass="p-button-outlined"
-        (onClick)="goToCollections()">
-      </p-button>
-      <p-button
-        label="Distribution"
-        icon="pi pi-send"
-        styleClass="p-button-outlined"
-        (onClick)="goToDistribution()">
-      </p-button>
-      <p-button
-        label="Logout"
-        icon="pi pi-sign-out"
-        styleClass="p-button-outlined"
-        (onClick)="logout()">
-      </p-button>
-    </div>
-  </div>
+<app-studio-shell active="comments"></app-studio-shell>
 
-  <p-card class="comments-card">
-    <div class="card-header">
-      <h3>Comments</h3>
-      <div class="filter-row">
+<div class="comments-page">
+  <section class="comments-card as-card">
+    <div class="card-head">
+      <div class="head-copy">
+        <h2>Comment Management</h2>
+        <p>Review, reply to, and remove blog comments.</p>
+      </div>
+      <div class="head-controls">
         <input
           id="comment-search"
-          pInputText
+          class="pill-input search-input"
           type="text"
           [(ngModel)]="searchQuery"
           (input)="onSearchChanged()"
-          placeholder="Search author, post, or comment..." />
+          placeholder="Search author, post, or comment" />
         <input
-          pInputText
+          class="pill-input post-filter"
           type="text"
           [(ngModel)]="postFilter"
-          placeholder="Filter by post ID"
-          (keyup.enter)="loadComments()" />
-        <label class="checkbox-inline">
-          <input type="checkbox" [(ngModel)]="includeDeleted" (change)="loadComments()">
-          Include Deleted
+          (keyup.enter)="loadComments()"
+          placeholder="Filter by post ID" />
+        <label class="deleted-toggle">
+          <input type="checkbox" [(ngModel)]="includeDeleted" (change)="loadComments()" />
+          Include deleted
         </label>
-        <p-button
-          label="Refresh"
-          icon="pi pi-refresh"
-          styleClass="p-button-outlined p-button-sm"
-          [loading]="isLoading"
-          (onClick)="loadComments()">
-        </p-button>
+        <button
+          type="button"
+          class="as-btn-ghost refresh-btn"
+          [disabled]="isLoading"
+          (click)="loadComments()">
+          {{ isLoading ? 'Refreshing…' : 'Refresh' }}
+        </button>
       </div>
     </div>
 
-    <div class="loading-row" *ngIf="isLoading">Loading comments...</div>
-    <div class="loading-row" *ngIf="!isLoading && filteredComments.length === 0">No comments found.</div>
+    <div class="loading-row" *ngIf="isLoading">Loading comments…</div>
 
-    <div class="comment-grid" *ngIf="!isLoading && filteredComments.length > 0">
+    <div class="empty-box" *ngIf="!isLoading && filteredComments.length === 0">
+      <div class="empty-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="empty-title">{{ comments.length === 0 ? 'No comments yet' : 'No matching comments' }}</div>
+      <div class="empty-hint">
+        {{ comments.length === 0
+          ? 'When readers comment on a post, threads show up here for moderation.'
+          : 'Adjust the search or filters to see more of the thread.' }}
+      </div>
+    </div>
+
+    <div class="comment-list" *ngIf="!isLoading && filteredComments.length > 0">
       <article
-        class="comment-row"
+        class="comment-card as-card-md"
         [class.deleted]="comment.deleted"
         [class.author]="comment.authorRole === 'author'"
         *ngFor="let comment of filteredComments; trackBy: trackByComment">
-        <div class="comment-main">
-          <div class="comment-title-row">
-            <strong>{{ comment.authorName }}</strong>
-            <p-tag
-              [value]="comment.authorRole === 'author' ? 'AUTHOR' : 'READER'"
-              [severity]="comment.authorRole === 'author' ? 'warning' : 'info'">
-            </p-tag>
-            <p-tag
-              [value]="comment.deleted ? 'DELETED' : 'VISIBLE'"
-              [severity]="comment.deleted ? 'danger' : 'success'">
-            </p-tag>
+        <div class="comment-top">
+          <div class="comment-id">
+            <strong class="comment-author">{{ comment.authorName }}</strong>
+            <span class="as-badge" [ngClass]="comment.authorRole === 'author' ? 'amber' : 'blue'">
+              {{ comment.authorRole === 'author' ? 'Author' : 'Reader' }}
+            </span>
+            <span class="as-badge" [ngClass]="comment.deleted ? 'red' : 'green'">
+              {{ comment.deleted ? 'Deleted' : 'Visible' }}
+            </span>
           </div>
-          <div class="comment-meta">
-            <span>post: {{ comment.postId }}</span>
-            <span *ngIf="comment.parentId">reply to: {{ comment.parentId }}</span>
-            <span *ngIf="comment.createdAt">{{ comment.createdAt | date:'short' }}</span>
-            <span>{{ comment.likeCount || 0 }} likes</span>
+          <div class="comment-actions">
+            <button
+              type="button"
+              class="as-link-action blue"
+              [disabled]="comment.deleted"
+              (click)="startReply(comment)">
+              {{ replyingToCommentId === comment.commentId ? 'Close Reply' : 'Reply' }}
+            </button>
+            <button
+              type="button"
+              class="as-link-action danger"
+              [disabled]="comment.deleted || isDeleting"
+              (click)="deleteComment(comment)">
+              Remove
+            </button>
           </div>
-          <p class="comment-body" *ngIf="!comment.deleted">{{ comment.body }}</p>
-          <p class="comment-body muted" *ngIf="comment.deleted">Deleted comment</p>
         </div>
 
-        <div class="comment-actions">
-          <p-button
-            label="Reply"
-            icon="pi pi-reply"
-            styleClass="p-button-outlined p-button-sm"
-            [disabled]="comment.deleted"
-            (onClick)="startReply(comment)">
-          </p-button>
-          <p-button
-            label="Delete"
-            icon="pi pi-trash"
-            styleClass="p-button-danger p-button-sm"
-            [disabled]="comment.deleted || isDeleting"
-            (onClick)="deleteComment(comment)">
-          </p-button>
+        <div class="comment-meta">
+          <span>post: {{ comment.postId }}</span>
+          <span *ngIf="comment.parentId">reply to: {{ comment.parentId }}</span>
+          <span *ngIf="comment.createdAt">{{ comment.createdAt | date:'short' }}</span>
+          <span>{{ comment.likeCount || 0 }} likes</span>
         </div>
+
+        <p class="comment-body" *ngIf="!comment.deleted">{{ comment.body }}</p>
+        <p class="comment-body removed" *ngIf="comment.deleted">Deleted comment</p>
 
         <div class="reply-editor" *ngIf="replyingToCommentId === comment.commentId">
           <textarea
-            class="p-inputtext"
+            class="as-input reply-input"
             rows="4"
             [(ngModel)]="replyDrafts[comment.commentId]"
-            placeholder="Write an author reply...">
-          </textarea>
+            placeholder="Write an author reply…"></textarea>
           <div class="editor-actions">
-            <p-button
-              label="Save Reply"
-              icon="pi pi-send"
-              styleClass="p-button-sm"
-              [loading]="isSavingReply"
-              (onClick)="saveReply(comment)">
-            </p-button>
-            <p-button
-              label="Cancel"
-              icon="pi pi-times"
-              styleClass="p-button-outlined p-button-sm"
-              (onClick)="cancelReply()">
-            </p-button>
+            <button
+              type="button"
+              class="as-btn-primary"
+              [disabled]="isSavingReply"
+              (click)="saveReply(comment)">
+              {{ isSavingReply ? 'Posting…' : 'Save Reply' }}
+            </button>
+            <button type="button" class="as-btn-ghost" (click)="cancelReply()">Cancel</button>
           </div>
         </div>
       </article>
     </div>
-  </p-card>
+  </section>
 </div>
 
 <p-confirmDialog></p-confirmDialog>

@@ -1,0 +1,121 @@
+:host {
+  display: block;
+}
+
+.mcr {
+  margin-top: 16px;
+}
+
+.mcr-table {
+  background: var(--mc-panel);
+  border: 1px solid var(--mc-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.mcr-head,
+.mcr-row {
+  display: grid;
+  grid-template-columns: 1.1fr 0.5fr 1.6fr 1.6fr 0.7fr 0.6fr;
+  gap: 12px;
+}
+
+.mcr-head {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--mc-line);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mc-faint);
+}
+
+.mcr-row {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: center;
+}
+
+.mcr-id {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--mc-ink);
+}
+
+.mcr-alias {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-blue);
+  background: rgba(91, 155, 232, 0.14);
+  border-radius: 5px;
+  padding: 3px 7px;
+  justify-self: start;
+}
+
+.mcr-consumes {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-muted);
+}
+
+.mcr-emits {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: #c7d3e4;
+}
+
+.mcr-autonomy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  color: var(--mc-purple-ink);
+  background: rgba(176, 131, 234, 0.14);
+  border-radius: 999px;
+  padding: 4px 9px;
+  justify-self: start;
+}
+
+.mcr-hb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-muted);
+}
+
+.mcr-hb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+
+  // Design uses dimmer dot colors in the registry table than in the
+  // topology nodes (Author Studio.dc.html x-dc script, registryRows map).
+  &.hb-ok {
+    background: #1e7d52;
+  }
+
+  &.hb-warn {
+    background: #c26a3a;
+  }
+
+  &.hb-down {
+    background: #c0473c;
+  }
+}
+
+.mcr-hint {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-faint);
+  margin-top: 12px;
+  padding: 0 4px;
+}
+
+.mcr-demo {
+  color: var(--mc-amber);
+}

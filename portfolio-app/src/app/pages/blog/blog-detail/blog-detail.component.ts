@@ -16,6 +16,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 import { BlogComment, CommentService } from '../../../services/comment.service';
 import { SiteAuthService, SiteUser } from '../../../services/site-auth.service';
+import { SupportService } from '../../../services/support.service';
+import { SubscriptionService } from '../../../services/subscription.service';
 
 interface RecentPostCard {
   listItemID: string;
@@ -86,6 +88,11 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   siteUser: SiteUser | null = null;
   private commentAuthTimerId: number | null = null;
 
+  // End-of-post subscribe card
+  subscribeEmail = '';
+  subscribing = false;
+  subscribed = false;
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -94,7 +101,9 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     readonly siteAuth: SiteAuthService,
     private sanitizer: DomSanitizer,
     private seo: SeoService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    private support: SupportService,
+    private subscriptionService: SubscriptionService
   ) {
     marked.setOptions({ breaks: false, gfm: true });
   }
@@ -783,6 +792,37 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   goBack(): void {
     this.router.navigate(['/blog']);
+  }
+
+  /** Open the global support (buy-me-a-coffee) modal. */
+  openSupport(): void {
+    this.support.open();
+  }
+
+  /** End-of-post email subscribe. */
+  subscribe(): void {
+    if (this.subscribing || this.subscribed) return;
+    const email = String(this.subscribeEmail || '').trim();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      this.messageService.add({ severity: 'warn', summary: 'Check Your Email', detail: 'Enter a valid email address.' });
+      return;
+    }
+
+    this.subscribing = true;
+    this.subscriptionService.request(email, ['blog_posts'], 'blog-post').subscribe({
+      next: () => {
+        this.subscribing = false;
+        this.subscribed = true;
+      },
+      error: (err) => {
+        this.subscribing = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Subscription Failed',
+          detail: err?.error?.message || err?.message || 'Could not subscribe right now.'
+        });
+      }
+    });
   }
 
   private resolveSignature(metadata: any): BlogSignature {

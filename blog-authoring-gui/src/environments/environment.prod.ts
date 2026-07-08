@@ -4,6 +4,7 @@
 
 export const environment = {
   production: true,
+  meshApiUrl: 'http://100.119.247.118:8088',
   redisApiUrl: 'https://api.grayson-wills.com/api',
   useContentV2Stream: true,
   useBlogV2Cards: true,

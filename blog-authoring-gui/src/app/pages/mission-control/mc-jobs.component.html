@@ -1,0 +1,37 @@
+<div class="jobs">
+  <div class="job-card">
+    <div>
+      <div class="job-title-row">
+        <span class="job-title">Job {{ job.id }}</span>
+        <span class="job-badge">{{ job.status }}</span>
+        <span class="job-demo" *ngIf="demo">demo</span>
+      </div>
+      <div class="job-source">source: {{ job.source }} · correlation threaded ingest → posted</div>
+    </div>
+    <div class="job-elapsed">
+      <div class="elapsed-label">total elapsed</div>
+      <div class="elapsed-value">{{ job.elapsed }}</div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <div class="step" *ngFor="let s of steps">
+      <span class="step-dot" [ngClass]="'sc-' + stepColor(s)"></span>
+      <div class="step-card">
+        <div class="step-top">
+          <div class="step-id">
+            <span class="step-label">{{ s.label }}</span>
+            <span class="step-event" [ngClass]="'sc-' + stepColor(s)">{{ s.event }}</span>
+          </div>
+          <span class="step-dur">{{ s.dur }}</span>
+        </div>
+        <div class="step-bottom">
+          <span class="step-meta">{{ s.meta }}</span>
+          <a class="step-trace" href="#" (click)="$event.preventDefault()">trace ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="jobs-hint">Each step deep-links to its Langfuse trace, keyed by correlation_id. A parked step would show a red terminal badge with the park reason.</div>
+</div>

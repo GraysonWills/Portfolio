@@ -1,7 +1,7 @@
 <div class="blog-detail-page">
   <!-- Loading State -->
   <div *ngIf="isLoading" class="loading-state">
-    <div class="container-narrow">
+    <div class="bd-wrap bd-wrap-article">
       <div class="skeleton-back"></div>
       <div class="skeleton-cover"></div>
       <div class="skeleton-title"></div>
@@ -13,50 +13,50 @@
 
   <!-- Not Found State -->
   <div *ngIf="!isLoading && notFound" class="not-found-state">
-    <div class="container-narrow">
+    <div class="bd-wrap bd-wrap-article">
       <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
       <h2>Post Not Found</h2>
       <p>The blog post you're looking for doesn't exist or has been removed.</p>
-      <button pButton label="Back to Blog" icon="pi pi-arrow-left" class="p-button-outlined" (click)="goBack()"></button>
+      <button type="button" class="bd-btn-ghost" (click)="goBack()">
+        <i class="pi pi-arrow-left" aria-hidden="true"></i> Back to the blog
+      </button>
     </div>
   </div>
 
   <!-- Blog Post Content -->
   <div *ngIf="!isLoading && !notFound">
     <!-- Back Button -->
-    <div class="container-narrow">
+    <div class="bd-wrap bd-wrap-back">
       <button class="back-btn" (click)="goBack()" aria-label="Back to blog">
-        <i class="pi pi-arrow-left"></i> Back to Blog
+        ← Back to the blog
       </button>
     </div>
 
     <!-- Cover Image -->
-    <div *ngIf="coverImage" class="cover-image-wrapper">
-      <img [src]="coverImage" [alt]="coverAlt" class="cover-image" />
-      <div class="cover-gradient"></div>
+    <div *ngIf="coverImage" class="bd-wrap bd-wrap-cover">
+      <div class="cover-image-frame">
+        <img [src]="coverImage" [alt]="coverAlt" class="cover-image" />
+      </div>
     </div>
 
     <!-- Article Header -->
-    <article class="container-narrow article-content">
+    <article class="bd-wrap bd-wrap-article article-content">
       <header class="article-header">
-        <div class="article-category" *ngIf="category">{{ category }}</div>
+        <span class="article-category" *ngIf="category">{{ category }}</span>
         <h1 class="article-title">{{ title }}</h1>
         <p class="article-summary" *ngIf="summary">{{ summary }}</p>
-        
+
         <div class="article-meta">
           <span *ngIf="publishDate" class="meta-item">
-            <i class="pi pi-calendar" aria-hidden="true"></i>
             {{ publishDate | date:'longDate' }}
           </span>
-          <span class="meta-divider" *ngIf="publishDate"></span>
+          <span class="meta-divider" *ngIf="publishDate" aria-hidden="true">·</span>
           <span class="meta-item">
-            <i class="pi pi-clock" aria-hidden="true"></i>
             {{ getActiveReadTime() }} min read
           </span>
-        </div>
-
-        <div class="article-tags" *ngIf="tags.length">
-          <span *ngFor="let tag of tags" class="article-tag">{{ tag }}</span>
+          <div class="article-tags" *ngIf="tags.length">
+            <span *ngFor="let tag of tags" class="article-tag">{{ tag }}</span>
+          </div>
         </div>
 
         <div class="article-version-toggle" *ngIf="hasRoughDraft()">
@@ -86,7 +86,7 @@
       <div class="article-body" *ngIf="!isShowingRoughDraft(); else roughDraftBody">
         <ng-container *ngFor="let block of bodyBlocks">
           <!-- Paragraph (Markdown) -->
-          <div *ngIf="block.type === 'paragraph'" 
+          <div *ngIf="block.type === 'paragraph'"
                class="body-paragraph"
                [innerHTML]="renderMarkdown(block.content)">
           </div>
@@ -151,9 +151,41 @@
       </section>
     </article>
 
-    <section class="comments-section container-narrow" aria-labelledby="comments-title">
+    <!-- END OF POST: SUBSCRIBE + SUPPORT -->
+    <section class="bd-wrap bd-wrap-cover end-of-post">
+      <div class="eop-card eop-subscribe">
+        <div class="eop-eyebrow">Keep reading</div>
+        <div class="eop-title">Get the next one by email</div>
+        <div class="eop-subscribed" *ngIf="subscribed; else subscribeForm">
+          ✓ Subscribed — welcome aboard.
+        </div>
+        <ng-template #subscribeForm>
+          <form class="eop-subscribe-form" (ngSubmit)="subscribe()">
+            <input
+              type="email"
+              name="subscribeEmail"
+              [(ngModel)]="subscribeEmail"
+              [disabled]="subscribing"
+              autocomplete="email"
+              placeholder="you@example.com"
+              aria-label="Email address" />
+            <button type="submit" class="eop-subscribe-btn" [disabled]="subscribing">
+              {{ subscribing ? 'Subscribing…' : 'Subscribe' }}
+            </button>
+          </form>
+        </ng-template>
+      </div>
+      <div class="eop-card eop-support">
+        <div class="eop-eyebrow">If this landed</div>
+        <div class="eop-title">Buy me a coffee</div>
+        <p class="eop-support-copy">The writing stays free. If it helped, a small tip keeps it coming.</p>
+        <button type="button" class="eop-support-btn" (click)="openSupport()">Support the work →</button>
+      </div>
+    </section>
+
+    <section class="comments-section bd-wrap bd-wrap-article" aria-labelledby="comments-title">
       <div class="comments-header">
-        <div>
+        <div class="comments-heading">
           <h2 id="comments-title">Comments</h2>
           <p>{{ comments.length }} {{ comments.length === 1 ? 'thread' : 'threads' }}</p>
         </div>
@@ -420,47 +452,33 @@
       </div>
     </section>
 
-    <!-- Recent Posts Section -->
-    <section *ngIf="recentPosts.length > 0" class="recent-posts-section">
-      <div class="container">
-        <h2 class="recent-posts-title">Recent Posts</h2>
-        <div class="recent-posts-grid">
-          <article *ngFor="let post of recentPostCards; trackBy: trackByRecentPost" 
-                   class="blog-card"
-                   [routerLink]="['/blog', post.listItemID]"
-                   role="link"
-                   [attr.aria-label]="'Read: ' + post.title">
-            <div class="blog-post-content">
-              <img *ngIf="post.image" 
-                   [src]="post.image" 
-                   [alt]="post.title + ' cover image'" 
-                   class="blog-image"
-                   loading="lazy">
-              <div class="blog-details">
-                <div class="blog-meta">
-                  <span *ngIf="post.publishDate" class="publish-date">
-                    <i class="pi pi-calendar" aria-hidden="true"></i>
-                    {{ post.publishDate | date:'mediumDate' }}
-                  </span>
-                  <span *ngIf="post.readTime" class="read-time">
-                    <i class="pi pi-clock" aria-hidden="true"></i>
-                    {{ post.readTime }} min read
-                  </span>
-                </div>
-                <h3 class="blog-title">{{ post.title }}</h3>
-                <p class="blog-summary">{{ post.summary }}</p>
-                <div class="blog-footer">
-                  <div class="blog-tags" *ngIf="post.tags?.length">
-                    <span *ngFor="let tag of post.tags.slice(0, 2); trackBy: trackByTag" class="blog-tag">{{ tag }}</span>
-                  </div>
-                  <span class="read-more-link">
-                    Read More <i class="pi pi-arrow-right"></i>
-                  </span>
-                </div>
-              </div>
+    <!-- Related / Keep Reading -->
+    <section *ngIf="recentPosts.length > 0" class="bd-wrap bd-wrap-related recent-posts-section">
+      <div class="pw-section-label recent-posts-label">
+        <span>Keep Reading</span>
+      </div>
+      <div class="recent-posts-grid">
+        <article *ngFor="let post of recentPostCards; trackBy: trackByRecentPost"
+                 class="related-card"
+                 [routerLink]="['/blog', post.listItemID]"
+                 role="link"
+                 [attr.aria-label]="'Read: ' + post.title">
+          <div class="related-card-image">
+            <img *ngIf="post.image"
+                 [src]="post.image"
+                 [alt]="post.title + ' cover image'"
+                 class="related-image"
+                 loading="lazy">
+          </div>
+          <div class="related-card-body">
+            <div class="related-meta">
+              <span *ngIf="post.publishDate">{{ post.publishDate | date:'mediumDate' }}</span>
+              <span *ngIf="post.publishDate && post.readTime" aria-hidden="true">·</span>
+              <span *ngIf="post.readTime">{{ post.readTime }} min read</span>
             </div>
-          </article>
-        </div>
+            <h3 class="related-title">{{ post.title }}</h3>
+          </div>
+        </article>
       </div>
     </section>
   </div>
