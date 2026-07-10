@@ -1,137 +1,143 @@
-# No-Cache Performance Rollout
+# Bounded Public-Cache Performance Rollout
 
-Last updated: 2026-03-07
+Last updated: 2026-07-10
 
-This document captures the current performance architecture for the portfolio platform after the no-cache rollout.
+This document describes the portfolio performance architecture after replacing the
+blanket no-cache policy with narrow, anonymous, success-only edge caching.
 
 ## Objectives
 
-1. Deliver usable page structure and metadata before heavy media.
-2. Avoid whole-dataset pulls during route changes.
-3. Remove dynamic content caching from the API and browser persistence layers.
-4. Keep static assets immutable and aggressively cacheable by filename hash.
-5. Reduce cold-start and origin latency without introducing stale dynamic content.
+1. Deliver usable page structure before non-critical media.
+2. Keep authenticated, mutable, preview, comment, and write traffic uncached.
+3. Cache only explicitly reviewed anonymous GET read models.
+4. Prevent errors, private metadata, and viewer rate-limit state from entering a shared cache.
+5. Reduce Lambda cold-path work instead of paying for provisioned concurrency at low traffic.
+6. Keep every live cache change reproducible, drift-checkable, and reversible.
 
-## What Changed
+## Public API Cache Boundary
 
-### Dynamic API responses are no longer cached
-
-- API `GET /api/*` responses now return:
-  - `Cache-Control: no-store, max-age=0`
-  - `Pragma: no-cache`
-  - `Expires: 0`
-- The old in-process API GET cache middleware was removed.
-- Browser-persisted route/content snapshot caches were disabled in both Angular apps.
-
-Allowed reuse that remains:
-- in-flight request dedupe (`shareReplay`-based service streams)
-- route-scoped in-memory reuse during the active SPA session
-- immutable JS/CSS/media asset caching by hashed filename
-
-### New `v3` read-model endpoints
-
-The API now exposes route-specific read models:
+The general CloudFront `api/*` behavior remains on AWS managed `CachingDisabled`.
+Narrow behaviors may cache only these paths:
 
 - `GET /api/content/v3/bootstrap`
 - `GET /api/content/v3/landing`
 - `GET /api/content/v3/work`
 - `GET /api/content/v3/projects/categories`
-- `POST /api/content/v3/projects/items`
 - `GET /api/content/v3/blog/:listItemId`
-- `GET /api/content/v3/admin/dashboard`
-- `GET /api/content/v3/admin/content`
+- `GET /api/content/v2/blog/cards`
+- `GET /api/content/v2/blog/cards/media`
 
-These endpoints shape data for rendering instead of forcing the frontend to:
-- load full page buckets
-- merge records client-side
-- sort/group in the browser
-- fetch all pages when only one route is active
+Everything else remains uncached, including health, preview sessions, admin/auth,
+comments, subscriptions and confirmations, resume, analytics, upload, notifications,
+social endpoints, MCP, legacy raw content reads, and every mutation.
 
-### Targeted server reads replaced user-facing scans
+The custom cache policies use:
 
-Public routes already read by page.
+- minimum TTL: `0`
+- default TTL: `0`
+- maximum TTL: `300`
+- Brotli and gzip cache variants
+- no cookies or viewer headers
+- endpoint-specific query-string allowlists
 
-For authoring:
-- `v3/admin/dashboard` reads only the blog page bucket.
-- `v3/admin/content` now uses:
-  - page+content targeted queries when both are selected
-  - single-page queries when a page is selected
-  - bounded page-index fanout across known pages when viewing “all pages”
+Default TTL zero is intentional: if the origin omits an explicit shared-cache header,
+CloudFront does not cache the response.
 
-This removes the prior full-table scan from the normal Content Studio path.
+## Origin Cache Safety
 
-### Frontend rendering became route-scoped
+The API applies public cache headers only to the allowlisted anonymous GET paths.
+Before any response is sent:
 
-#### Portfolio
+- every `4xx` or `5xx` response is forced to `no-store, max-age=0, s-maxage=0`
+- error responses also receive `Pragma: no-cache`, `Expires: 0`, and
+  `Surrogate-Control: no-store`
+- cacheable success responses remove `RateLimit-Limit`, `RateLimit-Policy`,
+  `RateLimit-Remaining`, and `RateLimit-Reset`
+- public blog cards force `published` and non-future visibility regardless of query input
+- public blog payloads and search exclude private SEO tags
+- card-media requests return images only for visible published, non-future posts
+- the raw all-content route requires route-level authentication
 
-- Shared header/footer data is fetched through `v3/bootstrap`.
-- Landing uses `v3/landing` and hydrates hero slides from a metadata-first payload.
-- Work uses `v3/work` and paginates the timeline instead of recursively loading all rows.
-- Projects uses `v3/projects/categories` plus batched `v3/projects/items`.
-- Blog detail uses `v3/blog/:listItemId` with body-block rendering from a single shaped payload.
+These rules must deploy before the narrow CloudFront behaviors are enabled.
 
-#### Blog authoring
+## Reproducible CloudFront Changes
 
-- Dashboard uses `v3/admin/dashboard`.
-- Content Studio uses `v3/admin/content`.
-- Route entry no longer triggers diagnostics health checks during normal navigation.
+Use the checked-in helper in dry-run mode first:
 
-### AWS origin latency improvements
+```bash
+scripts/configure_cloudfront_public_api_cache.sh --dry-run
+```
 
-`portfolio-redis-api` was updated to:
+After backend cache-safety probes pass in production:
 
-- `arm64`
-- `1024 MB` memory
-- published `live` alias
-- provisioned concurrency: `2`
+```bash
+scripts/configure_cloudfront_public_api_cache.sh --apply
+```
 
-API Gateway now invokes the `live` alias instead of `$LATEST`.
+The script creates or updates four custom cache policies, preserves all unrelated
+distribution configuration, writes a mode-600 rollback snapshot inside a mode-700
+temporary directory, waits for deployment, and prints the exact rollback command.
+It never prints origin custom-header values.
 
-## Current Loading Strategy
+Use read-only drift validation after rollout:
 
-### Public portfolio
+```bash
+scripts/configure_cloudfront_public_api_cache.sh --check
+```
 
-- Route shell renders first.
-- Metadata/text arrives before non-critical media.
-- Non-critical images use lazy loading.
-- Projects and work timeline append incrementally instead of preloading full page datasets.
+## Frontend Loading Strategy
 
-### Blog authoring
+- Landing waits for API content before considering remote fallback slides.
+- Only the active hero image is mounted.
+- Unsplash hero URLs expose 640/960/1280/1600 responsive candidates.
+- The next slide is prefetched only after active-image load, a delay, and browser idle.
+- Prefetch is disabled for save-data and 2G conditions.
+- Secondary landing images are lazy, asynchronously decoded, and low priority.
+- `/blog` and `/blog/:id` are separate lazy chunks, so the list does not download
+  detail-only Markdown, carousel, auth, or comment code.
+- PrimeNG imports are feature-scoped instead of exported wholesale from SharedModule.
 
-- Dashboard cards load metadata first.
-- Card images hydrate lazily.
-- Content Studio pages server-page through filtered rows rather than loading everything locally.
+## Lambda Cold Path
 
-## Read-Model Attributes on Content Records
+`portfolio-redis-api` remains Node.js 22, arm64, 1024 MB, and outside a VPC.
+Provisioned concurrency is disabled.
 
-New/updated content writes now stamp these derived attributes:
+Cold-path changes:
 
-- `PagePK`
-- `PageSK`
-- `UpdatedPK`
-- `UpdatedSK`
-- `FeedPK`
-- `FeedSK`
+- the Redis package is not required when Redis is disabled
+- Express route modules load on their first matching request
+- scheduled publishing calls the existing service directly instead of re-entering
+  API Gateway and Lambda through HTTP
+- deployment runs tests before packaging and zips only runtime files
+- the prior live alias target is captured and restored automatically when the
+  post-alias public smoke test fails
 
-These are in place so the table can be moved to dedicated read-model GSIs later without another content-shape rewrite.
+The next larger step, only if live metrics justify it, is separate public-read,
+admin/MCP/social, notification-worker, analytics-worker, and SNS handlers.
 
-## Remaining Improvement Path
+## Static Asset Policy
 
-Not part of the current rollout:
-
-1. Dedicated GSIs for:
-   - page render ordering
-   - updated-content feeds
-   - blog publish feeds
-2. Admin route/module splitting so the editor bundle is isolated from non-editor admin routes.
-3. `IntersectionObserver`-based sentinel loading to replace scroll-threshold handlers everywhere.
-4. Additional media derivative normalization for richer in-post galleries/carousels.
+- hashed application assets remain immutable for one year
+- `index.html` uses browser revalidation with a 60-second shared-edge window
+- favicons use bounded browser and edge caching and are deployed with invalidation
+- robots and sitemap use short bounded caching instead of immutable headers
+- old hashed assets remain available during deployment rollback
 
 ## Verification Checklist
 
-- `GET /api/content/v3/landing` returns `200`.
-- Dynamic API responses send `Cache-Control: no-store, max-age=0`.
-- Public routes load without recursive all-page fetches.
-- Content Studio does not rely on full-table scans in normal operation.
-- Lambda alias `live` is active with provisioned concurrency.
-- Static asset deployments retain immutable cache headers.
+Before enabling edge caching:
+
+- backend tests cover scheduled/future card-query attacks and arbitrary media IDs
+- unknown blog detail returns `404` plus `no-store`
+- forced public-route failures return `500` plus `no-store`
+- raw all-content reads reject arbitrary bearer tokens
+- cacheable successes contain no `RateLimit-*` headers
+
+After enabling edge caching:
+
+- first reviewed public GET is `Miss`, second is `Hit` with a positive `Age`
+- allowed query strings create distinct cache entries
+- unlisted query strings do not fragment the cache
+- health, preview, comments, admin, auth, and writes stay uncached
+- scheduled/future blog data remains unavailable
+- the rollback snapshot and command are recorded in the Portfolio Notion task
