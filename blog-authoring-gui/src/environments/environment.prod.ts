@@ -4,7 +4,10 @@
 
 export const environment = {
   production: true,
-  meshApiUrl: 'http://100.119.247.118:8088',
+  // HTTPS via `tailscale serve` on the Spark (tailnet-only, real LE cert) —
+  // the https:// studio can't fetch http:// (mixed content). Requires the
+  // browser's device to resolve MagicDNS names ("Use Tailscale DNS" on).
+  meshApiUrl: 'https://spark-0a8b.tailf96049.ts.net',
   redisApiUrl: 'https://api.grayson-wills.com/api',
   useContentV2Stream: true,
   useBlogV2Cards: true,
