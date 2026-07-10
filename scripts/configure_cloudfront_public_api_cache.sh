@@ -189,8 +189,8 @@ ensure_policy() {
   else
     aws cloudfront get-cache-policy-config --id "$policy_id" > "$existing_file"
     if ! diff -q \
-      <(jq -S '.CachePolicyConfig' "$existing_file") \
-      <(jq -S '.' "$desired_file") \
+      <(jq -S '.CachePolicyConfig | if .ParametersInCacheKeyAndForwardedToOrigin.QueryStringsConfig.QueryStrings.Items then .ParametersInCacheKeyAndForwardedToOrigin.QueryStringsConfig.QueryStrings.Items |= sort else . end' "$existing_file") \
+      <(jq -S 'if .ParametersInCacheKeyAndForwardedToOrigin.QueryStringsConfig.QueryStrings.Items then .ParametersInCacheKeyAndForwardedToOrigin.QueryStringsConfig.QueryStrings.Items |= sort else . end' "$desired_file") \
       >/dev/null; then
       if [[ "$MODE" == "apply" ]]; then
         local policy_etag
@@ -288,6 +288,7 @@ jq \
            .CacheBehaviors.Items[]?
            as $behavior
            | select(($narrow_paths | index($behavior.PathPattern)) == null)
+           | $behavior
          ]
      )
    | .CacheBehaviors.Quantity = (.CacheBehaviors.Items | length)' \
