@@ -1,0 +1,75 @@
+<div class="mcb">
+  <div class="mcb-att">
+    <button type="button" class="mcb-att-item" [class.warn]="gatesWaiting"
+            [class.calm]="!gatesWaiting" (click)="gatesWaiting && openApprovals.emit()">
+      <ng-container *ngIf="gatesWaiting; else gatesClear">⚠ <b>{{ gatesWaiting }}</b>
+        gate{{ gatesWaiting > 1 ? 's' : '' }} waiting ▸</ng-container>
+      <ng-template #gatesClear>gates clear</ng-template>
+    </button>
+    <span class="mcb-att-item" [class.bad]="parkedCount" [class.calm]="!parkedCount">
+      <ng-container *ngIf="parkedCount">⛔ <b>{{ parkedCount }}</b> parked</ng-container>
+      <ng-container *ngIf="!parkedCount">nothing parked</ng-container>
+    </span>
+    <span class="mcb-demo" *ngIf="demo">mesh unreachable — board idle</span>
+    <div class="mcb-zoom">
+      <button type="button" (click)="setZoom(zoom - 1)" [disabled]="zoom === 0">−</button>
+      <span class="mcb-zlabel">{{ zoomLevels[zoom] }}</span>
+      <button type="button" (click)="setZoom(zoom + 1)" [disabled]="zoom === 2">＋</button>
+    </div>
+  </div>
+
+  <div class="mcb-wrap" (wheel)="onWheel($event)">
+    <div class="mcb-board" [class.z0]="zoom === 0" [class.z2]="zoom === 2">
+      <div class="mcb-cols">
+        <div *ngFor="let s of stages; index as i">
+          {{ s }}<span *ngIf="stageCounts[i]">{{ stageCounts[i] }}</span>
+        </div>
+      </div>
+
+      <div class="mcb-lane" *ngFor="let lane of lanes">
+        <div class="mcb-lane-head">
+          <button type="button" class="mcb-bid" *ngIf="lane.batch"
+                  (click)="openBatches.emit()">batch …{{ short(lane.batch.batch_id) }}</button>
+          <span class="mcb-bid" *ngIf="!lane.batch">direct</span>
+          <span class="mcb-badge" *ngIf="lane.batch"
+                [class.ok]="lane.batch.status === 'resolved'"
+                [class.locked]="lane.batch.status === 'gated'">{{ lane.batch.status }}</span>
+          <span class="mcb-meta">{{ lane.meta }}</span>
+          <button type="button" class="mcb-gatechip" *ngIf="lane.gatePending"
+                  (click)="openApprovals.emit()">GATE — pick topics ▸</button>
+        </div>
+        <div class="mcb-note" *ngIf="lane.empty">
+          {{ lane.batch?.status === 'collecting' ? 'waiting for recordings to arrive…'
+             : 'no jobs on the board for this lane' }}
+        </div>
+        <div class="mcb-grid" *ngIf="!lane.empty">
+          <div class="mcb-cell" *ngFor="let cell of lane.cells">
+            <button type="button" class="mcb-job" *ngFor="let j of cell"
+                    [class.gated]="j.status === 'gated'"
+                    [class.parked]="j.status === 'parked'"
+                    [class.done]="j.status === 'done'"
+                    [class.running]="j.status === 'running'"
+                    [title]="jobTitleAttr(j)"
+                    (click)="openJob.emit(j.correlation_id)">
+              <span class="mcb-l1">
+                <span class="mcb-jc">…{{ short(j.correlation_id) }}</span>
+                <span class="mcb-jt">{{ jobLabel(j) }}<ng-container
+                  *ngIf="j.status === 'gated'"> ⏳</ng-container><ng-container
+                  *ngIf="j.status === 'parked'"> ⛔</ng-container></span>
+              </span>
+              <span class="mcb-segs">
+                <i *ngFor="let s of stages; index as i" [class.on]="i <= stageIndex(j)"></i>
+              </span>
+              <span class="mcb-l2">{{ jobExtra(j) }} · {{ j.event_count }} ev</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mcb-empty" *ngIf="loaded && !lanes.length">
+        Mesh idle — drop recordings to start a batch
+        (<code>mesh ingest-batch *.mp3</code>).
+      </div>
+    </div>
+  </div>
+</div>

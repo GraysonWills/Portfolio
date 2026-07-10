@@ -7,7 +7,7 @@
         <div class="mc-title-row">
           <span class="mc-live-dot"></span>
           <h2 class="mc-title">Mission Control</h2>
-          <span class="mc-ver">M10 · v0</span>
+          <span class="mc-ver">MC · v1</span>
         </div>
         <p class="mc-sub">The worker mesh, live — one operator's cockpit for the golden-path pipeline.</p>
       </div>
@@ -33,12 +33,19 @@
         (click)="setView(t.key)">
         {{ t.label }}
       </button>
-      <span class="mc-endpoints">GET /events/stream · /registry · /approvals</span>
+      <span class="mc-endpoints">GET /jobs · /batches · /approvals · /events/stream</span>
     </div>
 
+    <app-mc-board *ngIf="view === 'board'"
+                  (openJob)="onOpenJob($event)"
+                  (openApprovals)="setView('approvals')"
+                  (openBatches)="setView('batches')"></app-mc-board>
     <app-mc-topology *ngIf="view === 'topology'" [editMode]="editMode"></app-mc-topology>
     <app-mc-feed *ngIf="view === 'feed'" (openJob)="onOpenJob($event)"></app-mc-feed>
     <app-mc-jobs *ngIf="view === 'jobs'" [cid]="jobCid"></app-mc-jobs>
+    <app-mc-batches *ngIf="view === 'batches'"
+                    (openJob)="onOpenJob($event)"
+                    (openApprovals)="setView('approvals')"></app-mc-batches>
     <app-mc-approvals *ngIf="view === 'approvals'"></app-mc-approvals>
     <app-mc-registry *ngIf="view === 'registry'"></app-mc-registry>
   </div>

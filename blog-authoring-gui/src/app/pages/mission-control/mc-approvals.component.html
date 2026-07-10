@@ -19,7 +19,7 @@
         <div class="mca-target">{{ q.target }}</div>
         <div class="mca-meta">{{ q.client }} &middot; {{ q.when }}</div>
       </div>
-      <div class="mca-actions">
+      <div class="mca-actions" *ngIf="q.kind !== 'topic_selection'">
         <button type="button" class="mca-btn-approve"
                 [disabled]="!q.requestId || busyId === q.requestId"
                 (click)="approve(q)">Approve</button>
@@ -29,6 +29,42 @@
         <button type="button" class="mca-btn-deny"
                 [disabled]="!q.requestId || busyId === q.requestId"
                 (click)="startDeny(q)">Deny</button>
+      </div>
+      <div class="mca-actions" *ngIf="q.kind === 'topic_selection'">
+        <button type="button" class="mca-btn-approve"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="startPick(q)">Pick topics…</button>
+        <button type="button" class="mca-btn-edit"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="approve(q)">Draft all</button>
+        <button type="button" class="mca-btn-deny"
+                [disabled]="!q.requestId || busyId === q.requestId"
+                (click)="startDeny(q)">Deny batch</button>
+      </div>
+
+      <div class="mca-pick-zone" *ngIf="pickingId === q.requestId">
+        <div class="mca-pick-none" *ngIf="!pickRows.length">
+          Candidate list unreadable — resolve from the mesh page or CLI.
+        </div>
+        <label class="mca-pick-row" *ngFor="let r of pickRows">
+          <input type="checkbox" [(ngModel)]="r.checked" />
+          <span class="mca-pick-main">
+            <span class="mca-pick-title">{{ r.title }}</span>
+            <span class="mca-pick-angle" *ngIf="r.angle">{{ r.angle }}</span>
+            <span class="mca-pick-closest" *ngIf="r.closest_ref">closest: {{ r.closest_ref }}</span>
+          </span>
+          <span class="mca-pick-novelty">
+            <span class="mca-nbar" [class.v-overlap]="r.novelty_verdict === 'overlap'"
+                  [class.v-duplicate]="r.novelty_verdict === 'duplicate'">
+              <i [style.width.%]="noveltyPct(r.novelty_score)"></i>
+            </span>
+            {{ r.novelty_verdict || '?' }}<ng-container
+              *ngIf="r.novelty_score != null"> · {{ r.novelty_score | number: '1.2-2' }}</ng-container>
+          </span>
+        </label>
+        <button type="button" class="mca-btn-approve" *ngIf="pickRows.length"
+                [disabled]="!pickedCount()" (click)="confirmPick()">
+          Draft {{ pickedCount() }} selected</button>
       </div>
 
       <div class="mca-deny-row" *ngIf="denyingId === q.requestId">

@@ -1,12 +1,12 @@
 import { Component } from '@angular/core';
 
-export type McView = 'topology' | 'feed' | 'jobs' | 'approvals' | 'registry';
+export type McView = 'board' | 'topology' | 'feed' | 'jobs' | 'batches'
+  | 'approvals' | 'registry';
 
 /**
  * Mission Control (design: Author Studio.dc.html, MC section) — the dark
- * cockpit tab of the Author Studio. Hosts the sub-nav and the five views.
- * UX-only: data comes from MissionControlMockService until the mesh API is
- * wired (ADR-006).
+ * cockpit tab of the Author Studio. Hosts the sub-nav and the views; the
+ * Board (MC v1 — batch lanes × pipeline stages, semantic zoom) is home.
  */
 @Component({
   selector: 'app-mission-control',
@@ -15,15 +15,17 @@ export type McView = 'topology' | 'feed' | 'jobs' | 'approvals' | 'registry';
   standalone: false,
 })
 export class MissionControlComponent {
-  view: McView = 'topology';
+  view: McView = 'board';
   editMode = false;
   jobCid: string | null = null;
 
   readonly tabs: Array<{ key: McView; label: string }> = [
+    { key: 'board', label: 'Board' },
+    { key: 'approvals', label: 'Approvals' },
+    { key: 'batches', label: 'Batches' },
     { key: 'topology', label: 'Topology' },
     { key: 'feed', label: 'Live Feed' },
     { key: 'jobs', label: 'Jobs' },
-    { key: 'approvals', label: 'Approvals' },
     { key: 'registry', label: 'Registry' },
   ];
 

@@ -1,0 +1,186 @@
+/* Batches — outer-flow audit view (MC v1). Cockpit tokens from styles.scss. */
+
+.mcx { margin-top: 16px; }
+
+.mcx-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.mcx-title {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--mc-ink);
+}
+
+.mcx-sub {
+  font-family: var(--f-body);
+  font-size: 12.5px;
+  color: var(--mc-muted);
+  margin-top: 3px;
+}
+
+.mcx-pill {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-amber);
+  border: 1px solid var(--mc-amber);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.mcx-empty {
+  font-family: var(--f-body);
+  font-size: 14px;
+  color: var(--mc-faint);
+  text-align: center;
+  padding: 48px 0;
+
+  code { font-family: var(--f-mono); font-size: 12px; }
+}
+
+.mcx-card {
+  border: 1px solid var(--mc-line);
+  border-radius: 10px;
+  background: var(--mc-panel);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.mcx-card-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--mc-line);
+}
+
+.mcx-bid {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  color: var(--mc-ink);
+}
+
+.mcx-badge {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mc-muted);
+  border: 1px solid var(--mc-line2);
+  border-radius: 999px;
+  padding: 2px 9px;
+
+  &.ok { color: var(--mc-green); border-color: var(--mc-green); }
+  &.locked { color: var(--mc-purple-ink); border-color: var(--mc-purple); }
+}
+
+.mcx-meta {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-faint);
+}
+
+@keyframes mcx-pulse {
+  50% { box-shadow: 0 0 0 6px rgba(176, 131, 234, 0.16); }
+}
+
+.mcx-gatechip {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-purple-ink);
+  background: none;
+  border: 1px solid var(--mc-purple);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: pointer;
+  animation: mcx-pulse 1.8s infinite;
+}
+
+.mcx-none {
+  font-family: var(--f-body);
+  font-size: 12px;
+  color: var(--mc-faint);
+  padding: 12px 14px;
+}
+
+.mcx-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    text-align: left;
+    color: var(--mc-faint);
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--mc-line);
+  }
+
+  td {
+    font-family: var(--f-body);
+    font-size: 13px;
+    color: var(--mc-bright);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--mc-line);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+}
+
+.mcx-topic { color: var(--mc-ink); }
+
+.mcx-angle {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-muted);
+}
+
+.mcx-nbar {
+  display: inline-block;
+  width: 70px;
+  height: 7px;
+  background: var(--mc-line);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 7px;
+
+  i { display: block; height: 100%; background: var(--mc-green); }
+  &.v-overlap i { background: var(--mc-amber); }
+  &.v-duplicate i { background: var(--mc-red); }
+}
+
+.mcx-verdict {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--mc-muted);
+}
+
+.mcx-closest {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  color: var(--mc-amber);
+  margin-top: 3px;
+}
+
+.mcx-sel { text-align: center; }
+
+.mcx-child {
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+  color: var(--mc-blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}

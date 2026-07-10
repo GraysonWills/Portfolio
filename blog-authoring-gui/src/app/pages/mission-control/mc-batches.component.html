@@ -1,0 +1,56 @@
+<div class="mcx">
+  <div class="mcx-head">
+    <div>
+      <div class="mcx-title">Batches</div>
+      <div class="mcx-sub">The outer flow (ADR-008): recordings in, topics assessed for novelty, your picks fanned out onto the golden path.</div>
+    </div>
+    <span class="mcx-pill" *ngIf="demo">mesh unreachable</span>
+  </div>
+
+  <div class="mcx-empty" *ngIf="loaded && !batches.length && !demo">
+    No batches yet — batches appear when a multi-recording drop lands
+    (<code>mesh ingest-batch *.mp3</code>).
+  </div>
+
+  <div class="mcx-card" *ngFor="let b of batches">
+    <div class="mcx-card-head">
+      <span class="mcx-bid">batch …{{ short(b.batch_id) }}</span>
+      <span class="mcx-badge"
+            [class.ok]="b.status === 'resolved'"
+            [class.locked]="b.status === 'gated'">{{ b.status }}</span>
+      <span class="mcx-meta">{{ meta(b) }}</span>
+      <button type="button" class="mcx-gatechip" *ngIf="gatePending(b)"
+              (click)="openApprovals.emit()">open selection gate ▸</button>
+    </div>
+
+    <div class="mcx-none" *ngIf="!b.candidates.length">no candidates yet</div>
+
+    <table class="mcx-table" *ngIf="b.candidates.length">
+      <thead>
+        <tr><th>topic</th><th>angle</th><th>novelty</th><th>picked</th><th>child job</th></tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let c of b.candidates">
+          <td class="mcx-topic">{{ c.title }}</td>
+          <td class="mcx-angle">{{ c.angle || '—' }}</td>
+          <td>
+            <span class="mcx-nbar" [class.v-overlap]="c.novelty_verdict === 'overlap'"
+                  [class.v-duplicate]="c.novelty_verdict === 'duplicate'">
+              <i [style.width.%]="noveltyPct(c.novelty_score)"></i>
+            </span>
+            <span class="mcx-verdict">{{ c.novelty_verdict || '?' }}<ng-container
+              *ngIf="c.novelty_score != null"> · {{ c.novelty_score | number: '1.2-2' }}</ng-container></span>
+            <div class="mcx-closest" *ngIf="c.closest_ref">closest: {{ c.closest_ref }}</div>
+          </td>
+          <td class="mcx-sel">{{ c.selected === true ? '✓' : c.selected === false ? '✗' : '—' }}</td>
+          <td>
+            <button type="button" class="mcx-child" *ngIf="c.child_correlation_id"
+                    (click)="openJob.emit(c.child_correlation_id!)">
+              …{{ short(c.child_correlation_id) }} ▸</button>
+            <ng-container *ngIf="!c.child_correlation_id">—</ng-container>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

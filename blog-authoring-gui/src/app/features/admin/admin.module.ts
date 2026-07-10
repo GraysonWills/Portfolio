@@ -25,6 +25,8 @@ import { CommentsComponent } from '../../pages/comments/comments.component';
 import { DistributionComponent } from '../../pages/distribution/distribution.component';
 import { AiQueueComponent } from '../../pages/ai-queue/ai-queue.component';
 import { MissionControlComponent } from '../../pages/mission-control/mission-control.component';
+import { McBoardComponent } from '../../pages/mission-control/mc-board.component';
+import { McBatchesComponent } from '../../pages/mission-control/mc-batches.component';
 import { McTopologyComponent } from '../../pages/mission-control/mc-topology.component';
 import { McFeedComponent } from '../../pages/mission-control/mc-feed.component';
 import { McJobsComponent } from '../../pages/mission-control/mc-jobs.component';
@@ -45,6 +47,8 @@ import { AdminRoutingModule } from './admin-routing.module';
     DistributionComponent,
     AiQueueComponent,
     MissionControlComponent,
+    McBoardComponent,
+    McBatchesComponent,
     McTopologyComponent,
     McFeedComponent,
     McJobsComponent,
