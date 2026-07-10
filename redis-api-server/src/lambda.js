@@ -272,32 +272,29 @@ async function handleInternalEvent(rawEvent) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing listItemID' }) };
     }
 
-    const url = process.env.SCHEDULER_WEBHOOK_URL || 'https://api.grayson-wills.com/api/notifications/worker/publish';
-    const secret = process.env.SCHEDULER_WEBHOOK_SECRET || '';
-    if (!secret) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'SCHEDULER_WEBHOOK_SECRET not configured' }) };
-    }
-
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Scheduler-Secret': secret
-      },
-      body: JSON.stringify({
+    // EventBridge Scheduler already invokes this Lambda through IAM. Calling
+    // the public API from here caused a second Lambda invocation and an
+    // avoidable API Gateway/CloudFront round trip for the same operation.
+    try {
+      // eslint-disable-next-line global-require
+      const { publishBlogPostNow } = require('./services/notifications');
+      const result = await publishBlogPostNow({
         listItemID,
         scheduleName: scheduleName || null,
         sendEmail: sendEmail !== false,
         topic: topic || 'blog_posts',
         userSub: userSub || ''
-      })
-    });
-
-    const text = await resp.text();
-    return {
-      statusCode: resp.status,
-      body: text || JSON.stringify({ ok: resp.ok })
-    };
+      });
+      return {
+        statusCode: 200,
+        body: JSON.stringify(result)
+      };
+    } catch (err) {
+      return {
+        statusCode: err.status || 500,
+        body: JSON.stringify({ error: err.message })
+      };
+    }
   }
 
   if (event.kind === 'social_distribution_send') {

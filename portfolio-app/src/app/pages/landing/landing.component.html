@@ -2,19 +2,22 @@
 
   <!-- ============ HERO ============ -->
   <section class="hero" aria-label="Hero banner">
-    <!-- Live image carousel sits behind the gradient; preserves aria + autoplay -->
-    <div class="hero-slider" aria-live="polite" aria-hidden="true">
+    <!-- Only the active background is mounted; the next slide is prefetched after idle. -->
+    <div class="hero-slider" aria-hidden="true">
       <div
-        *ngFor="let slide of heroSlides; let i = index"
+        *ngIf="activeHeroSlide as slide"
         class="hero-image-container"
-        [class.active]="i === activeHeroIndex">
+        [class.hero-image-container--alternate]="activeHeroIndex % 2 === 1">
         <img
-          [src]="slide.photo"
-          [alt]="slide.alt"
+          [src]="slide.displaySrc || slide.photo"
+          [attr.srcset]="slide.srcset || null"
+          sizes="100vw"
+          alt=""
           class="hero-image"
-          [attr.loading]="i === 0 ? 'eager' : 'lazy'"
+          loading="eager"
           decoding="async"
-          [attr.fetchpriority]="i === activeHeroIndex ? 'high' : 'low'"
+          fetchpriority="high"
+          (load)="onHeroImageLoad()"
           (error)="onHeroImageError($event)" />
       </div>
     </div>
@@ -106,8 +109,15 @@
       <div class="about-portrait">
         <img
           *ngIf="heroSlides.length"
-          [src]="heroSlides[0].photo"
+          [src]="heroSlides[0].displaySrc || heroSlides[0].photo"
+          [attr.srcset]="heroSlides[0].srcset || null"
+          sizes="(max-width: 900px) 100vw, 680px"
           [alt]="heroSlides[0].alt"
+          width="680"
+          height="850"
+          loading="lazy"
+          decoding="async"
+          fetchpriority="low"
           (error)="onHeroImageError($event)" />
       </div>
       <div class="about-body">
@@ -212,7 +222,14 @@
 
     <ng-template #projectCardBody let-project>
       <div class="project-image" aria-hidden="true">
-        <img *ngIf="project.photo" [src]="project.photo" [alt]="project.title" (error)="onHeroImageError($event)" />
+        <img
+          *ngIf="project.photo"
+          [src]="project.photo"
+          [alt]="project.title"
+          loading="lazy"
+          decoding="async"
+          fetchpriority="low"
+          (error)="onHeroImageError($event)" />
       </div>
       <div class="project-body">
         <div class="project-title">{{ project.title }}</div>

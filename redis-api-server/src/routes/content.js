@@ -43,17 +43,15 @@ const {
   clampLimit,
   parsePageSort,
   parseProjection,
-  parseBoolean,
   parseCsvNumbers,
   parseCsvStrings,
-  parseStatusFilter,
   normalizeContentItem,
   sortPageItems,
   projectContentItem,
   buildBlogCardsFromPageItems,
   filterBlogCards,
   sortBlogCards,
-  stripBlogCardInternals,
+  stripPublicBlogCard,
   groupItemsByListItemId,
   filterByContentIds,
   pageSlice
@@ -240,7 +238,7 @@ router.use((req, res, next) => {
  * GET /api/content
  * Get all content from Redis
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     if (useDdbAsPrimary) {
       const contents = await ddbScanAllContent();
@@ -826,8 +824,10 @@ router.get('/v2/blog/cards', async (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const limit = clampLimit(req.query.limit, { defaultValue: 12, min: 1, max: 50 });
-    const status = parseStatusFilter(req.query.status, 'published');
-    const includeFuture = parseBoolean(req.query.includeFuture, false);
+    // This feed is public and cacheable. Caller-provided visibility flags must
+    // never make draft, scheduled, or future content part of its response.
+    const status = 'published';
+    const includeFuture = false;
     const q = String(req.query.q || '').trim();
     const category = String(req.query.category || '').trim();
 
@@ -863,7 +863,7 @@ router.get('/v2/blog/cards', async (req, res) => {
     const sorted = sortBlogCards(filtered);
     const pageSliceResult = pageSlice(sorted, offset, limit);
 
-    const items = pageSliceResult.items.map(stripBlogCardInternals);
+    const items = pageSliceResult.items.map(stripPublicBlogCard);
     const nextToken = pageSliceResult.hasMore
       ? encodeOffsetToken({
           offset: pageSliceResult.nextOffset,
@@ -905,9 +905,16 @@ router.get('/v2/blog/cards/media', async (req, res) => {
     }
 
     const allItems = await readContentByListItemIds(listItemIDs);
+    const visibleListItemIDs = new Set(
+      filterBlogCards(buildBlogCardsFromPageItems(allItems), {
+        status: 'published',
+        includeFuture: false
+      }).map((card) => card.listItemID)
+    );
     const normalized = allItems
       .map(normalizeContentItem)
       .filter(Boolean)
+      .filter((item) => visibleListItemIDs.has(String(item.ListItemID || '').trim()))
       .filter((item) => Number(item.PageID) === BLOG_PAGE_ID && Number(item.PageContentID) === BLOG_IMAGE_CONTENT_ID);
 
     const byListItem = groupItemsByListItemId(normalized, listItemIDs);

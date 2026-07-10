@@ -255,7 +255,8 @@ function buildAdminDashboardPayload(items, { limit = 20, nextOffset = 0, q = '',
         status: 'all',
         includeFuture: true,
         q,
-        category
+        category,
+        includePrivateSearch: true
       }
     )
   );

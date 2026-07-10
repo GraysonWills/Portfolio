@@ -39,6 +39,13 @@ interface LandingProjectCard {
   url?: string;
 }
 
+interface HeroSlide {
+  photo: string;
+  alt: string;
+  displaySrc?: string;
+  srcset?: string;
+}
+
 @Component({
   selector: 'app-landing',
   standalone: false,
@@ -57,7 +64,7 @@ export class LandingComponent implements OnInit, OnDestroy {
   featuredProjects: LandingProjectCard[] = [];
   latestPosts: LandingPostCard[] = [];
   websiteUrl = '';
-  heroSlides: Array<{ photo: string; alt: string }> = [];
+  heroSlides: HeroSlide[] = [];
   activeHeroIndex: number = 0;
   isResumeCooldown = false;
 
@@ -67,9 +74,16 @@ export class LandingComponent implements OnInit, OnDestroy {
   isSubscribing = false;
   subscribeError = '';
   private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
+  private heroPrefetchIdleHandle: number | null = null;
+  private heroPrefetchTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  private heroPrefetchImage: HTMLImageElement | null = null;
+  private readonly requestedHeroUrls = new Set<string>();
+  private loadedHeroUrl: string | null = null;
   private resumeCooldownHandle: ReturnType<typeof setTimeout> | null = null;
   private readonly heroAutoplayMs = 5000;
+  private readonly heroPrefetchDelayMs = 1500;
   private readonly routeKey = '/';
+  private heroContentResolved = false;
   private viewStateRestored = false;
   private lastScrollY = 0;
   private readonly defaultHeroSlides: Array<{ photo: string; alt: string; order: number }> = [
@@ -112,13 +126,12 @@ export class LandingComponent implements OnInit, OnDestroy {
     this.loadLinkedInData();
     this.loadFeaturedProjects();
     this.loadLatestPosts();
-    this.refreshHeroSlides();
-    this.startHeroAutoplay();
   }
 
   ngOnDestroy(): void {
     this.persistViewState();
     this.stopHeroAutoplay();
+    this.cancelHeroPrefetch();
     this.clearResumeCooldown();
   }
 
@@ -152,11 +165,21 @@ export class LandingComponent implements OnInit, OnDestroy {
                 }
               } as RedisContent))
           : [];
+        this.heroContentResolved = true;
         this.refreshHeroSlides();
         this.tryRestoreViewState();
+        this.startHeroAutoplay();
       },
       error: (error) => {
         console.error('Error loading landing content:', error);
+        // Network-backed defaults are a recovery path only. Waiting until the
+        // content request fails avoids downloading defaults that are immediately
+        // replaced by API-provided slides during the normal path.
+        this.landingPhotos = [];
+        this.heroContentResolved = true;
+        this.refreshHeroSlides();
+        this.tryRestoreViewState();
+        this.startHeroAutoplay();
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
@@ -350,14 +373,25 @@ export class LandingComponent implements OnInit, OnDestroy {
 
   goToHeroSlide(index: number): void {
     if (!this.heroSlides.length) return;
-    this.activeHeroIndex = ((index % this.heroSlides.length) + this.heroSlides.length) % this.heroSlides.length;
+    const nextIndex = ((index % this.heroSlides.length) + this.heroSlides.length) % this.heroSlides.length;
+    if (nextIndex !== this.activeHeroIndex) {
+      this.cancelScheduledHeroPrefetch();
+      this.loadedHeroUrl = null;
+      this.activeHeroIndex = nextIndex;
+    }
     this.persistViewState();
     this.startHeroAutoplay();
   }
 
   nextHeroSlide(): void {
     if (this.heroSlides.length <= 1) return;
+    this.cancelScheduledHeroPrefetch();
+    this.loadedHeroUrl = null;
     this.activeHeroIndex = (this.activeHeroIndex + 1) % this.heroSlides.length;
+  }
+
+  get activeHeroSlide(): HeroSlide | null {
+    return this.heroSlides[this.activeHeroIndex] || null;
   }
 
   private refreshHeroSlides(): void {
@@ -368,24 +402,30 @@ export class LandingComponent implements OnInit, OnDestroy {
         const bOrder = Number(b.Metadata?.['order']) || Number.MAX_SAFE_INTEGER;
         return aOrder - bOrder;
       })
-      .map(item => ({
-        photo: item.Photo as string,
-        alt: item.Metadata?.['alt'] || 'Portfolio hero image'
-      }));
+      .map(item => this.createHeroSlide(
+        item.Photo as string,
+        item.Metadata?.['alt'] || 'Portfolio hero image'
+      ));
 
     this.heroSlides = items.length > 0
       ? items
-      : this.defaultHeroSlides.map(({ photo, alt }) => ({ photo, alt }));
+      : this.defaultHeroSlides.map(({ photo, alt }) => this.createHeroSlide(photo, alt));
 
     if (this.activeHeroIndex >= this.heroSlides.length) {
       this.activeHeroIndex = 0;
     }
-    this.startHeroAutoplay();
+
+    this.cancelHeroPrefetch();
+    this.loadedHeroUrl = null;
   }
 
   private startHeroAutoplay(): void {
     this.stopHeroAutoplay();
-    if (typeof window === 'undefined' || this.heroSlides.length <= 1) return;
+    if (
+      typeof window === 'undefined'
+      || this.heroSlides.length <= 1
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) return;
     this.heroAutoplayHandle = setInterval(() => this.nextHeroSlide(), this.heroAutoplayMs);
   }
 
@@ -393,6 +433,151 @@ export class LandingComponent implements OnInit, OnDestroy {
     if (!this.heroAutoplayHandle) return;
     clearInterval(this.heroAutoplayHandle);
     this.heroAutoplayHandle = null;
+  }
+
+  onHeroImageLoad(): void {
+    const currentSlide = this.activeHeroSlide;
+    if (!currentSlide?.photo) return;
+
+    // A cached or previously prefetched image still emits load. Treat it the
+    // same as a network load so the following slide can be warmed in sequence.
+    this.loadedHeroUrl = currentSlide.photo;
+    this.requestedHeroUrls.add(currentSlide.photo);
+    this.cancelScheduledHeroPrefetch();
+    this.scheduleNextHeroPrefetch();
+  }
+
+  private scheduleNextHeroPrefetch(): void {
+    if (
+      typeof window === 'undefined'
+      || this.heroSlides.length <= 1
+      || this.loadedHeroUrl !== this.activeHeroSlide?.photo
+      || this.shouldSkipHeroPrefetch()
+      || this.heroPrefetchTimeoutHandle !== null
+      || this.heroPrefetchIdleHandle !== null
+    ) return;
+
+    const currentSlide = this.activeHeroSlide;
+    if (currentSlide?.photo) {
+      this.requestedHeroUrls.add(currentSlide.photo);
+    }
+
+    const nextSlide = this.heroSlides[(this.activeHeroIndex + 1) % this.heroSlides.length];
+    if (!nextSlide?.photo || this.requestedHeroUrls.has(nextSlide.photo)) return;
+
+    const activeUrl = currentSlide?.photo || '';
+    this.heroPrefetchTimeoutHandle = setTimeout(() => {
+      this.heroPrefetchTimeoutHandle = null;
+      if (this.loadedHeroUrl !== activeUrl || this.activeHeroSlide?.photo !== activeUrl) return;
+
+      if (typeof window.requestIdleCallback === 'function') {
+        this.heroPrefetchIdleHandle = window.requestIdleCallback(() => {
+          this.heroPrefetchIdleHandle = null;
+          this.prefetchHeroSlide(nextSlide);
+        }, { timeout: 2000 });
+        return;
+      }
+
+      this.prefetchHeroSlide(nextSlide);
+    }, this.heroPrefetchDelayMs);
+  }
+
+  private prefetchHeroSlide(slide: HeroSlide): void {
+    const url = slide.photo;
+    if (
+      typeof window === 'undefined'
+      || this.shouldSkipHeroPrefetch()
+      || this.heroPrefetchImage
+      || this.requestedHeroUrls.has(url)
+    ) return;
+
+    // The active slide may have changed while this callback waited for idle time.
+    const nextSlide = this.heroSlides[(this.activeHeroIndex + 1) % this.heroSlides.length];
+    if (nextSlide?.photo !== url) return;
+
+    this.requestedHeroUrls.add(url);
+    const image = new Image();
+    image.decoding = 'async';
+    image.fetchPriority = 'low';
+    if (slide.srcset) {
+      image.srcset = slide.srcset;
+      image.sizes = '100vw';
+    }
+    this.heroPrefetchImage = image;
+
+    const complete = () => {
+      if (this.heroPrefetchImage !== image) return;
+      image.onload = null;
+      image.onerror = null;
+      this.heroPrefetchImage = null;
+      this.scheduleNextHeroPrefetch();
+    };
+
+    image.onload = complete;
+    image.onerror = complete;
+    image.src = slide.displaySrc || url;
+  }
+
+  private createHeroSlide(photo: string, alt: string): HeroSlide {
+    const source = String(photo || '').trim();
+    if (!source) return { photo: '', alt };
+
+    try {
+      const parsed = new URL(source);
+      if (parsed.hostname.toLowerCase() !== 'images.unsplash.com') {
+        return { photo: source, alt };
+      }
+
+      const buildVariant = (width: number): string => {
+        const variant = new URL(parsed.toString());
+        variant.searchParams.set('auto', 'format');
+        variant.searchParams.set('fit', 'crop');
+        variant.searchParams.delete('fm');
+        variant.searchParams.set('q', '72');
+        variant.searchParams.set('w', String(width));
+        return variant.toString();
+      };
+      const widths = [640, 960, 1280, 1600];
+
+      return {
+        photo: source,
+        alt,
+        displaySrc: buildVariant(1600),
+        srcset: widths.map(width => `${buildVariant(width)} ${width}w`).join(', ')
+      };
+    } catch {
+      return { photo: source, alt };
+    }
+  }
+
+  private shouldSkipHeroPrefetch(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    if (!connection) return false;
+
+    const effectiveType = String(connection.effectiveType || '').toLowerCase();
+    return connection.saveData === true || effectiveType === 'slow-2g' || effectiveType === '2g';
+  }
+
+  private cancelScheduledHeroPrefetch(): void {
+    if (this.heroPrefetchIdleHandle !== null && typeof window !== 'undefined') {
+      window.cancelIdleCallback?.(this.heroPrefetchIdleHandle);
+      this.heroPrefetchIdleHandle = null;
+    }
+    if (this.heroPrefetchTimeoutHandle !== null) {
+      clearTimeout(this.heroPrefetchTimeoutHandle);
+      this.heroPrefetchTimeoutHandle = null;
+    }
+  }
+
+  private cancelHeroPrefetch(): void {
+    this.cancelScheduledHeroPrefetch();
+    if (!this.heroPrefetchImage) return;
+    this.heroPrefetchImage.onload = null;
+    this.heroPrefetchImage.onerror = null;
+    this.heroPrefetchImage = null;
   }
 
   private clearResumeCooldown(): void {
@@ -405,11 +590,13 @@ export class LandingComponent implements OnInit, OnDestroy {
     const img = event.target as HTMLImageElement | null;
     if (!img || img.dataset['fallbackApplied'] === '1') return;
     img.dataset['fallbackApplied'] = '1';
+    img.removeAttribute('srcset');
+    img.removeAttribute('sizes');
     img.src = '/og-image.png';
   }
 
   private tryRestoreViewState(): void {
-    if (this.viewStateRestored) return;
+    if (this.viewStateRestored || !this.heroContentResolved) return;
 
     const state = this.routeViewState.getState<LandingViewState>(this.routeKey);
     if (!state) {

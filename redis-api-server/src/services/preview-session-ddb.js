@@ -11,7 +11,12 @@ const { getDdbDoc } = require('./aws/clients');
 const DEFAULT_PREVIEW_SESSIONS_TABLE = 'portfolio-content-preview-sessions';
 
 function getPreviewSessionsTableName() {
-  return String(process.env.PREVIEW_SESSIONS_TABLE_NAME || DEFAULT_PREVIEW_SESSIONS_TABLE).trim();
+  // An explicitly empty value is a supported opt-out for local/test runtimes.
+  // Only an undefined variable receives the production-compatible default.
+  if (process.env.PREVIEW_SESSIONS_TABLE_NAME !== undefined) {
+    return String(process.env.PREVIEW_SESSIONS_TABLE_NAME).trim();
+  }
+  return DEFAULT_PREVIEW_SESSIONS_TABLE;
 }
 
 function isPreviewSessionsDdbEnabled() {
@@ -83,4 +88,3 @@ module.exports = {
   getPreviewSession,
   deletePreviewSession,
 };
-

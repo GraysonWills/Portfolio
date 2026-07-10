@@ -194,9 +194,11 @@ function toBlogCard(item) {
       metadata.title || item?.Text || '',
       metadata.summary || '',
       ...(Array.isArray(metadata.tags) ? metadata.tags : []),
-      ...(Array.isArray(metadata.privateSeoTags) ? metadata.privateSeoTags : []),
       metadata.category || ''
-    ].join(' ').toLowerCase()
+    ].join(' ').toLowerCase(),
+    _privateSearchBlob: (Array.isArray(metadata.privateSeoTags) ? metadata.privateSeoTags : [])
+      .join(' ')
+      .toLowerCase()
   };
 }
 
@@ -214,7 +216,8 @@ function filterBlogCards(cards, filters) {
     status = 'published',
     includeFuture = false,
     q = '',
-    category = ''
+    category = '',
+    includePrivateSearch = false
   } = filters || {};
 
   const now = Date.now();
@@ -234,7 +237,10 @@ function filterBlogCards(cards, filters) {
       return false;
     }
 
-    if (qNorm && !card._searchBlob.includes(qNorm)) {
+    const searchBlob = includePrivateSearch
+      ? `${card._searchBlob || ''} ${card._privateSearchBlob || ''}`
+      : String(card._searchBlob || '');
+    if (qNorm && !searchBlob.includes(qNorm)) {
       return false;
     }
 
@@ -251,7 +257,13 @@ function sortBlogCards(cards) {
 }
 
 function stripBlogCardInternals(card) {
-  const { _publishTs, _updatedTs, _searchBlob, ...publicCard } = card;
+  const { _publishTs, _updatedTs, _searchBlob, _privateSearchBlob, ...publicCard } = card;
+  return publicCard;
+}
+
+function stripPublicBlogCard(card) {
+  const publicCard = stripBlogCardInternals(card);
+  delete publicCard.privateSeoTags;
   return publicCard;
 }
 
@@ -307,6 +319,7 @@ module.exports = {
   filterBlogCards,
   sortBlogCards,
   stripBlogCardInternals,
+  stripPublicBlogCard,
   groupItemsByListItemId,
   filterByContentIds,
   pageSlice

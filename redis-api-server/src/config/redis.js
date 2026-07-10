@@ -2,8 +2,6 @@
  * Redis Client Configuration
  */
 
-const { createClient } = require('redis');
-
 // Parse Redis Cloud host and port from endpoint if provided
 // Default to empty so Redis can be optionally disabled.
 let redisHost = process.env.REDIS_HOST || '';
@@ -65,6 +63,11 @@ function createDisabledRedisClient() {
 let redisClient;
 
 if (redisConfigured) {
+  // Loading the Redis package pulls in the full Redis client graph. Keep it
+  // out of DynamoDB-only Lambda cold starts, where no Redis client is needed.
+  // eslint-disable-next-line global-require
+  const { createClient } = require('redis');
+
   // Log connection type
   if (requiresTLS) {
     console.log(`Redis enabled (TLS) at ${redisHost}:${redisPort}`);

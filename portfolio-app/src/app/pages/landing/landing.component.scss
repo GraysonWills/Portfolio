@@ -40,12 +40,12 @@
 .hero-image-container {
   position: absolute;
   inset: 0;
-  opacity: 0;
-  transition: opacity 0.65s ease-in-out;
+  opacity: 0.18;
+  animation: heroFadeInA 0.65s ease-in-out;
 }
 
-.hero-image-container.active {
-  opacity: 0.18;
+.hero-image-container--alternate {
+  animation-name: heroFadeInB;
 }
 
 .hero-image {
@@ -58,6 +58,24 @@
 @keyframes heroZoom {
   from { transform: scale(1); }
   to   { transform: scale(1.06); }
+}
+
+// Alternating names restart the fade when the single mounted image changes.
+@keyframes heroFadeInA {
+  from { opacity: 0; }
+  to   { opacity: 0.18; }
+}
+
+@keyframes heroFadeInB {
+  from { opacity: 0; }
+  to   { opacity: 0.18; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-image-container,
+  .hero-image {
+    animation: none;
+  }
 }
 
 .hero-grid {

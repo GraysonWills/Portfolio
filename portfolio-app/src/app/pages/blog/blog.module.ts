@@ -2,7 +2,6 @@ import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
 import { SharedModule } from '../../shared/shared.module';
 import { BlogComponent } from './blog.component';
-import { BlogDetailComponent } from './blog-detail/blog-detail.component';
 
 const routes: Routes = [
   {
@@ -12,19 +11,11 @@ const routes: Routes = [
       title: 'Blog',
       description: 'Engineering writing and notes by Grayson Wills.'
     }
-  },
-  {
-    path: ':id',
-    component: BlogDetailComponent,
-    data: {
-      title: 'Blog Post',
-      description: 'A blog post by Grayson Wills.'
-    }
   }
 ];
 
 @NgModule({
-  declarations: [BlogComponent, BlogDetailComponent],
+  declarations: [BlogComponent],
   imports: [
     SharedModule,
     RouterModule.forChild(routes)

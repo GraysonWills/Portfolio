@@ -29,7 +29,16 @@ const routes: Routes = [
   },
   {
     path: 'blog',
+    pathMatch: 'full',
     loadChildren: () => import('./pages/blog/blog.module').then(m => m.BlogModule),
+    data: {
+      title: 'Blog',
+      description: 'Engineering writing and notes by Grayson Wills.'
+    }
+  },
+  {
+    path: 'blog',
+    loadChildren: () => import('./pages/blog/blog-detail/blog-detail.module').then(m => m.BlogDetailModule),
     data: {
       title: 'Blog',
       description: 'Engineering writing and notes by Grayson Wills.'

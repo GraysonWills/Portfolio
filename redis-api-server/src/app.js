@@ -12,21 +12,101 @@ const compression = require('compression');
 const morgan = require('morgan');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
-const contentRoutes = require('./routes/content');
-const uploadRoutes = require('./routes/upload');
-const healthRoutes = require('./routes/health');
-const adminRoutes = require('./routes/admin');
-const subscriptionsRoutes = require('./routes/subscriptions');
-const notificationsRoutes = require('./routes/notifications');
-const analyticsRoutes = require('./routes/analytics');
-const photoAssetsRoutes = require('./routes/photo-assets');
-const mediaRoutes = require('./routes/media');
-const resumeRoutes = require('./routes/resume');
-const commentsRoutes = require('./routes/comments');
-const socialAuthRoutes = require('./routes/social-auth');
-const socialDistributionRoutes = require('./routes/social-distribution');
-const blogRoutes = require('./routes/blog');
-const mcpRoutes = require('./routes/mcp');
+const ERROR_CACHE_CONTROL = 'no-store, max-age=0, s-maxage=0';
+const CACHE_HEADER_NAMES = new Set(['cache-control', 'pragma', 'expires', 'surrogate-control']);
+const RATE_LIMIT_HEADER_NAMES = new Set([
+  'ratelimit-limit',
+  'ratelimit-policy',
+  'ratelimit-remaining',
+  'ratelimit-reset'
+]);
+
+function setErrorNoStoreHeaders(res) {
+  res.setHeader('Cache-Control', ERROR_CACHE_CONTROL);
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
+function sanitizeWriteHeadHeaders(headers, { forceNoStore = false, stripRateLimit = false } = {}) {
+  const shouldRemove = (name) => {
+    const normalized = String(name || '').toLowerCase();
+    return (forceNoStore && CACHE_HEADER_NAMES.has(normalized))
+      || (stripRateLimit && RATE_LIMIT_HEADER_NAMES.has(normalized));
+  };
+
+  if (Array.isArray(headers)) {
+    const sanitized = [];
+    for (let index = 0; index < headers.length; index += 2) {
+      if (shouldRemove(headers[index])) continue;
+      sanitized.push(headers[index], headers[index + 1]);
+    }
+    if (forceNoStore) {
+      sanitized.push(
+        'Cache-Control', ERROR_CACHE_CONTROL,
+        'Pragma', 'no-cache',
+        'Expires', '0',
+        'Surrogate-Control', 'no-store'
+      );
+    }
+    return sanitized;
+  }
+
+  if (!headers || typeof headers !== 'object') return headers;
+  const sanitized = { ...headers };
+  for (const name of Object.keys(sanitized)) {
+    if (shouldRemove(name)) delete sanitized[name];
+  }
+  if (forceNoStore) {
+    sanitized['Cache-Control'] = ERROR_CACHE_CONTROL;
+    sanitized.Pragma = 'no-cache';
+    sanitized.Expires = '0';
+    sanitized['Surrogate-Control'] = 'no-store';
+  }
+  return sanitized;
+}
+
+function installResponseCacheSafety(res) {
+  const originalWriteHead = res.writeHead;
+  res.writeHead = function guardedWriteHead(statusCode, ...args) {
+    const status = Number(statusCode);
+    const forceNoStore = Number.isFinite(status) && status >= 400;
+    const stripRateLimit = !forceNoStore && res.locals?.publicCacheable === true;
+
+    if (forceNoStore) setErrorNoStoreHeaders(this);
+    if (stripRateLimit) {
+      for (const name of RATE_LIMIT_HEADER_NAMES) this.removeHeader(name);
+    }
+
+    const headerIndex = typeof args[0] === 'string' ? 1 : 0;
+    if (args[headerIndex]) {
+      args[headerIndex] = sanitizeWriteHeadHeaders(args[headerIndex], {
+        forceNoStore,
+        stripRateLimit
+      });
+    }
+
+    return originalWriteHead.call(this, statusCode, ...args);
+  };
+}
+
+function lazyRouter(loadRouter) {
+  let router = null;
+
+  return function loadRouteOnFirstRequest(req, res, next) {
+    try {
+      if (!router) {
+        router = loadRouter();
+        if (typeof router !== 'function') {
+          throw new TypeError('Lazy route loader must return an Express router');
+        }
+      }
+      return router(req, res, next);
+    } catch (err) {
+      return next(err);
+    }
+  };
+}
 
 function createApp() {
   const app = express();
@@ -99,6 +179,13 @@ function createApp() {
   // ─── Security ────────────────────────────────────────────────
   // Reduce passive fingerprinting.
   app.disable('x-powered-by');
+
+  // Install before rate limiting and route handlers so every error response
+  // is uncacheable, including errors emitted by upstream middleware.
+  app.use((req, res, next) => {
+    installResponseCacheSafety(res);
+    next();
+  });
 
   app.use(helmet({
     contentSecurityPolicy: false, // Allow inline scripts for portfolio
@@ -201,6 +288,7 @@ function createApp() {
   app.use('/api', (req, res, next) => {
     if (req.method === 'GET') {
       if (isPublicContentCacheable(req)) {
+        res.locals.publicCacheable = true;
         res.set('Cache-Control', getPublicReadCacheControl());
         res.set('Vary', 'Accept-Encoding');
       } else {
@@ -213,21 +301,24 @@ function createApp() {
   });
 
   // ─── Routes ──────────────────────────────────────────────────
-  app.use('/api/health', healthRoutes);
-  app.use('/api/content', contentRoutes);
-  app.use('/api/upload', writeLimiter, uploadRoutes);
-  app.use('/api/admin', writeLimiter, adminRoutes);
-  app.use('/api/subscriptions', writeLimiter, subscriptionsRoutes);
-  app.use('/api/notifications', writeLimiter, notificationsRoutes);
-  app.use('/api/analytics', analyticsLimiter, analyticsRoutes);
-  app.use('/api/photo-assets', writeLimiter, photoAssetsRoutes);
-  app.use('/api/resume', resumeLimiter, resumeRoutes);
-  app.use('/api/comments', commentsRoutes);
-  app.use('/api/social-auth', writeLimiter, socialAuthRoutes);
-  app.use('/api/social-distribution', writeLimiter, socialDistributionRoutes);
-  app.use('/api/blog', writeLimiter, blogRoutes);
-  app.use('/api/mcp', writeLimiter, mcpRoutes);
-  app.use('/media', mediaRoutes);
+  // Route modules pull in independent AWS SDK clients and, for MCP, a large
+  // protocol stack. Load only the requested route graph so a public-content
+  // cold start does not initialize unrelated admin and worker dependencies.
+  app.use('/api/health', lazyRouter(() => require('./routes/health')));
+  app.use('/api/content', lazyRouter(() => require('./routes/content')));
+  app.use('/api/upload', writeLimiter, lazyRouter(() => require('./routes/upload')));
+  app.use('/api/admin', writeLimiter, lazyRouter(() => require('./routes/admin')));
+  app.use('/api/subscriptions', writeLimiter, lazyRouter(() => require('./routes/subscriptions')));
+  app.use('/api/notifications', writeLimiter, lazyRouter(() => require('./routes/notifications')));
+  app.use('/api/analytics', analyticsLimiter, lazyRouter(() => require('./routes/analytics')));
+  app.use('/api/photo-assets', writeLimiter, lazyRouter(() => require('./routes/photo-assets')));
+  app.use('/api/resume', resumeLimiter, lazyRouter(() => require('./routes/resume')));
+  app.use('/api/comments', lazyRouter(() => require('./routes/comments')));
+  app.use('/api/social-auth', writeLimiter, lazyRouter(() => require('./routes/social-auth')));
+  app.use('/api/social-distribution', writeLimiter, lazyRouter(() => require('./routes/social-distribution')));
+  app.use('/api/blog', writeLimiter, lazyRouter(() => require('./routes/blog')));
+  app.use('/api/mcp', writeLimiter, lazyRouter(() => require('./routes/mcp')));
+  app.use('/media', lazyRouter(() => require('./routes/media')));
 
   app.get('/', (req, res) => {
     res.json({

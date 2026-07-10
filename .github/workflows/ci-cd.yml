@@ -139,20 +139,28 @@ jobs:
             --exclude "index.html" \
             --exclude "favicon.ico" \
             --exclude "favicon.png" \
+            --exclude "robots.txt" \
+            --exclude "sitemap.xml" \
             --cache-control "public,max-age=31536000,immutable"
 
-      - name: Deploy HTML + favicon assets (no-cache)
+      - name: Deploy shell and stable-name assets
         run: |
           BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${S3_BUCKET}/index.html" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=0,s-maxage=60,must-revalidate,stale-while-revalidate=300" \
             --content-type "text/html"
           aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${S3_BUCKET}/favicon.ico" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=86400,s-maxage=604800,stale-while-revalidate=86400" \
             --content-type "image/x-icon"
           aws s3 cp "$BUILD_DIR/favicon.png" "s3://${S3_BUCKET}/favicon.png" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=86400,s-maxage=604800,stale-while-revalidate=86400" \
             --content-type "image/png"
+          aws s3 cp "$BUILD_DIR/robots.txt" "s3://${S3_BUCKET}/robots.txt" \
+            --cache-control "public,max-age=300,s-maxage=3600,stale-while-revalidate=86400" \
+            --content-type "text/plain"
+          aws s3 cp "$BUILD_DIR/sitemap.xml" "s3://${S3_BUCKET}/sitemap.xml" \
+            --cache-control "public,max-age=300,s-maxage=3600,stale-while-revalidate=86400" \
+            --content-type "application/xml"
 
       - name: Ensure CloudFront apex redirect + SPA viewer-request handler
         run: |
@@ -199,17 +207,17 @@ jobs:
             --exclude "favicon.png" \
             --cache-control "public,max-age=31536000,immutable"
 
-      - name: Deploy HTML + favicon assets (no-cache)
+      - name: Deploy shell and favicon assets
         run: |
           BUILD_DIR="blog-authoring-gui/dist/blog-authoring-gui/browser"
           aws s3 cp "$BUILD_DIR/index.html" "s3://${BLOG_AUTHORING_S3_BUCKET}/index.html" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=0,s-maxage=60,must-revalidate,stale-while-revalidate=300" \
             --content-type "text/html"
           aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.ico" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=86400,s-maxage=604800,stale-while-revalidate=86400" \
             --content-type "image/x-icon"
           aws s3 cp "$BUILD_DIR/favicon.png" "s3://${BLOG_AUTHORING_S3_BUCKET}/favicon.png" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
+            --cache-control "public,max-age=86400,s-maxage=604800,stale-while-revalidate=86400" \
             --content-type "image/png"
 
       - name: Invalidate CloudFront shell paths
