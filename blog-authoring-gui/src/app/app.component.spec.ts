@@ -5,6 +5,8 @@ import { AppComponent } from './app.component';
 import { AuthService } from './services/auth.service';
 
 class AuthServiceStub {
+  async ensureReady(): Promise<void> {}
+
   isAuthenticated(): boolean {
     return true;
   }

@@ -8,6 +8,7 @@ import { MessageService, ConfirmationService } from 'primeng/api';
 import { RedisContent, ContentGroup, BlogPostMetadata, PageContentID, PageID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
 import { HotkeysService } from '../../services/hotkeys.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 
 interface DashboardPostView {
   source: ContentGroup | null;
@@ -100,7 +101,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     private confirmationService: ConfirmationService,
     private router: Router,
     private route: ActivatedRoute,
-    private hotkeys: HotkeysService
+    private hotkeys: HotkeysService,
+    private nativePlatform: NativePlatformService
   ) {}
 
   ngOnInit(): void {
@@ -593,7 +595,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }).subscribe({
       next: (session) => {
         const url = this.blogApi.buildPortfolioPreviewUrl(session.token, path);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        void this.nativePlatform.openExternalUrl(url);
       },
       error: () => {
         this.messageService.add({

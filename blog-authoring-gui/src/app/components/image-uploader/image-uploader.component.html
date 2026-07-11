@@ -18,18 +18,28 @@
     (drop)="onDrop($event)"
     [class.uploading]="isUploading"
     [class.compressing]="isCompressing">
+    <div class="native-photo-actions" *ngIf="isNative">
+      <button type="button" class="native-photo-button primary" (click)="capturePhoto()" [disabled]="isUploading || isCompressing">
+        <i class="pi pi-camera"></i>
+        Take Photo
+      </button>
+      <button type="button" class="native-photo-button" (click)="choosePhoto()" [disabled]="isUploading || isCompressing">
+        <i class="pi pi-images"></i>
+        Photo Library
+      </button>
+    </div>
     <p-fileUpload
       mode="basic"
       accept=".jpg,.jpeg,.png,.webp,.gif,.avif,.svg,image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml"
       [maxFileSize]="10485760"
       [auto]="false"
-      chooseLabel="Choose Image"
+      [chooseLabel]="isNative ? 'Browse Files' : 'Choose Image'"
       [showUploadButton]="false"
       (onSelect)="onFileSelect($event)"
       styleClass="custom-file-upload">
     </p-fileUpload>
     <p *ngIf="!previewUrl && !currentImage" class="upload-hint">
-      Drag and drop an image here, or click to select<br>
+      {{ isNative ? 'Take a photo, choose from your library, or browse Files.' : 'Drag and drop an image here, or click to select.' }}<br>
       <small>Max size: 10MB &mdash; images are auto-compressed/resized and converted to AVIF/WebP when supported</small>
     </p>
     <p *ngIf="isCompressing" class="upload-status">

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
+  <defs>
+    <linearGradient id="mark" x1="920" y1="780" x2="1870" y2="1900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#133456"/>
+      <stop offset="0.62" stop-color="#295c8e"/>
+      <stop offset="1" stop-color="#c1673a"/>
+    </linearGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="#fffdfa"/>
+  <circle cx="1366" cy="1250" r="420" fill="url(#mark)"/>
+  <circle cx="1366" cy="1250" r="342" fill="#10243b" fill-opacity="0.94" stroke="#fffdfa" stroke-width="15"/>
+  <circle cx="1366" cy="1250" r="392" fill="none" stroke="#16273c" stroke-width="12" opacity="0.32"/>
+  <text x="1334" y="1370" text-anchor="middle" fill="#fffdfa" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="304" font-weight="700" letter-spacing="-40">GW</text>
+  <g transform="translate(1588 904) rotate(35)">
+    <rect x="-25" y="0" width="50" height="222" rx="25" fill="#d78351" stroke="#fffdfa" stroke-width="9"/>
+    <path d="M-25 187h50L0 250z" fill="#fffdfa"/>
+    <circle cx="0" cy="212" r="9" fill="#c1673a"/>
+  </g>
+  <text x="1366" y="1816" text-anchor="middle" fill="#16273c" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="150" font-weight="700" letter-spacing="4">Author Studio</text>
+  <text x="1366" y="1942" text-anchor="middle" fill="#546475" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="62" font-weight="500" letter-spacing="15">WRITE · EDIT · PUBLISH</text>
+</svg>

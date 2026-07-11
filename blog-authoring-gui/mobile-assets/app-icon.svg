@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="80" x2="930" y2="950" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#133456"/>
+      <stop offset="0.58" stop-color="#295c8e"/>
+      <stop offset="1" stop-color="#c1673a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(322 230) rotate(48) scale(720)">
+      <stop stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="334" fill="none" stroke="#fffdfa" stroke-width="18" opacity="0.96"/>
+  <circle cx="512" cy="512" r="292" fill="#10243b" fill-opacity="0.82" stroke="#fffdfa" stroke-width="7" opacity="0.98"/>
+  <path d="M299 330c62-73 132-109 213-109s151 36 213 109" fill="none" stroke="#fffdfa" stroke-width="11" stroke-linecap="round" opacity="0.72"/>
+  <path d="M299 694c62 73 132 109 213 109s151-36 213-109" fill="none" stroke="#fffdfa" stroke-width="11" stroke-linecap="round" opacity="0.72"/>
+  <text x="486" y="604" text-anchor="middle" fill="#fffdfa" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="250" font-weight="700" letter-spacing="-34">GW</text>
+  <g transform="translate(685 250) rotate(35)">
+    <rect x="-21" y="0" width="42" height="182" rx="21" fill="#d78351" stroke="#fffdfa" stroke-width="7"/>
+    <path d="M-21 153h42L0 205z" fill="#fffdfa"/>
+    <circle cx="0" cy="174" r="7" fill="#c1673a"/>
+  </g>
+</svg>

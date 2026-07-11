@@ -68,6 +68,8 @@ secure_bucket() {
           "AllowedOrigins": [
             "https://d39s45clv1oor3.cloudfront.net",
             "https://www.grayson-wills.com",
+            "https://author.grayson-wills.com",
+            "capacitor://localhost",
             "http://localhost:4200",
             "http://localhost:4300"
           ],

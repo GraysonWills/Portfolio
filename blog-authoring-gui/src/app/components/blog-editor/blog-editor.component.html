@@ -2,9 +2,27 @@
   <p-card class="editor-card">
     <div class="editor-header">
       <h2>{{ initialData ? 'Edit Blog Post' : 'Create New Blog Post' }}</h2>
+      <span class="local-draft-status" [class.error]="localDraftState === 'error'">
+        <i class="pi" [ngClass]="localDraftState === 'error' ? 'pi-exclamation-circle' : 'pi-cloud-upload'"></i>
+        {{ localDraftStatusText }}
+      </span>
     </div>
 
     <form [formGroup]="blogForm" class="editor-form">
+      <div class="mobile-editor-bar" role="region" aria-label="Post save controls">
+        <div>
+          <strong>{{ initialData ? 'Editing post' : 'New post' }}</strong>
+          <small>{{ localDraftStatusText }}</small>
+        </div>
+        <button
+          type="button"
+          class="mobile-save-button"
+          (click)="savePost()"
+          [disabled]="blogForm.invalid || isSaving">
+          <i class="pi" [ngClass]="isSaving ? 'pi-spin pi-spinner' : 'pi-save'"></i>
+          {{ primaryActionLabel }}
+        </button>
+      </div>
       <div class="editor-workspace">
         <section class="editor-main-column">
           <!-- Title -->
@@ -74,7 +92,7 @@
           <div class="form-group side-card">
             <label>Featured Image</label>
             <app-image-uploader 
-              (imageUploaded)="uploadedImage = $event"
+              (imageUploaded)="onFeaturedImageUploaded($event)"
               [currentImage]="uploadedImage">
             </app-image-uploader>
             <div class="image-actions">
@@ -404,7 +422,7 @@
           styleClass="p-button-outlined p-button-danger">
         </p-button>
         <p-button 
-          label="Save Post" 
+          [label]="primaryActionLabel"
           icon="pi pi-save"
           (onClick)="savePost()"
           [disabled]="blogForm.invalid || isSaving"

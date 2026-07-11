@@ -89,3 +89,82 @@ kbd {
     gap: 0.35rem;
   }
 }
+
+.native-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  padding: max(32px, env(safe-area-inset-top)) 28px max(32px, env(safe-area-inset-bottom));
+  background: linear-gradient(145deg, #0d2035 0%, #162f4d 58%, #8d4e31 140%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.native-lock-mark {
+  width: 76px;
+  height: 76px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  font-family: var(--f-display);
+  font-size: 24px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 22px 50px -28px #000;
+}
+
+.native-lock-kicker {
+  margin: 24px 0 8px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.native-lock h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(28px, 9vw, 42px);
+}
+
+.native-lock > p:not(.native-lock-kicker) {
+  max-width: 340px;
+  margin: 12px auto 26px;
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.55;
+}
+
+.native-lock button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 22px;
+  background: #fff;
+  color: #17314f;
+  font-family: var(--f-display);
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.native-lock button:disabled {
+  opacity: 0.7;
+}
+
+.native-lock .native-lock-secondary {
+  min-height: 40px;
+  margin-top: 10px;
+  padding: 0 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}

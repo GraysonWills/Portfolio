@@ -2,6 +2,8 @@
 
 Authenticated Angular authoring console for portfolio/blog/site content.
 
+The private Capacitor iPhone build, security model, signing steps, and physical-device acceptance checklist are documented in [`../docs/ios-author-studio.md`](../docs/ios-author-studio.md).
+
 ## Current Feature Set
 
 - Cognito auth routes:

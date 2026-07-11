@@ -158,6 +158,46 @@ test('requestSubscription returns ALREADY_PENDING after a conditional-write conf
   }
 });
 
+test('confirmSubscription reaches SUBSCRIBED and sends the subscribed email', async () => {
+  const ddbCalls = [];
+  const sesCalls = [];
+  let getCount = 0;
+  const { subscriptions, restore } = loadSubscriptionsWithStubs({
+    ddbSend: async (command) => {
+      ddbCalls.push(command);
+      if (command.constructor.name === 'GetCommand') {
+        getCount += 1;
+        if (getCount === 1) {
+          return {
+            Item: {
+              action: 'confirm',
+              emailHash: 'subscriber-hash',
+              expiresAtEpoch: Math.floor(Date.now() / 1000) + 3600
+            }
+          };
+        }
+        return { Item: { email: 'test@example.com' } };
+      }
+      return {};
+    },
+    sesSend: async (command) => {
+      sesCalls.push(command);
+      return { MessageId: 'subscribed-message' };
+    }
+  });
+
+  try {
+    const result = await subscriptions.confirmSubscription({ token: 'valid-confirm-token' });
+    const statusUpdate = ddbCalls.find((command) => command.constructor.name === 'UpdateCommand');
+
+    assert.equal(result.status, 'SUBSCRIBED');
+    assert.equal(statusUpdate.input.ExpressionAttributeValues[':subscribed'], 'SUBSCRIBED');
+    assert.equal(sesCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 test('getSubscriptionForEmail returns public subscription state for the signed-in email', async () => {
   const { subscriptions, restore } = loadSubscriptionsWithStubs({
     ddbSend: async (command) => {

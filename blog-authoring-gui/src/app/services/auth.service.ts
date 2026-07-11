@@ -1,14 +1,8 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-
-type StoredSession = {
-  username: string;
-  idToken: string;
-  accessToken: string;
-  refreshToken?: string;
-  expiresAtMs: number;
-};
+import { AuthSessionStorageService, StoredAuthSession } from './auth-session-storage.service';
+import { Capacitor } from '@capacitor/core';
 
 type CognitoAuthTokens = {
   AccessToken?: string;
@@ -23,6 +17,7 @@ type CognitoAuthResponse = {
 
 type CognitoTarget =
   | 'InitiateAuth'
+  | 'RevokeToken'
   | 'SignUp'
   | 'ConfirmSignUp'
   | 'ForgotPassword'
@@ -40,18 +35,44 @@ export type LoginThrottleState = {
   providedIn: 'root'
 })
 export class AuthService {
-  private readonly SESSION_KEY = 'blog_authoring_cognito_session_v1';
   private readonly LOGIN_ATTEMPTS_KEY = 'blog_authoring_login_attempts_v1';
   private readonly MAX_LOGIN_ATTEMPTS = 5;
   private readonly LOGIN_WINDOW_MS = 5 * 60 * 1000;
   private readonly TOKEN_REFRESH_SKEW_MS = 60 * 1000;
-  private session: StoredSession | null = null;
+  private session: StoredAuthSession | null = null;
   private refreshPromise: Promise<string | null> | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionGeneration = 0;
+  private credentialGeneration = 0;
+  private storageMutation: Promise<void> = Promise.resolve();
+  private readonly readyPromise: Promise<void>;
 
-  constructor() {
-    this.loadSession();
+  constructor(private readonly sessionStorage: AuthSessionStorageService) {
+    this.readyPromise = this.loadSession();
     this.startRefreshTimer();
+  }
+
+  async ensureReady(): Promise<void> {
+    await this.readyPromise;
+  }
+
+  lockNativeSessionInMemory(): void {
+    if (!this.sessionStorage.usesNativeVault || !this.session?.refreshToken) return;
+    this.sessionGeneration += 1;
+    this.refreshPromise = null;
+    this.session = null;
+  }
+
+  async unlockNativeSession(): Promise<boolean> {
+    if (!this.sessionStorage.usesNativeVault) return this.isAuthenticated();
+    const generation = ++this.sessionGeneration;
+    this.refreshPromise = null;
+    await this.storageMutation.catch(() => undefined);
+    const stored = await this.sessionStorage.load();
+    if (generation !== this.sessionGeneration || !stored) return false;
+    this.session = stored;
+    if (stored.refreshToken) await this.refreshSession();
+    return generation === this.sessionGeneration && this.isAuthenticated();
   }
 
   login(username: string, password: string): Observable<boolean> {
@@ -60,6 +81,10 @@ export class AuthService {
     if (!trimmedUser || !trimmedPass) return new Observable<boolean>((obs) => { obs.next(false); obs.complete(); });
 
     return new Observable<boolean>((observer) => {
+      const generation = ++this.sessionGeneration;
+      const credentialGeneration = this.credentialGeneration;
+      this.refreshPromise = null;
+      this.session = null;
       const throttle = this.getLoginThrottleState();
       if (throttle.locked) {
         observer.error(new Error(`Too many login attempts. Try again in ${this.formatDuration(throttle.retryAfterMs)}.`));
@@ -74,16 +99,27 @@ export class AuthService {
           PASSWORD: trimmedPass
         }
       })
-        .then((response) => {
+        .then(async (response) => {
           if (!response.AuthenticationResult?.IdToken || !response.AuthenticationResult?.AccessToken) {
             throw new Error('Cognito did not return a signed-in session.');
           }
           this.clearFailedLoginAttempts();
-          this.persistAuthTokens(trimmedUser, response.AuthenticationResult);
+          const persisted = await this.persistAuthTokens(
+            trimmedUser,
+            response.AuthenticationResult,
+            generation,
+            credentialGeneration
+          );
+          if (!persisted) throw new Error('Sign-in was superseded by a newer session action.');
           observer.next(true);
           observer.complete();
         })
         .catch((err) => {
+          if (generation !== this.sessionGeneration) {
+            observer.next(false);
+            observer.complete();
+            return;
+          }
           this.recordFailedLoginAttempt();
           const nextState = this.getLoginThrottleState();
           if (nextState.locked) {
@@ -100,6 +136,9 @@ export class AuthService {
   }
 
   startGoogleSsoLogin(): void {
+    if (Capacitor.isNativePlatform()) {
+      throw new Error('Native Google sign-in requires the authorization-code + PKCE client and is not enabled yet. Use the private studio login.');
+    }
     const domain = String(environment.cognito?.hostedUiDomain || '').trim();
     const redirect = String(environment.cognito?.redirectSignIn || '').trim() || `${window.location.origin}/login`;
     const clientId = String(environment.cognito?.clientId || '').trim();
@@ -118,7 +157,7 @@ export class AuthService {
     window.location.assign(`https://${domain}/oauth2/authorize?${query.toString()}`);
   }
 
-  completeHostedUiLoginFromHash(hash: string): boolean {
+  async completeHostedUiLoginFromHash(hash: string): Promise<boolean> {
     const raw = String(hash || '').trim();
     if (!raw.startsWith('#')) return false;
 
@@ -132,17 +171,32 @@ export class AuthService {
       || this.getJwtStringClaim(idToken, 'sub')
       || 'google-user';
 
-    this.persistHostedSession({ username, idToken, accessToken });
-    return true;
+    const generation = ++this.sessionGeneration;
+    const credentialGeneration = this.credentialGeneration;
+    this.refreshPromise = null;
+    this.session = null;
+    return this.persistHostedSession(
+      { username, idToken, accessToken },
+      generation,
+      credentialGeneration
+    );
   }
 
   logout(): void {
+    const refreshToken = String(this.session?.refreshToken || '').trim();
+    this.sessionGeneration += 1;
+    this.credentialGeneration += 1;
+    this.refreshPromise = null;
     this.session = null;
-    try {
-      localStorage.removeItem(this.SESSION_KEY);
-    } catch {
-      // ignore
-    }
+    // Clear the local credential immediately. Waiting for the network revoke
+    // can race with a fast re-login and erase the newly stored session.
+    void this.enqueueStorageMutation(() => this.sessionStorage.clear());
+    if (!refreshToken) return;
+
+    void this.callCognito('RevokeToken', {
+      ClientId: environment.cognito.clientId,
+      Token: refreshToken
+    }).catch(() => undefined);
   }
 
   private startRefreshTimer(): void {
@@ -173,6 +227,7 @@ export class AuthService {
   }
 
   async getValidIdToken(): Promise<string | null> {
+    await this.ensureReady();
     const existing = this.getIdToken();
     if (existing) return existing;
 
@@ -304,31 +359,29 @@ export class AuthService {
     });
   }
 
-  private loadSession(): void {
-    try {
-      const raw = localStorage.getItem(this.SESSION_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as StoredSession;
-      if (!parsed?.idToken || !parsed?.expiresAtMs) return;
-      if (Date.now() >= parsed.expiresAtMs && !parsed?.refreshToken) {
-        localStorage.removeItem(this.SESSION_KEY);
-        return;
-      }
-      this.session = parsed;
-      if (this.isTokenStale(parsed.expiresAtMs) && parsed.refreshToken && parsed.username) {
-        // Best-effort background refresh so the user can stay signed in across sessions.
-        void this.refreshSession();
-      }
-    } catch {
-      // ignore
+  private async loadSession(): Promise<void> {
+    const generation = this.sessionGeneration;
+    await this.storageMutation.catch(() => undefined);
+    const stored = await this.sessionStorage.load();
+    if (generation !== this.sessionGeneration || !stored) return;
+    this.session = stored;
+
+    if (this.isTokenStale(stored.expiresAtMs) && stored.refreshToken && stored.username) {
+      // Native launches unlock a device-only refresh credential, then obtain
+      // short-lived ID/access tokens into memory. Browsers refresh as before.
+      await this.refreshSession();
     }
   }
 
-  private persistHostedSession(input: { username: string; idToken: string; accessToken: string; refreshToken?: string }): void {
+  private async persistHostedSession(
+    input: { username: string; idToken: string; accessToken: string; refreshToken?: string },
+    expectedGeneration: number = this.sessionGeneration,
+    expectedCredentialGeneration: number = this.credentialGeneration
+  ): Promise<boolean> {
     const expMs = this.getJwtExpMs(input.idToken);
     const expiresAtMs = expMs ?? (Date.now() + 55 * 60 * 1000); // fallback ~55m
 
-    this.session = {
+    const nextSession: StoredAuthSession = {
       username: String(input.username || '').trim() || 'user',
       idToken: input.idToken,
       accessToken: input.accessToken,
@@ -336,14 +389,29 @@ export class AuthService {
       expiresAtMs
     };
 
-    try {
-      localStorage.setItem(this.SESSION_KEY, JSON.stringify(this.session));
-    } catch {
-      // ignore
+    if (expectedGeneration !== this.sessionGeneration) return false;
+    const stored = await this.enqueueStorageMutation(() => this.sessionStorage.save(nextSession));
+
+    if (expectedGeneration !== this.sessionGeneration) {
+      if (expectedCredentialGeneration !== this.credentialGeneration) {
+        await this.enqueueStorageMutation(() => this.sessionStorage.clear());
+      }
+      return false;
     }
+    if (this.sessionStorage.usesNativeVault && !stored) {
+      throw new Error('The secure iPhone credential could not be saved.');
+    }
+
+    this.session = nextSession;
+    return true;
   }
 
-  private persistAuthTokens(username: string, tokens: CognitoAuthTokens): void {
+  private async persistAuthTokens(
+    username: string,
+    tokens: CognitoAuthTokens,
+    expectedGeneration: number = this.sessionGeneration,
+    expectedCredentialGeneration: number = this.credentialGeneration
+  ): Promise<boolean> {
     const idToken = String(tokens.IdToken || '');
     const accessToken = String(tokens.AccessToken || '');
     if (!idToken || !accessToken) {
@@ -351,21 +419,27 @@ export class AuthService {
     }
 
     const refreshToken = String(tokens.RefreshToken || this.session?.refreshToken || '');
-    this.persistHostedSession({
-      username,
-      idToken,
-      accessToken,
-      ...(refreshToken ? { refreshToken } : {})
-    });
+    return this.persistHostedSession(
+      {
+        username,
+        idToken,
+        accessToken,
+        ...(refreshToken ? { refreshToken } : {})
+      },
+      expectedGeneration,
+      expectedCredentialGeneration
+    );
   }
 
   private async refreshSession(): Promise<string | null> {
     if (this.refreshPromise) return this.refreshPromise;
     if (!this.session?.username || !this.session?.refreshToken) return null;
 
-    this.refreshPromise = (async () => {
-      const username = this.session?.username || '';
-      const refreshToken = this.session?.refreshToken || '';
+    const generation = this.sessionGeneration;
+    const credentialGeneration = this.credentialGeneration;
+    const username = this.session.username;
+    const refreshToken = this.session.refreshToken;
+    const refresh = (async () => {
       try {
         const response = await this.callCognito('InitiateAuth', {
           AuthFlow: 'REFRESH_TOKEN_AUTH',
@@ -378,20 +452,34 @@ export class AuthService {
         if (!tokens?.IdToken || !tokens?.AccessToken) {
           throw new Error('Cognito did not return a refreshed session.');
         }
-        this.persistAuthTokens(username, {
-          ...tokens,
-          RefreshToken: tokens.RefreshToken || refreshToken
-        });
-        return this.session?.idToken || null;
-      } catch {
-        this.logout();
+        const persisted = await this.persistAuthTokens(
+          username,
+          {
+            ...tokens,
+            RefreshToken: tokens.RefreshToken || refreshToken
+          },
+          generation,
+          credentialGeneration
+        );
+        return persisted ? (this.session?.idToken || null) : null;
+      } catch (error) {
+        if (generation === this.sessionGeneration && this.isTerminalRefreshError(error)) this.logout();
         return null;
       }
-    })().finally(() => {
-      this.refreshPromise = null;
+    });
+    this.refreshPromise = refresh();
+    const activeRefresh = this.refreshPromise;
+    void activeRefresh.finally(() => {
+      if (this.refreshPromise === activeRefresh) this.refreshPromise = null;
     });
 
-    return this.refreshPromise;
+    return activeRefresh;
+  }
+
+  private enqueueStorageMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.storageMutation.catch(() => undefined).then(operation);
+    this.storageMutation = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   private async callCognito(target: CognitoTarget, body: Record<string, unknown>): Promise<CognitoAuthResponse> {
@@ -455,6 +543,12 @@ export class AuthService {
 
   private isTokenStale(expiresAtMs: number): boolean {
     return Date.now() + this.TOKEN_REFRESH_SKEW_MS >= expiresAtMs;
+  }
+
+  private isTerminalRefreshError(error: unknown): boolean {
+    const name = error instanceof Error ? error.name : '';
+    const message = error instanceof Error ? error.message : String(error || '');
+    return /NotAuthorizedException|UserNotFoundException|InvalidParameterException/i.test(`${name} ${message}`);
   }
 
   private loadRecentFailedAttempts(now: number): number[] {

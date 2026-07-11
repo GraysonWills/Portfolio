@@ -34,14 +34,19 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.refreshLockoutState();
     this.lockoutPoller = setInterval(() => this.refreshLockoutState(), 1000);
 
-    const completedHostedUi = this.authService.completeHostedUiLoginFromHash(window.location.hash || '');
+    void this.initializeExistingSession();
+  }
+
+  private async initializeExistingSession(): Promise<void> {
+    await this.authService.ensureReady();
+    const completedHostedUi = await this.authService.completeHostedUiLoginFromHash(window.location.hash || '');
     if (completedHostedUi) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
 
     // Redirect if already authenticated
     if (this.authService.isAuthenticated()) {
-      this.router.navigate(['/dashboard']);
+      await this.router.navigate(['/dashboard']);
     }
   }
 

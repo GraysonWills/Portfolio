@@ -5,6 +5,20 @@
   color: #17202a;
 }
 
+.mobile-studio-shell {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .mobile-studio-shell {
+    display: block;
+  }
+
+  .ai-container .ai-header {
+    display: none;
+  }
+}
+
 .ai-header,
 .section-heading,
 .form-row,

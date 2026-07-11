@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { AiQueueComponent } from './ai-queue.component';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService } from '../../services/blog-api.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 
 describe('AiQueueComponent', () => {
   function createComponent() {
@@ -44,8 +45,11 @@ describe('AiQueueComponent', () => {
     const router = {
       navigate: jasmine.createSpy('navigate')
     } as unknown as Router;
+    const nativePlatform = {
+      openExternalUrl: jasmine.createSpy('openExternalUrl')
+    } as unknown as NativePlatformService;
 
-    return new AiQueueComponent(authService, blogApi, messageService, confirmationService, router);
+    return new AiQueueComponent(authService, blogApi, messageService, confirmationService, router, nativePlatform);
   }
 
   it('applies scoped client presets', () => {

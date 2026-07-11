@@ -14,6 +14,27 @@
   border-bottom: 1px solid var(--bg-tertiary);
 }
 
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.local-draft-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--green);
+  font-family: var(--f-mono);
+  font-size: 0.68rem;
+
+  &.error {
+    color: var(--red);
+  }
+}
+
 .editor-header h2 {
   font-size: clamp(1.3rem, 2.5vw, 1.8rem);
   text-transform: uppercase;
@@ -601,11 +622,71 @@
 
   .editor-actions {
     justify-content: stretch;
-    flex-direction: column-reverse;
+    flex-direction: column;
   }
 
   ::ng-deep .editor-card .p-card-body,
   ::ng-deep .editor-card .p-card-content {
     padding: 1rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .blog-editor-container {
+    padding: 0 0 82px;
+  }
+
+  .editor-header {
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .editor-form {
+    gap: 0.85rem;
+  }
+
+  .main-field-card,
+  .side-card {
+    padding: 0.75rem;
+    border-radius: 12px;
+  }
+
+  .summary-textarea {
+    min-height: 96px;
+  }
+
+  ::ng-deep .p-editor-toolbar {
+    padding: 0.4rem;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  ::ng-deep .p-editor-toolbar .ql-formats {
+    margin-right: 0.28rem;
+  }
+
+  ::ng-deep .p-editor-content .ql-editor {
+    min-height: 260px;
+    padding: 0.8rem;
+  }
+
+  .editor-actions {
+    margin: 0 -0.3rem;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    box-shadow: 0 -14px 34px -26px rgba(18, 40, 70, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  ::ng-deep .editor-actions .p-button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .preview-card-media {
+    height: 180px;
   }
 }

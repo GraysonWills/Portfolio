@@ -772,6 +772,16 @@ test('allows authoring return URLs', () => {
   assert.equal(normalized, 'https://author.grayson-wills.com/distribution?draft=1');
 });
 
+test('allows the exact native authoring OAuth return origin', () => {
+  const normalized = socialAuth.normalizeReturnUrl('authorstudio://oauth/social?draft=1');
+  assert.equal(normalized, 'authorstudio://oauth/social?draft=1');
+});
+
+test('rejects untrusted native OAuth return origins', () => {
+  const normalized = socialAuth.normalizeReturnUrl('authorstudio://attacker/social');
+  assert.equal(normalized, 'https://author.grayson-wills.com/distribution');
+});
+
 test('summarizes token payload without exposing raw token values', () => {
   const summary = socialAuth.summarizeTokenPayload({
     access_token: 'secret-access',

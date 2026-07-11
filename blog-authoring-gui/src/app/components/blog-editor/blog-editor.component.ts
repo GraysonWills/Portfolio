@@ -1,9 +1,11 @@
 import { Component, OnDestroy, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { debounceTime, firstValueFrom, Subscription } from 'rxjs';
 import { BlogApiService } from '../../services/blog-api.service';
+import { BlogDraftRecoveryService, BlogDraftRecoverySnapshot } from '../../services/blog-draft-recovery.service';
 import { HotkeysService } from '../../services/hotkeys.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 import {
   SocialAutomationSettings,
   SocialAutomationTrigger,
@@ -46,6 +48,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   draftSignatureAuthor: string = '';
   draftSignatureName: string = 'Grayson Wills';
   savingSignatureSettings = false;
+  localDraftState: 'idle' | 'saved' | 'restored' | 'error' = 'idle';
+  localDraftSavedAt: Date | null = null;
   librarySignatureId: string = '';
   statusOptions = [
     { label: 'Draft', value: 'draft' },
@@ -88,11 +92,21 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   private previewListItemID: string = '';
   private cleanupHotkeys: (() => void) | null = null;
   private socialAutomationSettings: SocialAutomationSettings | null = null;
+  private draftChangesSubscription: Subscription | null = null;
+  private nativeAppStateSubscription: Subscription | null = null;
+  private draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private draftStorageKey = '';
+  private readonly beforeUnloadHandler = () => this.flushLocalDraft();
+  private readonly visibilityChangeHandler = () => {
+    if (document.visibilityState === 'hidden') this.flushLocalDraft();
+  };
 
   constructor(
     private fb: FormBuilder,
     private blogApi: BlogApiService,
+    private draftRecovery: BlogDraftRecoveryService,
     private socialAutomation: SocialDistributionAutomationService,
+    private nativePlatform: NativePlatformService,
     private hotkeys: HotkeysService,
     private txLog: TransactionLogService,
     private messageService: MessageService,
@@ -106,10 +120,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       content: ['', [Validators.required]],
       readTimeMinutes: [null, [Validators.min(1), Validators.max(120)]],
       publishDate: [new Date()],
-      status: ['published', [Validators.required]],
+      status: ['draft', [Validators.required]],
       category: [''],
       signatureId: [''],
-      sendEmailUpdate: [true]
+      sendEmailUpdate: [false]
     });
     this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
   }
@@ -119,12 +133,29 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       this.loadInitialData();
     }
     this.previewListItemID = this.initialData?.listItemID || `blog-preview-${Date.now()}`;
+    this.draftStorageKey = this.draftRecovery.keyFor(this.initialData?.listItemID);
+    this.offerLocalDraftRecovery();
+    this.draftChangesSubscription = this.blogForm.valueChanges
+      .pipe(debounceTime(900))
+      .subscribe(() => this.persistLocalDraft());
+    this.nativeAppStateSubscription = this.nativePlatform.appState$.subscribe((state) => {
+      if (!state.isActive) this.flushLocalDraft();
+    });
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
     this.loadSignatureSettings();
     this.loadSocialAutomationSettings();
     this.registerHotkeys();
   }
 
   ngOnDestroy(): void {
+    this.flushLocalDraft();
+    this.draftChangesSubscription?.unsubscribe();
+    this.draftChangesSubscription = null;
+    this.nativeAppStateSubscription?.unsubscribe();
+    this.nativeAppStateSubscription = null;
+    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
     this.cleanupHotkeys?.();
     this.cleanupHotkeys = null;
   }
@@ -173,10 +204,18 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
 
   removePublicTag(tag: string): void {
     this.publicTags = this.publicTags.filter((t) => t !== tag);
+    this.queueLocalDraftSave();
   }
 
   removePrivateSeoTag(tag: string): void {
     this.privateSeoTags = this.privateSeoTags.filter((t) => t !== tag);
+    this.queueLocalDraftSave();
+  }
+
+  onFeaturedImageUploaded(imageUrl: string): void {
+    this.uploadedImage = String(imageUrl || '').trim() || null;
+    this.blogForm.markAsDirty();
+    this.queueLocalDraftSave();
   }
 
   getSocialAutomationSummary(): string {
@@ -282,6 +321,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       this.privateSeoTags = merged;
       this.currentPrivateSeoTag = parsed.remainder;
     }
+    this.queueLocalDraftSave();
   }
 
   private parseTagInput(raw: string, flushRemainder: boolean): { tags: string[]; remainder: string } {
@@ -558,14 +598,21 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     if (!this.blogForm.valid) return;
 
     const formValue = this.blogForm.value;
-    const statusLabel = formValue.status === 'published' ? 'publish' : `save as ${formValue.status}`;
+    const statusLabel = formValue.status === 'published'
+      ? 'publish'
+      : (formValue.status === 'scheduled' ? 'schedule' : 'save this draft');
     const isEdit = !!this.initialData;
+    const acceptLabel = formValue.status === 'published'
+      ? 'Publish'
+      : (formValue.status === 'scheduled' ? 'Schedule' : 'Save Draft');
 
     this.confirmationService.confirm({
       message: `Are you sure you want to ${isEdit ? 'update' : statusLabel} "${formValue.title}"?`,
-      header: isEdit ? 'Confirm Update' : 'Confirm Publish',
+      header: formValue.status === 'published'
+        ? 'Confirm Publish'
+        : (formValue.status === 'scheduled' ? 'Confirm Schedule' : 'Confirm Draft Save'),
       icon: isEdit ? 'pi pi-pencil' : 'pi pi-upload',
-      acceptLabel: isEdit ? 'Update' : 'Publish',
+      acceptLabel,
       rejectLabel: 'Cancel',
       accept: () => {
         this.executeSave(formValue, isEdit);
@@ -662,6 +709,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
                 detail: `Blog post ${isEdit ? 'updated' : 'saved'} successfully`
               });
               this.isSaving = false;
+              this.clearLocalDraft();
               this.saved.emit();
             };
 
@@ -674,6 +722,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
                   this.txLog.log('SCHEDULE_FAILED', `Failed to schedule "${formValue.title}" — ${reason}`);
                   this.messageService.add({ severity: 'warn', summary: 'Saved', detail: `Post saved, but scheduling failed: ${reason}` });
                   this.isSaving = false;
+                  this.clearLocalDraft();
                   this.saved.emit();
                 }
               });
@@ -690,6 +739,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
                   this.txLog.log('PUBLISH_EVENTS_FAILED', `Failed publish events for "${formValue.title}" — ${err.message}`);
                   this.messageService.add({ severity: 'warn', summary: 'Published', detail: 'Post published, but distribution events failed.' });
                   this.isSaving = false;
+                  this.clearLocalDraft();
                   this.saved.emit();
                 }
               });
@@ -807,6 +857,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     if (!listItemID || this.isSaving) return;
 
     const title = String(this.blogForm.get('title')?.value || this.initialData?.title || 'Untitled').trim() || 'Untitled';
+    const hadUnsavedChanges = this.blogForm.dirty;
     this.confirmationService.confirm({
       message: `Unpublish "${title}"? It will be removed from the public portfolio blog immediately.`,
       header: 'Confirm Unpublish',
@@ -826,6 +877,13 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               detail: 'Post is now hidden from the public portfolio.'
             });
             this.isSaving = false;
+            if (hadUnsavedChanges) {
+              // Unpublish changes only visibility on the server. Preserve any
+              // unrelated form edits as an intentional recovery copy.
+              this.flushLocalDraft();
+            } else {
+              this.clearLocalDraft();
+            }
             this.saved.emit();
           },
           error: (error) => {
@@ -856,6 +914,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         rejectLabel: 'Keep Editing',
         acceptButtonStyleClass: 'p-button-danger',
         accept: () => {
+          this.clearLocalDraft();
           this.cancelled.emit();
         }
       });
@@ -869,6 +928,102 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
    */
   removeImage(): void {
     this.uploadedImage = null;
+    this.blogForm.markAsDirty();
+    this.queueLocalDraftSave();
+  }
+
+  get localDraftStatusText(): string {
+    if (this.localDraftState === 'restored') return 'Recovered on this device';
+    if (this.localDraftState === 'error') return 'Recovery copy unavailable';
+    if (this.localDraftState === 'saved' && this.localDraftSavedAt) {
+      return `Saved on device ${this.localDraftSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    }
+    return 'On-device recovery ready';
+  }
+
+  get primaryActionLabel(): string {
+    if (this.isSaving) return 'Saving…';
+    const status = String(this.blogForm.get('status')?.value || 'draft');
+    if (status === 'published') return 'Publish';
+    if (status === 'scheduled') return 'Schedule';
+    return this.initialData ? 'Save Draft' : 'Create Draft';
+  }
+
+  private offerLocalDraftRecovery(): void {
+    const snapshot = this.draftRecovery.load(this.draftStorageKey);
+    if (!snapshot) return;
+
+    const sourceUpdatedAt = this.initialData?.updatedAt ? new Date(this.initialData.updatedAt).getTime() : 0;
+    const recoveredAt = new Date(snapshot.savedAt).getTime();
+    if (!Number.isFinite(recoveredAt) || (sourceUpdatedAt && recoveredAt <= sourceUpdatedAt)) {
+      this.draftRecovery.clear(this.draftStorageKey);
+      return;
+    }
+
+    queueMicrotask(() => this.confirmationService.confirm({
+      message: `A recovery copy from ${new Date(snapshot.savedAt).toLocaleString()} is stored on this device. Restore it?`,
+      header: 'Recover Unsaved Draft',
+      icon: 'pi pi-history',
+      acceptLabel: 'Restore Draft',
+      rejectLabel: 'Discard Copy',
+      accept: () => this.restoreLocalDraft(snapshot),
+      reject: () => this.draftRecovery.clear(this.draftStorageKey)
+    }));
+  }
+
+  private restoreLocalDraft(snapshot: BlogDraftRecoverySnapshot): void {
+    const formValue = { ...snapshot.formValue } as Record<string, unknown>;
+    if (formValue['publishDate']) formValue['publishDate'] = new Date(String(formValue['publishDate']));
+    this.blogForm.patchValue(formValue, { emitEvent: false });
+    this.publicTags = this.normalizeTagList(snapshot.publicTags || []);
+    this.privateSeoTags = this.normalizeTagList(snapshot.privateSeoTags || []);
+    this.currentPublicTag = String(snapshot.pendingPublicTag || '');
+    this.currentPrivateSeoTag = String(snapshot.pendingPrivateTag || '');
+    this.uploadedImage = String(snapshot.uploadedImage || '').trim() || null;
+    this.blogForm.markAsDirty();
+    this.localDraftState = 'restored';
+    this.localDraftSavedAt = new Date(snapshot.savedAt);
+  }
+
+  private queueLocalDraftSave(): void {
+    if (this.draftSaveTimer) clearTimeout(this.draftSaveTimer);
+    this.draftSaveTimer = setTimeout(() => {
+      this.draftSaveTimer = null;
+      this.persistLocalDraft();
+    }, 900);
+  }
+
+  private flushLocalDraft(): void {
+    if (this.draftSaveTimer) clearTimeout(this.draftSaveTimer);
+    this.draftSaveTimer = null;
+    this.persistLocalDraft();
+  }
+
+  private persistLocalDraft(): void {
+    if (!this.draftStorageKey || !this.blogForm.dirty || this.isSaving) return;
+    const savedAt = new Date();
+    const snapshot: BlogDraftRecoverySnapshot = {
+      version: 1,
+      savedAt: savedAt.toISOString(),
+      sourceUpdatedAt: String(this.initialData?.updatedAt || '').trim() || null,
+      formValue: this.blogForm.getRawValue(),
+      publicTags: [...this.publicTags],
+      privateSeoTags: [...this.privateSeoTags],
+      pendingPublicTag: this.currentPublicTag,
+      pendingPrivateTag: this.currentPrivateSeoTag,
+      uploadedImage: this.uploadedImage
+    };
+
+    const stored = this.draftRecovery.save(this.draftStorageKey, snapshot);
+    this.localDraftState = stored ? 'saved' : 'error';
+    this.localDraftSavedAt = stored ? savedAt : null;
+  }
+
+  private clearLocalDraft(): void {
+    if (this.draftStorageKey) this.draftRecovery.clear(this.draftStorageKey);
+    this.localDraftState = 'idle';
+    this.localDraftSavedAt = null;
+    this.blogForm.markAsPristine();
   }
 
   onEditorInit(event: any): void {
@@ -1060,7 +1215,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     }).subscribe({
       next: (session) => {
         const url = this.blogApi.buildPortfolioPreviewUrl(session.token, previewPath);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        void this.nativePlatform.openExternalUrl(url);
       },
       error: () => {
         this.messageService.add({

@@ -1,4 +1,11 @@
 <div class="studio-container">
+  <div class="mobile-studio-shell">
+    <app-studio-shell
+      active="content"
+      [apiConnected]="connectionStatus === 'connected'"
+      [connectionLabel]="connectionStatus === 'connected' ? 'API Connected' : null">
+    </app-studio-shell>
+  </div>
   <div class="studio-header">
     <div class="header-title">
       <h1>Portfolio Content Studio</h1>

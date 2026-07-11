@@ -1,6 +1,8 @@
 import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
 import { BlogApiService } from '../../services/blog-api.service';
 import { MessageService } from 'primeng/api';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 
 @Component({
   selector: 'app-image-uploader',
@@ -29,6 +31,7 @@ export class ImageUploaderComponent implements OnInit {
   originalSize: number = 0;
   compressedSize: number = 0;
   outputMimeType: string = 'image/webp';
+  readonly isNative = Capacitor.isNativePlatform();
 
   constructor(
     private blogApi: BlogApiService,
@@ -46,30 +49,80 @@ export class ImageUploaderComponent implements OnInit {
    */
   onFileSelect(event: any): void {
     const file = event.files?.[0] || event.target?.files?.[0];
-    if (file) {
-      // Validate file type
-      if (!this.isSupportedMimeType(file.type)) {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'Supported formats: JPG, PNG, WEBP, GIF, SVG, and AVIF.'
-        });
-        return;
-      }
+    if (file) this.processSelectedFile(file, false);
+  }
 
-      // Validate file size (max 10MB raw — will be compressed)
-      if (file.size > 10 * 1024 * 1024) {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'Image size must be less than 10MB'
-        });
-        return;
-      }
+  capturePhoto(): void {
+    void this.selectNativePhoto(CameraSource.Camera);
+  }
 
-      this.originalSize = file.size;
-      this.compressAndUpload(file);
+  choosePhoto(): void {
+    void this.selectNativePhoto(CameraSource.Photos);
+  }
+
+  private async selectNativePhoto(source: CameraSource): Promise<void> {
+    if (!this.isNative || this.isUploading || this.isCompressing) return;
+
+    try {
+      const photo = await Camera.getPhoto({
+        source,
+        resultType: CameraResultType.Uri,
+        quality: 92,
+        width: this.maxWidth,
+        height: this.maxHeight,
+        allowEditing: false,
+        correctOrientation: true,
+        saveToGallery: false,
+        promptLabelHeader: 'Add blog photo',
+        promptLabelPhoto: 'Choose from library',
+        promptLabelPicture: 'Take a photo'
+      });
+
+      if (!photo.webPath) throw new Error('The selected photo did not return a readable file.');
+      const response = await fetch(photo.webPath);
+      if (!response.ok) throw new Error('The selected photo could not be opened.');
+
+      const blob = await response.blob();
+      const format = String(photo.format || 'jpeg').toLowerCase().replace('jpg', 'jpeg');
+      const mimeType = blob.type || `image/${format}`;
+      const extension = format === 'jpeg' ? 'jpg' : format;
+      const file = new File([blob], `mobile-photo-${Date.now()}.${extension}`, { type: mimeType });
+      // The Camera plugin has already bounded the dimensions. Let the normal
+      // compression pass handle an unusually large native payload instead of
+      // rejecting a photo the UI promises to resize.
+      this.processSelectedFile(file, true);
+    } catch (error) {
+      const message = this.getErrorMessage(error);
+      if (/cancel|canceled|cancelled|user cancelled/i.test(message)) return;
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Photo Unavailable',
+        detail: message
+      });
     }
+  }
+
+  private processSelectedFile(file: File, allowOversizedCompression: boolean): void {
+    if (!this.isSupportedMimeType(file.type)) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Supported formats: JPG, PNG, WEBP, GIF, SVG, and AVIF.'
+      });
+      return;
+    }
+
+    if (!allowOversizedCompression && file.size > 10 * 1024 * 1024) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Image size must be less than 10MB'
+      });
+      return;
+    }
+
+    this.originalSize = file.size;
+    this.compressAndUpload(file);
   }
 
   /**

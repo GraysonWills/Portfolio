@@ -58,6 +58,37 @@
   }
 }
 
+.native-photo-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.native-photo-button {
+  min-height: 46px;
+  border: 1px solid rgba(11, 79, 159, 0.25);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--primary);
+  font-family: var(--f-display);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+
+  &.primary {
+    border-color: transparent;
+    background: var(--grad);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.58;
+  }
+}
+
 .upload-hint {
   margin-top: 0.85rem;
   color: var(--ink-500);
@@ -74,4 +105,14 @@
 
 ::ng-deep .custom-file-upload .p-button {
   width: 100%;
+}
+
+@media (max-width: 420px) {
+  .upload-area {
+    padding: 1rem 0.75rem;
+  }
+
+  .native-photo-actions {
+    grid-template-columns: 1fr;
+  }
 }

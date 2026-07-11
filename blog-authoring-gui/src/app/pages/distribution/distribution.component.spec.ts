@@ -1,17 +1,20 @@
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
-import { of, Subject } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { BlogApiService, SocialAuthStatusResponse } from '../../services/blog-api.service';
 import { SocialDistributionAutomationService } from '../../services/social-distribution-automation.service';
 import { DistributionComponent } from './distribution.component';
+import { NativePlatformService } from '../../services/native-platform.service';
 
 describe('DistributionComponent', () => {
   function createComponent(queryParams: Record<string, string> = {}) {
     const status$ = new Subject<SocialAuthStatusResponse>();
+    const queryParamMap$ = new BehaviorSubject(convertToParamMap(queryParams));
     const route = {
       snapshot: {
         queryParamMap: convertToParamMap(queryParams)
-      }
+      },
+      queryParamMap: queryParamMap$.asObservable()
     } as unknown as ActivatedRoute;
     const router = {
       navigate: jasmine.createSpy('navigate')
@@ -39,10 +42,17 @@ describe('DistributionComponent', () => {
         refreshed: false
       }))
     } as unknown as BlogApiService;
+    const nativePlatform = {
+      getSocialOAuthReturnUrl: (url: string) => url,
+      openExternalAuth: jasmine.createSpy('openExternalAuth'),
+      openExternalUrl: jasmine.createSpy('openExternalUrl')
+    } as unknown as NativePlatformService;
 
     return {
-      component: new DistributionComponent(route, router, authService, blogApi, automation),
+      component: new DistributionComponent(route, router, authService, blogApi, automation, nativePlatform),
       blogApi,
+      nativePlatform,
+      queryParamMap$,
       router,
       status$
     };
@@ -73,6 +83,22 @@ describe('DistributionComponent', () => {
       queryParamsHandling: 'merge',
       replaceUrl: true
     }));
+  });
+
+  it('handles a native OAuth return while the distribution route is already active', () => {
+    const { component, blogApi, queryParamMap$, router } = createComponent();
+    component.ngOnInit();
+    expect(blogApi.getSocialAuthStatus).toHaveBeenCalledTimes(1);
+
+    queryParamMap$.next(convertToParamMap({
+      socialProvider: 'linkedin',
+      socialStatus: 'connected'
+    }));
+
+    expect(component.draftNotice).toBe('linkedin connected.');
+    expect(blogApi.getSocialAuthStatus).toHaveBeenCalledTimes(2);
+    expect(router.navigate).toHaveBeenCalledWith([], jasmine.objectContaining({ replaceUrl: true }));
+    component.ngOnDestroy();
   });
 
   it('shows reconnect state when X is missing newly requested scopes', () => {
@@ -239,12 +265,11 @@ describe('DistributionComponent', () => {
   });
 
   it('opens the official Medium import handoff', () => {
-    const { component } = createComponent();
-    const openSpy = spyOn(window, 'open');
+    const { component, nativePlatform } = createComponent();
 
     component.openMediumImport();
 
-    expect(openSpy).toHaveBeenCalledWith('https://medium.com/p/import', '_blank', 'noopener,noreferrer');
+    expect(nativePlatform.openExternalUrl).toHaveBeenCalledWith('https://medium.com/p/import');
     expect(component.draftNotice).toContain('Medium import opened');
   });
 

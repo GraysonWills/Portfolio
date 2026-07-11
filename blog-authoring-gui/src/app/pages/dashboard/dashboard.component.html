@@ -2,6 +2,7 @@
   <app-studio-shell
     active="dashboard"
     [apiConnected]="connectionStatus === 'connected'"
+    [createDisabled]="showEditor"
     (createPost)="createNewPost()">
   </app-studio-shell>
 

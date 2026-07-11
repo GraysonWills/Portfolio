@@ -281,6 +281,7 @@ function getDefaultReturnUrl() {
 function getAllowedReturnOrigins() {
   const defaults = [
     'https://author.grayson-wills.com',
+    'authorstudio://oauth',
     'https://d39s45clv1oor3.cloudfront.net',
     'http://localhost:4201',
     'http://localhost:4211',

@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { MessageService, ConfirmationService } from 'primeng/api';
 
 import { AuthService } from '../../services/auth.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 import {
   BlogApiService,
   McpApproval,
@@ -82,7 +83,8 @@ export class AiQueueComponent implements OnInit {
     private blogApi: BlogApiService,
     private messageService: MessageService,
     private confirmationService: ConfirmationService,
-    private router: Router
+    private router: Router,
+    private nativePlatform: NativePlatformService
   ) {}
 
   ngOnInit(): void {
@@ -413,7 +415,7 @@ export class AiQueueComponent implements OnInit {
 
   openPreview(approval: McpApproval): void {
     if (!approval.previewUrl) return;
-    window.open(approval.previewUrl, '_blank', 'noopener,noreferrer');
+    void this.nativePlatform.openExternalUrl(approval.previewUrl);
   }
 
   goToDashboard(): void {

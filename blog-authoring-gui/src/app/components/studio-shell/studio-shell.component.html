@@ -3,16 +3,23 @@
     <div>
       <div class="brand-row">
         <span class="brand-mark">GW</span>
-        <h1 class="brand-title">Blog Authoring Studio</h1>
-        <span class="conn-pill" [class.off]="apiConnected === false">
-          ● {{ connectionLabel || (apiConnected === false ? 'Disconnected' : 'API Connected') }}
+        <h1 class="brand-title">
+          <span class="title-long">Blog Authoring Studio</span>
+          <span class="title-short">Author Studio</span>
+        </h1>
+        <span
+          class="conn-pill"
+          [class.off]="apiConnected === false"
+          [attr.aria-label]="connectionLabel || (apiConnected === false ? 'Disconnected' : 'API Connected')">
+          <span class="conn-dot" aria-hidden="true">●</span>
+          <span class="conn-label">{{ connectionLabel || (apiConnected === false ? 'Disconnected' : 'API Connected') }}</span>
         </span>
       </div>
       <div class="brand-sub">author.grayson-wills.com · Draft → Refine → Schedule → Publish</div>
     </div>
     <div class="shell-actions">
-      <button class="as-btn-primary" type="button" (click)="onCreatePost()">+ Create New Post</button>
-      <a class="as-btn-ghost strong" [href]="publicSiteUrl" target="_blank" rel="noopener">View Public Site ↗</a>
+      <button class="as-btn-primary" type="button" (click)="onCreatePost()" [disabled]="createDisabled">+ Create New Post</button>
+      <a class="as-btn-ghost strong" [href]="publicSiteUrl" target="_blank" rel="noopener" (click)="openPublicSite($event)">View Public Site ↗</a>
     </div>
   </div>
   <div class="shell-tabs">
@@ -27,3 +34,65 @@
     <button class="as-btn-ghost logout" type="button" (click)="logout()">Logout ↗</button>
   </div>
 </div>
+
+<button
+  *ngIf="mobileMoreOpen"
+  class="mobile-sheet-backdrop"
+  type="button"
+  aria-label="Close mobile navigation"
+  (click)="closeMobileMore()">
+</button>
+
+<aside
+  #mobileMoreSheet
+  id="mobile-more-sheet"
+  class="mobile-more-sheet"
+  *ngIf="mobileMoreOpen"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="mobile-more-title"
+  tabindex="-1">
+  <div class="mobile-sheet-handle"></div>
+  <div class="mobile-sheet-head">
+    <div>
+      <strong id="mobile-more-title">Back of Shop</strong>
+      <span>More tools</span>
+    </div>
+    <button type="button" aria-label="Close" (click)="closeMobileMore()"><i class="pi pi-times"></i></button>
+  </div>
+  <nav class="mobile-sheet-grid">
+    <a routerLink="/subscribers" (click)="closeMobileMore()"><i class="pi pi-users"></i><span>Subscribers</span></a>
+    <a routerLink="/distribution" (click)="closeMobileMore()"><i class="pi pi-send"></i><span>Distribution</span></a>
+    <a routerLink="/content" (click)="closeMobileMore()"><i class="pi pi-pencil"></i><span>Site Content</span></a>
+    <a routerLink="/ai" (click)="closeMobileMore()"><i class="pi pi-sparkles"></i><span>AI Queue</span></a>
+    <a routerLink="/mission-control" (click)="closeMobileMore()"><i class="pi pi-sitemap"></i><span>Mission Control</span></a>
+    <a [href]="publicSiteUrl" target="_blank" rel="noopener" (click)="openPublicSite($event)"><i class="pi pi-external-link"></i><span>Public Site</span></a>
+  </nav>
+  <button class="mobile-logout" type="button" (click)="logout()"><i class="pi pi-sign-out"></i> Log out</button>
+</aside>
+
+<nav class="mobile-bottom-nav" aria-label="Authoring navigation">
+  <a routerLink="/dashboard" [class.active]="active === 'dashboard'" [attr.aria-current]="active === 'dashboard' ? 'page' : null">
+    <i class="pi pi-home"></i><span>Home</span>
+  </a>
+  <a routerLink="/collections" [class.active]="active === 'collections'" [attr.aria-current]="active === 'collections' ? 'page' : null">
+    <i class="pi pi-folder"></i><span>Library</span>
+  </a>
+  <button class="mobile-create" type="button" (click)="onCreatePost()" aria-label="Create a new post" [disabled]="createDisabled">
+    <i class="pi pi-plus"></i><span>New</span>
+  </button>
+  <a routerLink="/comments" [class.active]="active === 'comments'" [attr.aria-current]="active === 'comments' ? 'page' : null">
+    <i class="pi pi-comments"></i><span>Comments</span>
+  </a>
+  <button
+    #mobileMoreTrigger
+    type="button"
+    [class.active]="mobileMoreOpen || mobileMoreActive"
+    [attr.aria-current]="mobileMoreActive ? 'page' : null"
+    [attr.aria-expanded]="mobileMoreOpen"
+    aria-controls="mobile-more-sheet"
+    aria-haspopup="dialog"
+    (click)="toggleMobileMore()">
+    <i class="pi pi-ellipsis-h"></i><span>More</span>
+  </button>
+</nav>

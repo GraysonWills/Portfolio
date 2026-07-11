@@ -1,5 +1,6 @@
-import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import {
   BlogApiService,
@@ -14,6 +15,7 @@ import {
   SocialDistributionAutomationService,
   SocialDistributionTemplate
 } from '../../services/social-distribution-automation.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 
 type PlatformConnectionState = 'connected' | 'attention' | 'expired' | 'not-connected' | 'manual';
 type QueueStatusClass = 'success' | 'info' | 'warn' | 'danger' | 'secondary';
@@ -64,7 +66,7 @@ type QueueItem = {
   styleUrl: './distribution.component.scss',
   standalone: false
 })
-export class DistributionComponent implements OnInit {
+export class DistributionComponent implements OnInit, OnDestroy {
   private readonly oauthProviderIds = new Set([
     'facebook',
     'x',
@@ -425,13 +427,15 @@ export class DistributionComponent implements OnInit {
   ];
 
   queueItems: QueueItem[] = [];
+  private oauthReturnSubscription: Subscription | null = null;
 
   constructor(
     private readonly route: ActivatedRoute,
     private readonly router: Router,
     private readonly authService: AuthService,
     private readonly blogApi: BlogApiService,
-    private readonly automation: SocialDistributionAutomationService
+    private readonly automation: SocialDistributionAutomationService,
+    private readonly nativePlatform: NativePlatformService
   ) {}
 
   ngOnInit(): void {
@@ -440,7 +444,17 @@ export class DistributionComponent implements OnInit {
     this.initializeConnectionDefaults();
     this.refreshConnections();
     this.refreshDeliveries();
-    this.applyOAuthReturnNotice();
+    let initialQueryEmission = true;
+    this.oauthReturnSubscription = this.route.queryParamMap.subscribe((params) => {
+      const handled = this.applyOAuthReturnNotice(params);
+      if (!initialQueryEmission && handled) this.refreshConnections();
+      initialQueryEmission = false;
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.oauthReturnSubscription?.unsubscribe();
+    this.oauthReturnSubscription = null;
   }
 
   get selectedPlatforms(): DistributionPlatform[] {
@@ -676,10 +690,15 @@ export class DistributionComponent implements OnInit {
 
     this.socialAuthLoading = true;
     this.socialAuthError = '';
-    this.blogApi.startSocialAuth(platform.id, window.location.href.split('?')[0]).subscribe({
+    const browserReturnUrl = window.location.href.split('?')[0];
+    const returnUrl = this.nativePlatform.getSocialOAuthReturnUrl(browserReturnUrl);
+    this.blogApi.startSocialAuth(platform.id, returnUrl).subscribe({
       next: (response) => {
         if (response?.authUrl) {
-          window.location.assign(response.authUrl);
+          void this.nativePlatform.openExternalAuth(response.authUrl).catch((error) => {
+            this.socialAuthLoading = false;
+            this.socialAuthError = this.extractErrorMessage(error);
+          });
           return;
         }
         this.socialAuthLoading = false;
@@ -722,7 +741,7 @@ export class DistributionComponent implements OnInit {
   }
 
   openMediumImport(): void {
-    window.open('https://medium.com/p/import', '_blank', 'noopener,noreferrer');
+    void this.nativePlatform.openExternalUrl('https://medium.com/p/import');
     this.draftNotice = 'Medium import opened. Paste the published blog URL to create the canonical copy.';
   }
 
@@ -1401,11 +1420,11 @@ export class DistributionComponent implements OnInit {
     return `${platformName} login captured ${captured.join(', ')} for backend posting.`;
   }
 
-  private applyOAuthReturnNotice(): void {
-    const provider = String(this.route.snapshot.queryParamMap.get('socialProvider') || '').trim();
-    const status = String(this.route.snapshot.queryParamMap.get('socialStatus') || '').trim();
-    const error = String(this.route.snapshot.queryParamMap.get('socialError') || '').trim();
-    if (!provider || !status) return;
+  private applyOAuthReturnNotice(params: ParamMap = this.route.snapshot.queryParamMap): boolean {
+    const provider = String(params.get('socialProvider') || '').trim();
+    const status = String(params.get('socialStatus') || '').trim();
+    const error = String(params.get('socialError') || '').trim();
+    if (!provider || !status) return false;
 
     this.oauthReturnNoticeActive = true;
     if (status === 'error') {
@@ -1425,6 +1444,7 @@ export class DistributionComponent implements OnInit {
       queryParamsHandling: 'merge',
       replaceUrl: true
     });
+    return true;
   }
 
   private extractErrorMessage(err: unknown): string {

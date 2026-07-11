@@ -1,6 +1,20 @@
 <router-outlet></router-outlet>
 <p-toast></p-toast>
 
+<section class="native-lock" *ngIf="nativeLockVisible" aria-live="polite">
+  <div class="native-lock-mark">GW</div>
+  <p class="native-lock-kicker">Private authoring</p>
+  <h1>Author Studio Locked</h1>
+  <p>Use Face ID or Touch ID to restore the device-only session.</p>
+  <button type="button" (click)="unlockNativeApp()" [disabled]="nativeUnlocking">
+    <i class="pi" [ngClass]="nativeUnlocking ? 'pi-spin pi-spinner' : 'pi-lock-open'"></i>
+    {{ nativeUnlocking ? 'Unlocking…' : 'Unlock Author Studio' }}
+  </button>
+  <button class="native-lock-secondary" type="button" (click)="signInFromNativeLock()" [disabled]="nativeUnlocking">
+    Sign in instead
+  </button>
+</section>
+
 <p-dialog
   [(visible)]="hotkeyHelpVisible"
   [modal]="true"

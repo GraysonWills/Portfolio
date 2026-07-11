@@ -9,6 +9,7 @@ import { TransactionLogService } from '../../services/transaction-log.service';
 import { RedisContent, PageID, PageContentID } from '../../models/redis-content.model';
 import { environment } from '../../../environments/environment';
 import { HotkeysService } from '../../services/hotkeys.service';
+import { NativePlatformService } from '../../services/native-platform.service';
 
 type Option<T> = { label: string; value: T };
 
@@ -210,7 +211,8 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
     private messageService: MessageService,
     private confirmationService: ConfirmationService,
     private router: Router,
-    private hotkeys: HotkeysService
+    private hotkeys: HotkeysService,
+    private nativePlatform: NativePlatformService
   ) {}
 
   public get routerRef(): Router {
@@ -1023,7 +1025,7 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
 
     if (!draftItem) {
       const liveUrl = this.resolvePortfolioUrl(targetPath);
-      window.open(liveUrl, '_blank', 'noopener,noreferrer');
+      void this.nativePlatform.openExternalUrl(liveUrl);
       return;
     }
 
@@ -1035,7 +1037,7 @@ export class ContentStudioComponent implements OnInit, OnDestroy {
       next: (session) => {
         this.isPreviewOpening = false;
         const previewUrl = this.blogApi.buildPortfolioPreviewUrl(session.token, targetPath);
-        window.open(previewUrl, '_blank', 'noopener,noreferrer');
+        void this.nativePlatform.openExternalUrl(previewUrl);
       },
       error: () => {
         this.isPreviewOpening = false;
