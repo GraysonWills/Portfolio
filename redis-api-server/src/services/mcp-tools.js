@@ -335,6 +335,79 @@ async function uploadImageFromUrl(input = {}, client) {
   return { asset };
 }
 
+async function uploadImageFromBase64(input = {}, client) {
+  const b64 = String(input.data || '').trim();
+  if (!b64) throw httpError(400, 'Base64 image data is required');
+  const contentType = String(input.contentType || 'image/png').split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_REMOTE_IMAGE_TYPES.has(contentType)) {
+    throw httpError(400, `Unsupported image type: ${contentType || 'unknown'}`);
+  }
+  let bytes;
+  try {
+    bytes = Buffer.from(b64, 'base64');
+  } catch {
+    throw httpError(400, 'Image data is not valid base64');
+  }
+  if (!bytes.length) throw httpError(400, 'Image data decoded to zero bytes');
+  if (bytes.length > MAX_REMOTE_IMAGE_BYTES) {
+    throw httpError(400, `Image is too large; max is ${MAX_REMOTE_IMAGE_BYTES} bytes`);
+  }
+
+  const cfg = getPhotoAssetConfig();
+  const checksum = sha256Hex(bytes);
+  const assetId = `asset-${uuidv4()}`;
+  const now = new Date();
+  const yyyy = String(now.getUTCFullYear());
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(now.getUTCDate()).padStart(2, '0');
+  const ext = contentType === 'image/jpeg' ? '.jpg' : contentType === 'image/gif' ? '.gif' : '.png';
+  const filename = String(input.filename || `upload${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || `upload${ext}`;
+  const key = `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
+  const publicUrl = publicUrlForKey(cfg, key);
+  const timestamp = now.toISOString();
+
+  await createPendingPhotoAsset({
+    asset_id: assetId,
+    owner: String(client.ownerSub || 'mcp').toLowerCase(),
+    status: 'pending',
+    storage_bucket: cfg.bucket,
+    storage_key: key,
+    public_url: publicUrl,
+    original_filename: filename,
+    content_type: contentType,
+    size_bytes: bytes.length,
+    checksum_sha256: checksum,
+    usage: String(input.usage || 'social').slice(0, 40),
+    tags: Array.isArray(input.tags) ? input.tags.map(String).slice(0, 20) : ['mcp'],
+    alt_text: String(input.altText || '').slice(0, 240),
+    caption: String(input.caption || '').slice(0, 1000),
+    metadata: {
+      source: 'mcp_base64',
+      clientId: client.clientId,
+    },
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+
+  await getS3Client(cfg.region).send(new PutObjectCommand({
+    Bucket: cfg.bucket,
+    Key: key,
+    Body: bytes,
+    ContentType: contentType,
+    CacheControl: 'public,max-age=31536000,immutable',
+  }));
+
+  const asset = await markPhotoAssetReady(assetId, {
+    ready_at: new Date().toISOString(),
+    public_url: publicUrl,
+    content_type: contentType,
+    size_bytes: bytes.length,
+    checksum_sha256: checksum,
+  });
+
+  return { asset };
+}
+
 async function executeApproval(approvalId, reviewerUser) {
   const approval = await mcpControl.getApproval(approvalId);
   if (!approval) throw httpError(404, 'Approval not found');
@@ -774,6 +847,68 @@ function buildMcpServer(client) {
   }, async (args) => ({
     delivery: await socialDistribution.createDeliveryDraftForUser(ownerUser(client), args),
   }));
+
+  registerTool(server, client, 'media.upload_image_base64', {
+    description: 'Store a base64-encoded image as a photo asset (for callers whose storage is not publicly fetchable).',
+    scope: 'media:write:draft',
+    category: 'draftMutation',
+    inputSchema: {
+      data: z.string(),
+      contentType: z.string().optional(),
+      filename: z.string().optional(),
+      usage: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      altText: z.string().optional(),
+      caption: z.string().optional(),
+    },
+  }, async (args) => uploadImageFromBase64(args, client));
+
+  registerTool(server, client, 'social.schedule_delivery', {
+    description: 'Create AND immediately send a social delivery through the connected account, bypassing the studio review queue. Grant social:write:send only to automation that already gates posts upstream (e.g. the mesh, which reviews everything in Mission Control before calling this).',
+    scope: 'social:write:send',
+    category: 'externalMutation',
+    inputSchema: {
+      provider: z.string(),
+      caption: z.string(),
+      mediaUrl: z.string().optional(),
+      imageBase64: z.string().optional(),
+      imageContentType: z.string().optional(),
+      destination: z.string().optional(),
+      postUrl: z.string().optional(),
+      title: z.string().optional(),
+    },
+  }, async (args) => {
+    let mediaUrl = String(args.mediaUrl || '').trim();
+    if (!mediaUrl && args.imageBase64) {
+      const stored = await uploadImageFromBase64({
+        data: args.imageBase64,
+        contentType: args.imageContentType,
+        usage: 'social',
+        caption: String(args.caption || '').slice(0, 200),
+      }, client);
+      mediaUrl = String(stored.asset?.public_url || '').trim();
+    }
+    const draft = await socialDistribution.createDeliveryDraftForUser(ownerUser(client), {
+      provider: args.provider,
+      caption: args.caption,
+      mediaUrl,
+      destination: args.destination,
+      postUrl: args.postUrl,
+      title: args.title || 'Mesh social post',
+      listItemID: 'mesh-social',
+      ruleId: 'mesh-single-gate',
+      ruleName: 'Mesh pre-gated delivery',
+    });
+    if (draft.lastError) {
+      throw httpError(409, `Provider is not ready: ${draft.lastError}`);
+    }
+    const delivery = await socialDistribution.sendDeliveryById({
+      userSub: ownerUser(client).sub,
+      deliveryId: draft.deliveryId,
+      force: true,
+    });
+    return { delivery };
+  });
 
   createApprovalTool(server, client, 'blog.propose_update', 'blog:propose', {
     listItemID: z.string(),

@@ -32,6 +32,8 @@ const ALL_SCOPES = [
   'social:read',
   'social:write:draft',
   'social:propose',
+  // direct external send for pre-gated automation (the mesh) — NEVER a default
+  'social:write:send',
 ];
 
 const DEFAULT_SCOPES = [

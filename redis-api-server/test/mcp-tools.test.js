@@ -773,3 +773,55 @@ test('MCP HTTP route accepts initialize, tools/list, and tools/call with normali
   });
   assert.ok(invalid.res.status >= 400 || invalid.json?.error);
 });
+
+test('MCP social.schedule_delivery enforces its send scope and provider readiness', async () => {
+  const memory = createMemoryDdb();
+  const { buildMcpServer } = loadMcpModules(memory);
+
+  // draft scope alone must NOT unlock direct external sends
+  const draftServer = buildMcpServer(testClient(['social:read', 'social:write:draft']));
+  await assert.rejects(
+    () => callRegisteredTool(draftServer, 'social.schedule_delivery', {
+      provider: 'x',
+      caption: 'Denied — no send scope',
+      idempotencyKey: 'schedule-denied',
+    }),
+    /missing scope: social:write:send/
+  );
+
+  // with the scope, an unconnected provider is refused before anything sends
+  const sendServer = buildMcpServer(testClient(['social:write:send']));
+  await assert.rejects(
+    () => callRegisteredTool(sendServer, 'social.schedule_delivery', {
+      provider: 'x',
+      caption: 'No credential seeded for this provider',
+      idempotencyKey: 'schedule-unready',
+    }),
+    /Provider is not ready/
+  );
+});
+
+test('MCP media.upload_image_base64 validates input before any storage', async () => {
+  const memory = createMemoryDdb();
+  const { buildMcpServer } = loadMcpModules(memory);
+  process.env.PHOTO_ASSETS_BUCKET = 'photo-assets-bucket';
+  const server = buildMcpServer(testClient(['media:write:draft']));
+
+  await assert.rejects(
+    () => callRegisteredTool(server, 'media.upload_image_base64', {
+      data: Buffer.from('plain text').toString('base64'),
+      contentType: 'text/plain',
+      idempotencyKey: 'b64-bad-type',
+    }),
+    /Unsupported image type/
+  );
+
+  await assert.rejects(
+    () => callRegisteredTool(server, 'media.upload_image_base64', {
+      data: '',
+      contentType: 'image/png',
+      idempotencyKey: 'b64-empty',
+    }),
+    /Base64 image data is required/
+  );
+});
