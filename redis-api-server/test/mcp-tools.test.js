@@ -794,11 +794,150 @@ test('MCP social.schedule_delivery enforces its send scope and provider readines
   await assert.rejects(
     () => callRegisteredTool(sendServer, 'social.schedule_delivery', {
       provider: 'x',
+      caption: 'No idempotency identity',
+    }),
+    /idempotencyKey/
+  );
+  await assert.rejects(
+    () => callRegisteredTool(sendServer, 'social.schedule_delivery', {
+      provider: 'x',
       caption: 'No credential seeded for this provider',
       idempotencyKey: 'schedule-unready',
     }),
     /Provider is not ready/
   );
+});
+
+test('MCP social.schedule_delivery replays one sent delivery and refuses non-sent success', async () => {
+  const memory = createMemoryDdb();
+  const { buildMcpServer } = loadMcpModules(memory);
+  const socialDistribution = require('../src/services/social-distribution');
+  const calls = { create: [], send: 0 };
+
+  socialDistribution.createDeliveryDraftForUser = async (_user, input) => {
+    calls.create.push(input);
+    return { deliveryId: input.deliveryId, status: 'draft' };
+  };
+  socialDistribution.sendDeliveryById = async ({ deliveryId }) => {
+    calls.send++;
+    return {
+      deliveryId,
+      status: 'sent',
+      providerPostId: 'provider-post-1',
+      providerPostUrl: 'https://social.example.test/provider-post-1',
+    };
+  };
+
+  const server = buildMcpServer(testClient(['social:write:send']));
+  const request = {
+    provider: 'linkedin',
+    caption: 'One approved effect',
+    idempotencyKey: 'mesh-effect-1',
+  };
+  const first = await callRegisteredTool(server, 'social.schedule_delivery', request);
+  const replay = await callRegisteredTool(server, 'social.schedule_delivery', request);
+
+  assert.equal(first.structuredContent.delivery.status, 'sent');
+  assert.deepEqual(replay.structuredContent, first.structuredContent);
+  assert.equal(calls.create.length, 1);
+  assert.equal(calls.send, 1);
+  assert.equal(calls.create[0].deliveryId.length, 64);
+  assert.equal(calls.create[0].idempotencyRequestHash.length, 64);
+
+  const failedMemory = createMemoryDdb();
+  const { buildMcpServer: buildFailedServer } = loadMcpModules(failedMemory);
+  const failedDistribution = require('../src/services/social-distribution');
+  failedDistribution.createDeliveryDraftForUser = async (_user, input) => ({
+    deliveryId: input.deliveryId,
+    status: 'draft',
+  });
+  failedDistribution.sendDeliveryById = async ({ deliveryId }) => ({
+    deliveryId,
+    status: 'unknown',
+    lastError: 'Provider outcome may be ambiguous; reconcile before retrying',
+  });
+  const failedServer = buildFailedServer(testClient(['social:write:send']));
+  await assert.rejects(
+    () => callRegisteredTool(failedServer, 'social.schedule_delivery', {
+      provider: 'linkedin',
+      caption: 'Ambiguous effect',
+      idempotencyKey: 'mesh-effect-unknown',
+    }),
+    /reconcile before retrying/
+  );
+});
+
+test('social delivery identity rejects payload changes and sent deliveries never repost', async () => {
+  const memory = createMemoryDdb();
+  loadMcpModules(memory);
+  const socialDistribution = require('../src/services/social-distribution');
+
+  const first = await socialDistribution.createDeliveryDraftForUser({ sub: 'author-sub' }, {
+    deliveryId: 'stable-delivery-id',
+    idempotencyRequestHash: 'request-hash-a',
+    provider: 'x',
+    caption: 'Original payload',
+  });
+  assert.equal(first.deliveryId, 'stable-delivery-id');
+
+  await assert.rejects(
+    () => socialDistribution.createDeliveryDraftForUser({ sub: 'author-sub' }, {
+      deliveryId: 'stable-delivery-id',
+      idempotencyRequestHash: 'request-hash-b',
+      provider: 'x',
+      caption: 'Changed payload',
+    }),
+    /Idempotency-Key was reused with a different payload/
+  );
+
+  await seedSocialDelivery(memory, {
+    deliveryId: 'already-sent',
+    sk: 'DELIVERY#already-sent',
+    status: 'sent',
+    providerPostId: 'provider-post-1',
+  });
+  const sent = await socialDistribution.sendDeliveryById({
+    userSub: 'author-sub',
+    deliveryId: 'already-sent',
+    force: true,
+  });
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.providerPostId, 'provider-post-1');
+
+  await seedSocialDelivery(memory, {
+    deliveryId: 'ambiguous-send',
+    sk: 'DELIVERY#ambiguous-send',
+    status: 'unknown',
+  });
+  await assert.rejects(
+    () => socialDistribution.sendDeliveryById({
+      userSub: 'author-sub',
+      deliveryId: 'ambiguous-send',
+      force: true,
+    }),
+    /requires manual reconciliation/
+  );
+  await assert.rejects(
+    () => socialDistribution.deleteDeliveryForUser({ sub: 'author-sub' }, 'ambiguous-send'),
+    /preserve it for receipt or reconciliation/
+  );
+
+  await seedSocialDelivery(memory, {
+    deliveryId: 'concurrent-send',
+    sk: 'DELIVERY#concurrent-send',
+    status: 'draft',
+  });
+  const stale = memory.getByKey('social-distribution-test', {
+    pk: 'USER#author-sub',
+    sk: 'DELIVERY#concurrent-send',
+  });
+  const claims = await Promise.allSettled([
+    socialDistribution.__private.claimDeliveryForSend(stale),
+    socialDistribution.__private.claimDeliveryForSend(stale),
+  ]);
+  assert.equal(claims.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(claims.filter((result) => result.status === 'rejected').length, 1);
+  assert.match(String(claims.find((result) => result.status === 'rejected').reason?.message), /already sending/);
 });
 
 test('MCP media.upload_image_base64 validates input before any storage', async () => {

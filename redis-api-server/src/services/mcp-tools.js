@@ -95,6 +95,9 @@ function summarizePatch(patch = {}) {
 }
 
 function withIdempotencyInput(inputSchema = {}) {
+  if (Object.prototype.hasOwnProperty.call(inputSchema || {}, 'idempotencyKey')) {
+    return { ...(inputSchema || {}) };
+  }
   return {
     ...(inputSchema || {}),
     idempotencyKey: z.string().optional(),
@@ -868,6 +871,7 @@ function buildMcpServer(client) {
     scope: 'social:write:send',
     category: 'externalMutation',
     inputSchema: {
+      idempotencyKey: z.string().min(1),
       provider: z.string(),
       caption: z.string(),
       mediaUrl: z.string().optional(),
@@ -878,6 +882,12 @@ function buildMcpServer(client) {
       title: z.string().optional(),
     },
   }, async (args) => {
+    const effectIdentity = sha256Hex([
+      client.clientId,
+      'social.schedule_delivery',
+      String(args.idempotencyKey || '').trim(),
+    ].join(':'));
+    const effectRequestHash = sha256Hex(JSON.stringify(args || {}));
     let mediaUrl = String(args.mediaUrl || '').trim();
     if (!mediaUrl && args.imageBase64) {
       const stored = await uploadImageFromBase64({
@@ -889,6 +899,8 @@ function buildMcpServer(client) {
       mediaUrl = String(stored.asset?.public_url || '').trim();
     }
     const draft = await socialDistribution.createDeliveryDraftForUser(ownerUser(client), {
+      deliveryId: effectIdentity,
+      idempotencyRequestHash: effectRequestHash,
       provider: args.provider,
       caption: args.caption,
       mediaUrl,
@@ -899,14 +911,16 @@ function buildMcpServer(client) {
       ruleId: 'mesh-single-gate',
       ruleName: 'Mesh pre-gated delivery',
     });
-    if (draft.lastError) {
-      throw httpError(409, `Provider is not ready: ${draft.lastError}`);
-    }
     const delivery = await socialDistribution.sendDeliveryById({
       userSub: ownerUser(client).sub,
       deliveryId: draft.deliveryId,
       force: true,
     });
+    if (delivery.status !== 'sent') {
+      const detail = delivery.lastError || `delivery is ${delivery.status || 'not sent'}`;
+      const status = ['sending', 'unknown'].includes(delivery.status) ? 409 : 502;
+      throw httpError(status, `Provider is not ready: ${detail}`);
+    }
     return { delivery };
   });
 

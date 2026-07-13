@@ -394,10 +394,18 @@ MCP clients can create, update, and delete isolated drafts they own, plus create
 
 Current MCP tool groups:
 - Read: `site.get_inventory`, `content.list`, `content.get`, `blog.list_posts`, `blog.get_post`, `media.list_assets`, `comments.list_recent`, `comments.get_thread`, `social.get_status`, `social.list_deliveries`.
-- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `social.create_delivery_draft`.
+- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `media.upload_image_base64`, `social.create_delivery_draft`.
+- Pre-gated external send: `social.schedule_delivery` requires the non-default `social:write:send` scope and a stable `idempotencyKey`. It is reserved for callers such as the mesh that have already recorded Grayson's approval upstream. The tool returns success only for a `sent` delivery; ambiguous outcomes become `unknown` and require reconciliation instead of automatic retry.
 - Approval-backed: `blog.propose_update`, `blog.request_publish`, `blog.request_schedule`, `blog.request_unpublish`, `blog.request_delete`, `content.propose_update`, `media.request_delete`, `comments.propose_reply`, `comments.request_delete`, `social.propose_settings_update`, `social.request_send_delivery`.
 
 Mutation and approval tools accept optional `idempotencyKey`; replayed requests return the stored result instead of running the mutation again. `blog.delete_mcp_draft` rejects non-owned drafts and supports `expectedVersion` or `expectedUpdatedAt` concurrency checks. `content.propose_update` accepts an optional `route` so reviewers can open a generated preview URL.
+
+`social.schedule_delivery` is the exception: its idempotency key is required.
+The delivery record is created and claimed conditionally before any provider
+call, so concurrent retries cannot both send. `sent` is terminal even with
+`force`; `sending` and `unknown` refuse automatic retry. See
+`design/mcp-integration/mesh-backofshop-contract.md` for the contract and
+reconciliation runbook.
 
 Auto-execute policy:
 - Stored per MCP client as `autoExecuteActions`.

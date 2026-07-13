@@ -314,4 +314,46 @@ describe('DistributionComponent', () => {
     expect(component.activeWorkspaceTab).toBe('queue');
     expect(component.automationNotice).toContain('automated posts staged');
   });
+
+  it('shows ambiguous deliveries as reconciliation-only records', () => {
+    const { component, blogApi } = createComponent();
+    (blogApi.getSocialDistributionDeliveries as jasmine.Spy).and.returnValue(of({
+      deliveries: [{
+        deliveryId: 'delivery-unknown',
+        listItemID: 'mesh-social',
+        trigger: 'mcp_draft',
+        ruleId: 'mesh-single-gate',
+        ruleName: 'Mesh pre-gated delivery',
+        templateId: 'mcp-custom',
+        templateName: 'MCP custom draft',
+        provider: 'x',
+        accountId: 'account-1',
+        accountLabel: '@example',
+        destination: 'Post',
+        caption: 'Approved copy',
+        mediaUrl: '',
+        postUrl: '',
+        title: 'Mesh social post',
+        runAt: '2026-07-13T20:00:00.000Z',
+        status: 'unknown',
+        requiresReview: false,
+        quietMode: true,
+        providerPostId: '',
+        providerPostUrl: '',
+        lastError: 'Provider outcome may be ambiguous',
+        createdAt: '2026-07-13T20:00:00.000Z',
+        updatedAt: '2026-07-13T20:00:01.000Z',
+        sentAt: null,
+        attemptCount: 1
+      }]
+    }));
+
+    component.ngOnInit();
+
+    expect(component.queueItems.length).toBe(1);
+    expect(component.queueItems[0].status).toBe('Reconcile');
+    expect(component.queueItems[0].canSend).toBeFalse();
+    expect(component.queueItems[0].canDelete).toBeFalse();
+    expect(component.queueItems[0].receipt).toContain('ambiguous');
+  });
 });

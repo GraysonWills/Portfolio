@@ -1132,7 +1132,7 @@ export class DistributionComponent implements OnInit, OnDestroy {
       caption: delivery.caption,
       error: delivery.lastError,
       canSend: ['needs_review', 'failed', 'draft'].includes(String(delivery.status || '')),
-      canDelete: String(delivery.status || '') !== 'sent'
+      canDelete: !['sent', 'sending', 'unknown'].includes(String(delivery.status || ''))
     };
   }
 
@@ -1148,6 +1148,8 @@ export class DistributionComponent implements OnInit, OnDestroy {
         return { label: 'Review', severity: 'warn', receipt: 'Manual approval needed' };
       case 'failed':
         return { label: 'Failed', severity: 'danger', receipt: delivery.lastError || 'Posting failed' };
+      case 'unknown':
+        return { label: 'Reconcile', severity: 'danger', receipt: delivery.lastError || 'Provider outcome is unknown; verify before retrying' };
       case 'skipped':
         return { label: 'Skipped', severity: 'secondary', receipt: 'Duplicate avoided' };
       default:

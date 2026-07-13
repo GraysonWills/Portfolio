@@ -6,7 +6,11 @@ const socialAuth = require('./social-auth');
 const { sha256Hex } = require('../utils/crypto');
 
 const DEFAULT_TABLE = 'portfolio-social-auth';
-const DELIVERY_STATUS = new Set(['draft', 'needs_review', 'scheduled', 'sending', 'sent', 'failed', 'skipped']);
+const DELIVERY_STATUS = new Set(['draft', 'needs_review', 'scheduled', 'sending', 'sent', 'failed', 'unknown', 'skipped']);
+const POSTING_PROVIDERS = new Set([
+  'x', 'linkedin', 'facebook', 'instagram', 'threads', 'tiktok', 'reddit',
+  'pinterest', 'mastodon', 'tumblr', 'medium', 'google', 'discord'
+]);
 
 function getTableName() {
   return String(
@@ -470,6 +474,49 @@ async function updateDelivery(userSub, deliveryId, patch) {
   return res?.Attributes || null;
 }
 
+async function claimDeliveryForSend(delivery) {
+  const userSub = String(delivery.userSub || '').trim();
+  const deliveryId = String(delivery.deliveryId || '').trim();
+  const expectedStatus = String(delivery.status || 'draft');
+  const attempts = Number(delivery.attemptCount || 0) + 1;
+
+  try {
+    const res = await getDdbDoc().send(new UpdateCommand({
+      TableName: getTableName(),
+      Key: deliveryKey(userSub, deliveryId),
+      UpdateExpression: 'SET #status = :sending, #attemptCount = :attempts, #lastError = :empty, #updatedAt = :updatedAt',
+      ConditionExpression: '#status = :expectedStatus',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+        '#attemptCount': 'attemptCount',
+        '#lastError': 'lastError',
+        '#updatedAt': 'updatedAt'
+      },
+      ExpressionAttributeValues: {
+        ':sending': 'sending',
+        ':expectedStatus': expectedStatus,
+        ':attempts': attempts,
+        ':empty': '',
+        ':updatedAt': nowIso()
+      },
+      ReturnValues: 'ALL_NEW'
+    }));
+    return res?.Attributes || { ...delivery, status: 'sending', attemptCount: attempts };
+  } catch (err) {
+    if (err?.name !== 'ConditionalCheckFailedException') throw err;
+    const current = await getDeliveryById({ userSub, deliveryId });
+    if (current?.status === 'sent') return current;
+    const currentStatus = String(current?.status || 'missing');
+    const conflict = new Error(
+      currentStatus === 'unknown'
+        ? 'Delivery outcome is unknown and requires manual reconciliation'
+        : `Delivery is already ${currentStatus}; refusing a concurrent send`
+    );
+    conflict.status = 409;
+    throw conflict;
+  }
+}
+
 async function scheduleDelivery(delivery) {
   const cfg = getSchedulerConfig();
   if (!cfg.schedulerInvokeRoleArn || !cfg.schedulerTargetLambdaArn) {
@@ -625,7 +672,7 @@ async function processBlogAutomation({ userSub, listItemID, trigger = 'blog_publ
     ok: true,
     created: results.filter((r) => r.created).length,
     sent: results.filter((r) => r.status === 'sent').length,
-    failed: results.filter((r) => r.status === 'failed').length,
+    failed: results.filter((r) => ['failed', 'unknown'].includes(r.status)).length,
     skipped: results.filter((r) => !r.created).length,
     deliveries: results
   };
@@ -1143,20 +1190,44 @@ async function sendDeliveryRecord(delivery, credential = null) {
   if (!userSub || !deliveryId) throw new Error('Delivery identity is missing');
 
   if (delivery.status === 'sent') return delivery;
+  if (delivery.status === 'sending') {
+    const err = new Error('Delivery is already sending; refusing a concurrent send');
+    err.status = 409;
+    throw err;
+  }
+  if (delivery.status === 'unknown') {
+    const err = new Error('Delivery outcome is unknown and requires manual reconciliation');
+    err.status = 409;
+    throw err;
+  }
 
-  const attempts = Number(delivery.attemptCount || 0) + 1;
-  await updateDelivery(userSub, deliveryId, {
-    status: 'sending',
-    attemptCount: attempts,
-    lastError: ''
-  });
+  if (!POSTING_PROVIDERS.has(delivery.provider)) {
+    return updateDelivery(userSub, deliveryId, {
+      status: 'failed',
+      lastError: `Unsupported social provider: ${delivery.provider}`
+    });
+  }
+
+  let postingCredential = credential;
+  if (delivery.provider !== 'discord' && !postingCredential) {
+    try {
+      postingCredential = await socialAuth.getPostingCredential(delivery.provider, { sub: userSub });
+    } catch (err) {
+      return updateDelivery(userSub, deliveryId, {
+        status: 'failed',
+        lastError: err?.message || 'Provider is not connected'
+      });
+    }
+  }
+
+  const claimed = await claimDeliveryForSend(delivery);
+  if (claimed.status === 'sent') return claimed;
 
   try {
     let result;
     if (delivery.provider === 'discord') {
       result = await postToDiscord(null, delivery);
     } else {
-      const postingCredential = credential || await socialAuth.getPostingCredential(delivery.provider, { sub: userSub });
       if (delivery.provider === 'x') result = await postToX(postingCredential, delivery);
       else if (delivery.provider === 'linkedin') result = await postToLinkedIn(postingCredential, delivery);
       else if (delivery.provider === 'facebook') result = await postToFacebook(postingCredential, delivery);
@@ -1169,7 +1240,6 @@ async function sendDeliveryRecord(delivery, credential = null) {
       else if (delivery.provider === 'tumblr') result = await postToTumblr(postingCredential, delivery);
       else if (delivery.provider === 'medium') result = await postToMedium(postingCredential, delivery);
       else if (delivery.provider === 'google') result = await postToGoogle(postingCredential, delivery);
-      else throw new Error(`Unsupported social provider: ${delivery.provider}`);
     }
 
     return await updateDelivery(userSub, deliveryId, {
@@ -1181,8 +1251,8 @@ async function sendDeliveryRecord(delivery, credential = null) {
     });
   } catch (err) {
     return await updateDelivery(userSub, deliveryId, {
-      status: 'failed',
-      lastError: err?.message || 'Social post failed'
+      status: 'unknown',
+      lastError: `Provider outcome may be ambiguous; reconcile before retrying: ${err?.message || 'Social post failed'}`
     });
   }
 }
@@ -1194,8 +1264,17 @@ async function sendDeliveryById({ userSub, deliveryId, force = false }) {
     err.status = 404;
     throw err;
   }
-  if (delivery.status === 'sent' && !force) {
+  if (delivery.status === 'sent') {
     return sanitizeDelivery(delivery);
+  }
+  if (delivery.status === 'sending' || delivery.status === 'unknown') {
+    const err = new Error(
+      delivery.status === 'unknown'
+        ? 'Delivery outcome is unknown and requires manual reconciliation'
+        : 'Delivery is already sending; refusing a concurrent send'
+    );
+    err.status = 409;
+    throw err;
   }
   if (delivery.requiresReview && delivery.status === 'needs_review' && !force) {
     const err = new Error('Delivery requires review before posting');
@@ -1267,6 +1346,7 @@ async function createDeliveryDraftForUser(user, input = {}) {
     status: 'draft',
     requiresReview: true,
     quietMode: input.quietMode !== false,
+    idempotencyRequestHash: String(input.idempotencyRequestHash || '').trim(),
     lastError,
     attemptCount: 0,
     createdAt: timestamp,
@@ -1274,6 +1354,12 @@ async function createDeliveryDraftForUser(user, input = {}) {
   };
 
   const saved = await putDeliveryIfAbsent(delivery);
+  const savedHash = String(saved.delivery?.idempotencyRequestHash || '').trim();
+  if (!saved.created && delivery.idempotencyRequestHash && savedHash !== delivery.idempotencyRequestHash) {
+    const err = new Error('Idempotency-Key was reused with a different payload');
+    err.status = 409;
+    throw err;
+  }
   return sanitizeDelivery(saved.delivery || delivery);
 }
 
@@ -1291,6 +1377,11 @@ async function deleteDeliveryForUser(user, deliveryId) {
   if (!delivery) {
     const err = new Error('Delivery not found');
     err.status = 404;
+    throw err;
+  }
+  if (['sent', 'sending', 'unknown'].includes(String(delivery.status || ''))) {
+    const err = new Error(`Cannot delete a ${delivery.status} delivery; preserve it for receipt or reconciliation`);
+    err.status = 409;
     throw err;
   }
 
@@ -1324,7 +1415,7 @@ async function cancelPendingDeliveriesForPost({ userSub, listItemID } = {}) {
   const { deliveries } = await listDeliveries(normalizedUserSub, { limit: 200 });
   const pending = deliveries.filter((delivery) => (
     delivery.listItemID === normalizedListItemID
-    && !['sent', 'sending'].includes(String(delivery.status || ''))
+    && !['sent', 'sending', 'unknown'].includes(String(delivery.status || ''))
   ));
   let deleted = 0;
   const cfg = getSchedulerConfig();
@@ -1373,6 +1464,7 @@ module.exports = {
   getSchedulerConfig,
   getAwsRegion,
   __private: {
+    claimDeliveryForSend,
     postToX,
     postToLinkedIn,
     postToInstagram,

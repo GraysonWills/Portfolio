@@ -128,6 +128,13 @@ function createMemoryDdb() {
         const current = clone(store.get(key) || input.Key || {});
         const values = input.ExpressionAttributeValues || {};
 
+        if (
+          /#status\s*=\s*:expectedStatus/i.test(String(input.ConditionExpression || ''))
+          && current.status !== values[':expectedStatus']
+        ) {
+          throw conditionalError('Status changed before conditional update');
+        }
+
         if (Object.prototype.hasOwnProperty.call(values, ':one')) {
           const limit = Number(values[':limit'] || Number.MAX_SAFE_INTEGER);
           if (Number(current.count || 0) >= limit) throw conditionalError('Daily limit exceeded');
