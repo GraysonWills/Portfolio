@@ -68,14 +68,41 @@ span.mcb-att-item { cursor: default; }
 
 .mcb-board {
   --colw: 124px;
-  min-width: calc(9 * var(--colw) + 40px);
   &.z0 { --colw: 72px; }
   &.z2 { --colw: 215px; }
 }
 
+/* one section per content pipeline — its own stage columns via --ncols */
+.mcb-section {
+  --ncols: 9;
+  min-width: calc(var(--ncols) * var(--colw) + 40px);
+  & + & { margin-top: 26px; }
+}
+
+.mcb-sec-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mc-muted);
+  padding-bottom: 4px;
+}
+
+.mcb-sec-count {
+  font-size: 10px;
+  color: var(--mc-ink);
+  font-weight: 700;
+  border: 1px solid var(--mc-line2);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
 .mcb-cols {
   display: grid;
-  grid-template-columns: repeat(9, minmax(var(--colw), 1fr));
+  grid-template-columns: repeat(var(--ncols), minmax(var(--colw), 1fr));
   gap: 0 8px;
   position: sticky;
   top: 0;
@@ -171,7 +198,7 @@ span.mcb-bid { cursor: default; }
 
 .mcb-grid {
   display: grid;
-  grid-template-columns: repeat(9, minmax(var(--colw), 1fr));
+  grid-template-columns: repeat(var(--ncols), minmax(var(--colw), 1fr));
   gap: 6px 8px;
   padding: 8px 0;
   min-height: 44px;

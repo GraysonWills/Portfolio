@@ -20,8 +20,22 @@ interface Lane {
   empty: boolean;
 }
 
+interface Section {
+  pipeline: string;
+  label: string;
+  stages: string[];
+  stageCounts: number[];
+  lanes: Lane[];
+  count: number;
+}
+
 const ZOOM_KEY = 'studio-mc-zoom';
 export const ZOOM_LEVELS = ['mesh', 'chips', 'cards'] as const;
+const PIPE_LABELS: Record<string, string> = {
+  blog: 'Blog / golden path', linkedin: 'LinkedIn posts',
+  snippet: 'Social snippets', video: 'Video clips',
+};
+const PIPE_ORDER = ['blog', 'linkedin', 'snippet', 'video'];
 
 @Component({
   selector: 'app-mc-board',
@@ -34,10 +48,11 @@ export class McBoardComponent implements OnInit, OnDestroy {
   @Output() openApprovals = new EventEmitter<void>();
   @Output() openBatches = new EventEmitter<void>();
 
-  stages: string[] = ['ingest', 'transcript', 'topics', 'draft', 'validate',
-                      'review', 'publish', 'announce', 'posted'];
-  lanes: Lane[] = [];
-  stageCounts: number[] = [];
+  pipelines: Record<string, string[]> = {
+    blog: ['ingest', 'transcript', 'topics', 'draft', 'validate',
+           'review', 'publish', 'announce', 'posted'],
+  };
+  sections: Section[] = [];
   gatesWaiting = 0;
   parkedCount = 0;
   demo = false;
@@ -82,7 +97,7 @@ export class McBoardComponent implements OnInit, OnDestroy {
       const [jobsResp, batches, approvals] = await Promise.all([
         this.api.jobs(), this.api.batches(), this.api.approvals('pending'),
       ]);
-      this.stages = jobsResp.stages;
+      this.pipelines = jobsResp.pipelines || { blog: jobsResp.stages };
       this.jobs = jobsResp.jobs;
       this.batches = batches;
       this.approvals = approvals;
@@ -103,11 +118,44 @@ export class McBoardComponent implements OnInit, OnDestroy {
       !(j.status === 'done' &&
         Date.now() - new Date(j.last_event_at).getTime() > 24 * 3600e3));
 
-    this.stageCounts = this.stages.map(
-      (s) => onBoard.filter((j) => j.stage === s).length);
     this.gatesWaiting = this.approvals.length;
     this.parkedCount = this.jobs.filter((j) => j.status === 'parked').length;
 
+    // group jobs by pipeline (default blog for legacy rows without the field),
+    // then render each pipeline as its own section with its own stage columns —
+    // otherwise a linkedin/video job's stage matches no blog column and vanishes
+    const byPipe = new Map<string, LiveJobSummary[]>();
+    for (const j of onBoard) {
+      const p = j.pipeline && this.pipelines[j.pipeline] ? j.pipeline : 'blog';
+      (byPipe.get(p) ?? byPipe.set(p, []).get(p)!).push(j);
+    }
+
+    const order = [...PIPE_ORDER, ...Object.keys(this.pipelines)
+      .filter((p) => !PIPE_ORDER.includes(p))];
+    const sections: Section[] = [];
+    for (const pipe of order) {
+      const stages = this.pipelines[pipe];
+      if (!stages) continue;
+      const jobs = byPipe.get(pipe) ?? [];
+      // blog keeps its batch × direct lanes; every other pipeline is one lane
+      const lanes = pipe === 'blog'
+        ? this.blogLanes(jobs, stages)
+        : (jobs.length
+            ? [{ batch: null, meta: this.flatMeta(jobs), gatePending: false,
+                 cells: this.bucket(jobs, stages), empty: false }]
+            : []);
+      if (!lanes.length) continue;   // hide empty non-blog pipelines
+      sections.push({
+        pipeline: pipe, label: PIPE_LABELS[pipe] ?? pipe, stages,
+        stageCounts: stages.map((s) => jobs.filter((j) => j.stage === s).length),
+        lanes, count: jobs.length,
+      });
+    }
+    this.sections = sections;
+  }
+
+  /** blog's batch-threaded lanes (collecting/gated batches + a direct lane). */
+  private blogLanes(onBoard: LiveJobSummary[], stages: string[]): Lane[] {
     // a batch earns a lane if it has live jobs, is collecting, or its gate is
     // actually pending — resolved history belongs to the Batches view
     const pendingIds = new Set(this.approvals.map((a) => a.request_id));
@@ -122,20 +170,26 @@ export class McBoardComponent implements OnInit, OnDestroy {
         batch: b,
         meta: this.laneMeta(b),
         gatePending: b.status === 'gated' && !!b.request_id && pendingIds.has(b.request_id),
-        cells: this.bucket(mine),
+        cells: this.bucket(mine, stages),
         empty: mine.length === 0,
       };
     });
     const direct = onBoard.filter((j) => !j.batch_id);
     if (direct.length) {
       lanes.push({ batch: null, meta: 'jobs outside any batch',
-                   gatePending: false, cells: this.bucket(direct), empty: false });
+                   gatePending: false, cells: this.bucket(direct, stages), empty: false });
     }
-    this.lanes = lanes;
+    return lanes;
   }
 
-  private bucket(jobs: LiveJobSummary[]): LiveJobSummary[][] {
-    return this.stages.map((stage) =>
+  private flatMeta(jobs: LiveJobSummary[]): string {
+    const gated = jobs.filter((j) => j.status === 'gated').length;
+    const n = jobs.length;
+    return `${n} job${n === 1 ? '' : 's'}${gated ? ` · ${gated} at gate` : ''}`;
+  }
+
+  private bucket(jobs: LiveJobSummary[], stages: string[]): LiveJobSummary[][] {
+    return stages.map((stage) =>
       jobs.filter((j) => j.stage === stage)
         .sort((a, b) =>
           (a.status === 'parked' ? -1 : 1) - (b.status === 'parked' ? -1 : 1) ||
@@ -188,7 +242,9 @@ export class McBoardComponent implements OnInit, OnDestroy {
     return `${j.last_type} · ${this.ago(j.last_event_at)} ago`;
   }
 
-  stageIndex(j: LiveJobSummary): number { return this.stages.indexOf(j.stage); }
+  stageIndex(j: LiveJobSummary, stages: string[]): number {
+    return stages.indexOf(j.stage);
+  }
 
   ago(iso: string): string {
     const s = (Date.now() - new Date(iso).getTime()) / 1000;

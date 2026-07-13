@@ -26,6 +26,28 @@ const KIND_LABELS: Record<string, string> = {
   blog_draft: 'Publish draft',
   announce_bundle: 'Announce bundle',
   topic_selection: 'Pick topics',
+  snippet_selection: 'Pick snippets',
+  clip_selection: 'Pick clips',
+};
+
+/** The pick-list gate kinds — same candidates[]/{selected:[…]} contract, one
+ *  checkbox picker, kind-specific verbs (ADR-008/011/012). */
+interface PickMeta {
+  pick: string; all: string; deny: string; confirm: string; toast: string; unit: 'batch' | 'run';
+}
+const PICK_KINDS: Record<string, PickMeta> = {
+  topic_selection: {
+    pick: 'Pick topics…', all: 'Draft all', deny: 'Deny batch', confirm: 'Draft',
+    toast: '✓ selection recorded — drafting begins', unit: 'batch',
+  },
+  snippet_selection: {
+    pick: 'Pick snippets…', all: 'Schedule all', deny: 'Deny run', confirm: 'Schedule',
+    toast: '✓ selection recorded — scheduling posts', unit: 'run',
+  },
+  clip_selection: {
+    pick: 'Pick clips…', all: 'Render all', deny: 'Deny run', confirm: 'Render',
+    toast: '✓ selection recorded — rendering clips', unit: 'run',
+  },
 };
 
 @Component({
@@ -43,6 +65,7 @@ export class McApprovalsComponent implements OnInit {
   editingId: string | null = null;
   editText = '';
   pickingId: string | null = null;
+  pickKind: string | null = null;
   pickRows: PickRow[] = [];
   toast = '';
 
@@ -63,7 +86,7 @@ export class McApprovalsComponent implements OnInit {
         kind: a.kind,
         action: KIND_LABELS[a.kind] || a.kind,
         target: a.summary,
-        client: `mesh · ${a.kind === 'topic_selection' ? 'batch' : 'job'} …${(a.correlation_id || '').slice(-6) || '—'}`,
+        client: `mesh · ${PICK_KINDS[a.kind]?.unit || 'job'} …${(a.correlation_id || '').slice(-6) || '—'}`,
         when: new Date(a.requested_at).toLocaleString(),
       }));
       this.demo = false;
@@ -107,11 +130,18 @@ export class McApprovalsComponent implements OnInit {
     }
   }
 
-  /* ---- topic_selection picker (MC v1, ADR-008) ---- */
+  /* ---- pick-list picker: topic/snippet/clip selection (ADR-008/011/012) ---- */
+
+  isPick(kind: string): boolean { return kind in PICK_KINDS; }
+  pickLabel(kind: string): string { return PICK_KINDS[kind]?.pick || 'Pick…'; }
+  allLabel(kind: string): string { return PICK_KINDS[kind]?.all || 'Approve all'; }
+  denyLabel(kind: string): string { return PICK_KINDS[kind]?.deny || 'Deny'; }
+  confirmVerb(kind: string): string { return PICK_KINDS[kind]?.confirm || 'Approve'; }
 
   async startPick(c: GateCard): Promise<void> {
     if (!c.requestId) return;
     this.pickingId = c.requestId;
+    this.pickKind = c.kind;
     this.denyingId = null;
     this.editingId = null;
     this.pickRows = [];
@@ -126,7 +156,9 @@ export class McApprovalsComponent implements OnInit {
         novelty_score: cand.novelty_score ?? null,
         novelty_verdict: cand.novelty_verdict ?? null,
         closest_ref: cand.closest_ref ?? null,
-        checked: cand.novelty_verdict === 'novel',  // duplicates opt-in only
+        // topics carry a novelty verdict (duplicates opt-in only); snippet/clip
+        // candidates have none → default them all checked
+        checked: cand.novelty_verdict ? cand.novelty_verdict === 'novel' : true,
       }));
     } catch {
       this.pickRows = [];
@@ -165,9 +197,11 @@ export class McApprovalsComponent implements OnInit {
                        note?: string, edited?: string): Promise<void> {
     this.busyId = id;
     const wasPick = this.pickingId === id;
+    const pickToast = (this.pickKind && PICK_KINDS[this.pickKind]?.toast)
+      || '✓ selection recorded';
     try {
       await this.api.decide(id, decision, note, edited);
-      this.showToast(wasPick ? '✓ selection recorded — drafting begins'
+      this.showToast(wasPick ? pickToast
         : decision === 'edited'
         ? '✓ approved — edit captured for voice training' : `✓ ${decision}`);
       await this.reload();

@@ -19,7 +19,7 @@
         <div class="mca-target">{{ q.target }}</div>
         <div class="mca-meta">{{ q.client }} &middot; {{ q.when }}</div>
       </div>
-      <div class="mca-actions" *ngIf="q.kind !== 'topic_selection'">
+      <div class="mca-actions" *ngIf="!isPick(q.kind)">
         <button type="button" class="mca-btn-approve"
                 [disabled]="!q.requestId || busyId === q.requestId"
                 (click)="approve(q)">Approve</button>
@@ -30,16 +30,16 @@
                 [disabled]="!q.requestId || busyId === q.requestId"
                 (click)="startDeny(q)">Deny</button>
       </div>
-      <div class="mca-actions" *ngIf="q.kind === 'topic_selection'">
+      <div class="mca-actions" *ngIf="isPick(q.kind)">
         <button type="button" class="mca-btn-approve"
                 [disabled]="!q.requestId || busyId === q.requestId"
-                (click)="startPick(q)">Pick topics…</button>
+                (click)="startPick(q)">{{ pickLabel(q.kind) }}</button>
         <button type="button" class="mca-btn-edit"
                 [disabled]="!q.requestId || busyId === q.requestId"
-                (click)="approve(q)">Draft all</button>
+                (click)="approve(q)">{{ allLabel(q.kind) }}</button>
         <button type="button" class="mca-btn-deny"
                 [disabled]="!q.requestId || busyId === q.requestId"
-                (click)="startDeny(q)">Deny batch</button>
+                (click)="startDeny(q)">{{ denyLabel(q.kind) }}</button>
       </div>
 
       <div class="mca-pick-zone" *ngIf="pickingId === q.requestId">
@@ -64,7 +64,7 @@
         </label>
         <button type="button" class="mca-btn-approve" *ngIf="pickRows.length"
                 [disabled]="!pickedCount()" (click)="confirmPick()">
-          Draft {{ pickedCount() }} selected</button>
+          {{ confirmVerb(q.kind) }} {{ pickedCount() }} selected</button>
       </div>
 
       <div class="mca-deny-row" *ngIf="denyingId === q.requestId">

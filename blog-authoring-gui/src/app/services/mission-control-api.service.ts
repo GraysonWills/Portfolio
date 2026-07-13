@@ -60,6 +60,7 @@ export interface LiveJobStep {
 export interface LiveJobSummary {
   correlation_id: string;
   kind: 'post' | 'recording' | 'batch';
+  pipeline?: string;                // blog | linkedin | snippet | video
   batch_id: string | null;
   title: string | null;
   stage: string;
@@ -77,6 +78,7 @@ export interface LiveJobSummary {
 export interface LiveJobsResponse {
   generated_at: string;
   stages: string[];
+  pipelines?: Record<string, string[]>;   // pipeline -> its ordered stages
   jobs: LiveJobSummary[];
 }
 
