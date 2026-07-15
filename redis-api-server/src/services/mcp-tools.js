@@ -939,7 +939,7 @@ function buildMcpServer(client) {
   });
 
   registerTool(server, client, 'social.schedule_delivery_at', {
-    description: 'Create one delayed LinkedIn delivery for an exact time after an upstream Grayson gate. The time is never changed automatically; a 48-hour conflict is returned without scheduling.',
+    description: 'Create one delayed LinkedIn delivery for the exact future time selected at an upstream Grayson gate. The time is never changed automatically; other scheduled deliveries are informational and do not block the human choice.',
     scope: 'social:write:send',
     category: 'externalMutation',
     inputSchema: {

@@ -917,34 +917,7 @@ test('MCP social.schedule_delivery_at requires send scope and replays one exact 
   assert.equal(calls.create[0].runAt, request.runAt);
 });
 
-test('MCP social.schedule_delivery_at returns a final conflict without claiming success', async () => {
-  const memory = createMemoryDdb();
-  const { buildMcpServer } = loadMcpModules(memory);
-  const socialDistribution = require('../src/services/social-distribution');
-  socialDistribution.createDeliveryDraftForUser = async (_user, input) => ({
-    deliveryId: input.deliveryId,
-    status: 'draft',
-  });
-  socialDistribution.scheduleDeliveryAtForUser = async (_user, deliveryId) => ({
-    scheduled: false,
-    delivery: { deliveryId, provider: 'linkedin', status: 'draft' },
-    conflict: {
-      deliveryId: 'occupied',
-      provider: 'linkedin',
-      runAt: '2026-07-21T12:00:00.000Z',
-      status: 'scheduled',
-    },
-  });
-  const server = buildMcpServer(testClient(['social:write:send']));
-  const result = await callRegisteredTool(server, 'social.schedule_delivery_at', {
-    provider: 'linkedin', caption: 'Approved copy',
-    runAt: '2026-07-22T12:00:00.000Z', idempotencyKey: 'mesh-delayed-conflict',
-  });
-  assert.equal(result.structuredContent.scheduled, false);
-  assert.equal(result.structuredContent.conflict.deliveryId, 'occupied');
-});
-
-test('delayed service clears only the pre-gated review flag and persists one scheduler receipt', async (t) => {
+test('delayed service preserves a human time near another scheduled post', async (t) => {
   const memory = createMemoryDdb();
   loadMcpModules(memory);
   process.env.SCHEDULER_INVOKE_ROLE_ARN = 'arn:aws:iam::123:role/scheduler';
@@ -954,6 +927,14 @@ test('delayed service clears only the pre-gated review flag and persists one sch
     delete process.env.SCHEDULER_TARGET_LAMBDA_ARN;
   });
   const socialDistribution = require('../src/services/social-distribution');
+  await seedSocialDelivery(memory, {
+    deliveryId: 'nearby-existing',
+    sk: 'DELIVERY#nearby-existing',
+    provider: 'linkedin',
+    accountId: 'linkedin-person',
+    runAt: '2099-07-21T12:00:00.000Z',
+    status: 'scheduled',
+  });
   await seedSocialDelivery(memory, {
     deliveryId: 'delayed-real-service',
     sk: 'DELIVERY#delayed-real-service',
@@ -972,6 +953,7 @@ test('delayed service clears only the pre-gated review flag and persists one sch
   });
   assert.equal(result.scheduled, true);
   assert.equal(result.delivery.status, 'scheduled');
+  assert.equal(result.delivery.runAt, '2099-07-22T12:00:00.000Z');
   assert.equal(stored.requiresReview, false);
   assert.equal(stored.status, 'scheduled');
   assert.match(stored.scheduleName, /^social-[a-f0-9]{40}$/);

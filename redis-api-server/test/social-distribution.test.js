@@ -117,41 +117,6 @@ test('builds stable delivery ids from post, rule, provider, and account', () => 
   assert.equal(first.length, 64);
 });
 
-test('LinkedIn delayed scheduling applies the approved 48-hour spacing boundary', () => {
-  const occupied = [{
-    deliveryId: 'existing',
-    provider: 'linkedin',
-    runAt: '2026-07-17T12:00:00.000Z',
-    status: 'scheduled'
-  }];
-
-  const exactlyFortyEightHours = socialDistribution.__private.scheduleConflict(
-    occupied,
-    '2026-07-15T12:00:00.000Z',
-    { now: new Date('2026-07-15T10:00:00.000Z') }
-  );
-  const twentyFourHours = socialDistribution.__private.scheduleConflict(
-    occupied,
-    '2026-07-18T12:00:00.000Z',
-    { now: new Date('2026-07-15T10:00:00.000Z') }
-  );
-
-  assert.equal(exactlyFortyEightHours, null);
-  assert.equal(twentyFourHours.deliveryId, 'existing');
-});
-
-test('LinkedIn delayed scheduling ignores drafts, failed rows, and other providers', () => {
-  const rows = [
-    { deliveryId: 'draft', provider: 'linkedin', runAt: '2026-07-18T12:00:00Z', status: 'draft' },
-    { deliveryId: 'failed', provider: 'linkedin', runAt: '2026-07-18T12:00:00Z', status: 'failed' },
-    { deliveryId: 'x', provider: 'x', runAt: '2026-07-18T12:00:00Z', status: 'scheduled' },
-  ];
-  assert.equal(
-    socialDistribution.__private.scheduleConflict(rows, '2026-07-18T13:00:00Z'),
-    null
-  );
-});
-
 test('posts X deliveries through current api.x.com endpoint', async (t) => {
   const calls = [];
   const originalFetch = global.fetch;

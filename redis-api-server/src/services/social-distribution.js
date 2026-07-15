@@ -11,8 +11,6 @@ const POSTING_PROVIDERS = new Set([
   'x', 'linkedin', 'facebook', 'instagram', 'threads', 'tiktok', 'reddit',
   'pinterest', 'mastodon', 'tumblr', 'medium', 'google', 'discord'
 ]);
-const LINKEDIN_MIN_SPACING_MS = 48 * 60 * 60 * 1000;
-const ACTIVE_SCHEDULE_STATUSES = new Set(['scheduled', 'sending', 'unknown']);
 
 function getTableName() {
   return String(
@@ -47,13 +45,6 @@ function deliveryKey(userSub, deliveryId) {
   return { pk: `USER#${userSub}`, sk: `DELIVERY#${deliveryId}` };
 }
 
-function scheduleLockKey(userSub, provider) {
-  return {
-    pk: `USER#${userSub}`,
-    sk: `SOCIAL_DISTRIBUTION#SCHEDULE_LOCK#${provider}`
-  };
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
@@ -65,22 +56,6 @@ function toAtExpression(date) {
 
 function safeScheduleName(deliveryId) {
   return `social-${sha256Hex(String(deliveryId || '')).slice(0, 40)}`;
-}
-
-function scheduleConflict(deliveries, runAt, { excludeDeliveryId = '', now = new Date() } = {}) {
-  const candidate = new Date(runAt);
-  if (Number.isNaN(candidate.getTime())) return null;
-  const nowMs = new Date(now).getTime();
-  return (deliveries || []).find((delivery) => {
-    if (!delivery || delivery.deliveryId === excludeDeliveryId) return false;
-    if (String(delivery.provider || '').toLowerCase() !== 'linkedin') return false;
-    const occupied = new Date(delivery.runAt);
-    if (Number.isNaN(occupied.getTime())) return false;
-    const status = String(delivery.status || '').toLowerCase();
-    const active = ACTIVE_SCHEDULE_STATUSES.has(status)
-      || (status === 'sent' && occupied.getTime() > nowMs);
-    return active && Math.abs(candidate.getTime() - occupied.getTime()) < LINKEDIN_MIN_SPACING_MS;
-  }) || null;
 }
 
 function getDefaultSettings() {
@@ -600,48 +575,9 @@ async function scheduleDelivery(delivery) {
   });
 }
 
-async function acquireScheduleLock(userSub, provider, owner) {
-  const now = Math.floor(Date.now() / 1000);
-  try {
-    await getDdbDoc().send(new PutCommand({
-      TableName: getTableName(),
-      Item: {
-        ...scheduleLockKey(userSub, provider),
-        type: 'social_schedule_lock',
-        owner,
-        leaseUntilEpoch: now + 30,
-        expiresAtEpoch: now + 120,
-        updatedAt: nowIso()
-      },
-      ConditionExpression: 'attribute_not_exists(pk) OR #leaseUntilEpoch < :now',
-      ExpressionAttributeNames: { '#leaseUntilEpoch': 'leaseUntilEpoch' },
-      ExpressionAttributeValues: { ':now': now }
-    }));
-  } catch (err) {
-    if (err?.name !== 'ConditionalCheckFailedException') throw err;
-    const busy = new Error('LinkedIn scheduling is busy; retry this exact request');
-    busy.status = 409;
-    throw busy;
-  }
-}
-
-async function releaseScheduleLock(userSub, provider, owner) {
-  try {
-    await getDdbDoc().send(new DeleteCommand({
-      TableName: getTableName(),
-      Key: scheduleLockKey(userSub, provider),
-      ConditionExpression: '#owner = :owner',
-      ExpressionAttributeNames: { '#owner': 'owner' },
-      ExpressionAttributeValues: { ':owner': owner }
-    }));
-  } catch (err) {
-    if (err?.name !== 'ConditionalCheckFailedException') throw err;
-  }
-}
-
 async function scheduleDeliveryAtForUser(user, deliveryId) {
   const userSub = userSubFrom(user);
-  let delivery = await getDeliveryById({ userSub, deliveryId });
+  const delivery = await getDeliveryById({ userSub, deliveryId });
   if (!delivery) {
     const err = new Error('Delivery not found');
     err.status = 404;
@@ -672,39 +608,13 @@ async function scheduleDeliveryAtForUser(user, deliveryId) {
     throw err;
   }
 
-  const owner = `${deliveryId}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
-  await acquireScheduleLock(userSub, 'linkedin', owner);
-  try {
-    delivery = await getDeliveryById({ userSub, deliveryId });
-    if (delivery?.status === 'scheduled') {
-      return { scheduled: true, delivery: sanitizeDelivery(delivery), conflict: null };
-    }
-    const listed = await listDeliveries(userSub, { limit: 200 });
-    const occupied = scheduleConflict(listed.deliveries, runAt, {
-      excludeDeliveryId: deliveryId
-    });
-    if (occupied) {
-      return {
-        scheduled: false,
-        delivery: sanitizeDelivery(delivery),
-        conflict: {
-          deliveryId: occupied.deliveryId,
-          runAt: occupied.runAt,
-          status: occupied.status,
-          provider: occupied.provider
-        }
-      };
-    }
-    const scheduled = await scheduleDelivery(delivery);
-    if (scheduled?.status !== 'scheduled') {
-      const err = new Error(scheduled?.lastError || 'Unable to create delayed social schedule');
-      err.status = 503;
-      throw err;
-    }
-    return { scheduled: true, delivery: sanitizeDelivery(scheduled), conflict: null };
-  } finally {
-    await releaseScheduleLock(userSub, 'linkedin', owner);
+  const scheduled = await scheduleDelivery(delivery);
+  if (scheduled?.status !== 'scheduled') {
+    const err = new Error(scheduled?.lastError || 'Unable to create delayed social schedule');
+    err.status = 503;
+    throw err;
   }
+  return { scheduled: true, delivery: sanitizeDelivery(scheduled), conflict: null };
 }
 
 async function processBlogAutomation({ userSub, listItemID, trigger = 'blog_published', baseDate = new Date(), blog = {} } = {}) {
@@ -1621,7 +1531,6 @@ module.exports = {
   getAwsRegion,
   __private: {
     claimDeliveryForSend,
-    scheduleConflict,
     safeScheduleName,
     postToX,
     postToLinkedIn,
