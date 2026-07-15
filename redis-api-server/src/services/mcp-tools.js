@@ -358,18 +358,32 @@ async function uploadImageFromBase64(input = {}, client) {
 
   const cfg = getPhotoAssetConfig();
   const checksum = sha256Hex(bytes);
-  const assetId = `asset-${uuidv4()}`;
+  const requestedAssetId = String(input.assetId || '').trim();
+  if (requestedAssetId && !/^asset-[a-z0-9-]{8,80}$/.test(requestedAssetId)) {
+    throw httpError(400, 'Internal image asset identity is invalid');
+  }
+  const assetId = requestedAssetId || `asset-${uuidv4()}`;
   const now = new Date();
   const yyyy = String(now.getUTCFullYear());
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(now.getUTCDate()).padStart(2, '0');
   const ext = contentType === 'image/jpeg' ? '.jpg' : contentType === 'image/gif' ? '.gif' : '.png';
   const filename = String(input.filename || `upload${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || `upload${ext}`;
-  const key = `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
+  const key = requestedAssetId
+    ? `${cfg.prefix}mcp/${assetId}/${filename}`
+    : `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
   const publicUrl = publicUrlForKey(cfg, key);
   const timestamp = now.toISOString();
 
-  await createPendingPhotoAsset({
+  const existing = requestedAssetId ? await getPhotoAssetById(assetId) : null;
+  if (existing) {
+    if (String(existing.checksum_sha256 || '') !== checksum) {
+      throw httpError(409, 'Image idempotency identity was reused with different bytes');
+    }
+    if (existing.status === 'ready') return { asset: existing };
+  }
+
+  if (!existing) await createPendingPhotoAsset({
     asset_id: assetId,
     owner: String(client.ownerSub || 'mcp').toLowerCase(),
     status: 'pending',
@@ -922,6 +936,57 @@ function buildMcpServer(client) {
       throw httpError(status, `Provider is not ready: ${detail}`);
     }
     return { delivery };
+  });
+
+  registerTool(server, client, 'social.schedule_delivery_at', {
+    description: 'Create one delayed LinkedIn delivery for an exact time after an upstream Grayson gate. The time is never changed automatically; a 48-hour conflict is returned without scheduling.',
+    scope: 'social:write:send',
+    category: 'externalMutation',
+    inputSchema: {
+      idempotencyKey: z.string().min(1),
+      provider: z.literal('linkedin'),
+      caption: z.string().min(1),
+      runAt: z.string().min(1),
+      mediaUrl: z.string().optional(),
+      imageBase64: z.string().optional(),
+      imageContentType: z.string().optional(),
+      destination: z.string().optional(),
+      postUrl: z.string().optional(),
+      title: z.string().optional(),
+    },
+  }, async (args) => {
+    const effectIdentity = sha256Hex([
+      client.clientId,
+      'social.schedule_delivery_at',
+      String(args.idempotencyKey || '').trim(),
+    ].join(':'));
+    const effectRequestHash = sha256Hex(JSON.stringify(args || {}));
+    let mediaUrl = String(args.mediaUrl || '').trim();
+    if (!mediaUrl && args.imageBase64) {
+      const stored = await uploadImageFromBase64({
+        data: args.imageBase64,
+        contentType: args.imageContentType,
+        usage: 'social',
+        caption: String(args.caption || '').slice(0, 200),
+        assetId: `asset-mesh-${effectIdentity.slice(0, 40)}`,
+      }, client);
+      mediaUrl = String(stored.asset?.public_url || '').trim();
+    }
+    const draft = await socialDistribution.createDeliveryDraftForUser(ownerUser(client), {
+      deliveryId: effectIdentity,
+      idempotencyRequestHash: effectRequestHash,
+      provider: 'linkedin',
+      caption: args.caption,
+      runAt: args.runAt,
+      mediaUrl,
+      destination: args.destination,
+      postUrl: args.postUrl,
+      title: args.title || 'Mesh LinkedIn post',
+      listItemID: 'mesh-social',
+      ruleId: 'mesh-single-gate-delayed',
+      ruleName: 'Mesh pre-gated delayed delivery',
+    });
+    return socialDistribution.scheduleDeliveryAtForUser(ownerUser(client), draft.deliveryId);
   });
 
   createApprovalTool(server, client, 'blog.propose_update', 'blog:propose', {

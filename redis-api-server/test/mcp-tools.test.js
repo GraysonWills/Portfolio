@@ -867,6 +867,116 @@ test('MCP social.schedule_delivery replays one sent delivery and refuses non-sen
   );
 });
 
+test('MCP social.schedule_delivery_at requires send scope and replays one exact reservation', async () => {
+  const memory = createMemoryDdb();
+  const { buildMcpServer } = loadMcpModules(memory);
+  const socialDistribution = require('../src/services/social-distribution');
+  const calls = { create: [], schedule: 0 };
+
+  socialDistribution.createDeliveryDraftForUser = async (_user, input) => {
+    calls.create.push(input);
+    return { deliveryId: input.deliveryId, status: 'draft' };
+  };
+  socialDistribution.scheduleDeliveryAtForUser = async (_user, deliveryId) => {
+    calls.schedule++;
+    return {
+      scheduled: true,
+      conflict: null,
+      delivery: {
+        deliveryId,
+        provider: 'linkedin',
+        runAt: '2026-07-22T12:00:00.000Z',
+        status: 'scheduled',
+      },
+    };
+  };
+
+  const denied = buildMcpServer(testClient(['social:read']));
+  await assert.rejects(
+    () => callRegisteredTool(denied, 'social.schedule_delivery_at', {
+      provider: 'linkedin', caption: 'Approved copy',
+      runAt: '2026-07-22T12:00:00.000Z', idempotencyKey: 'mesh-delayed-denied',
+    }),
+    /missing scope: social:write:send/
+  );
+
+  const server = buildMcpServer(testClient(['social:write:send']));
+  const request = {
+    provider: 'linkedin',
+    caption: 'Approved copy',
+    runAt: '2026-07-22T12:00:00.000Z',
+    idempotencyKey: 'mesh-delayed-1',
+  };
+  const first = await callRegisteredTool(server, 'social.schedule_delivery_at', request);
+  const replay = await callRegisteredTool(server, 'social.schedule_delivery_at', request);
+
+  assert.equal(first.structuredContent.scheduled, true);
+  assert.deepEqual(replay.structuredContent, first.structuredContent);
+  assert.equal(calls.create.length, 1);
+  assert.equal(calls.schedule, 1);
+  assert.equal(calls.create[0].runAt, request.runAt);
+});
+
+test('MCP social.schedule_delivery_at returns a final conflict without claiming success', async () => {
+  const memory = createMemoryDdb();
+  const { buildMcpServer } = loadMcpModules(memory);
+  const socialDistribution = require('../src/services/social-distribution');
+  socialDistribution.createDeliveryDraftForUser = async (_user, input) => ({
+    deliveryId: input.deliveryId,
+    status: 'draft',
+  });
+  socialDistribution.scheduleDeliveryAtForUser = async (_user, deliveryId) => ({
+    scheduled: false,
+    delivery: { deliveryId, provider: 'linkedin', status: 'draft' },
+    conflict: {
+      deliveryId: 'occupied',
+      provider: 'linkedin',
+      runAt: '2026-07-21T12:00:00.000Z',
+      status: 'scheduled',
+    },
+  });
+  const server = buildMcpServer(testClient(['social:write:send']));
+  const result = await callRegisteredTool(server, 'social.schedule_delivery_at', {
+    provider: 'linkedin', caption: 'Approved copy',
+    runAt: '2026-07-22T12:00:00.000Z', idempotencyKey: 'mesh-delayed-conflict',
+  });
+  assert.equal(result.structuredContent.scheduled, false);
+  assert.equal(result.structuredContent.conflict.deliveryId, 'occupied');
+});
+
+test('delayed service clears only the pre-gated review flag and persists one scheduler receipt', async (t) => {
+  const memory = createMemoryDdb();
+  loadMcpModules(memory);
+  process.env.SCHEDULER_INVOKE_ROLE_ARN = 'arn:aws:iam::123:role/scheduler';
+  process.env.SCHEDULER_TARGET_LAMBDA_ARN = 'arn:aws:lambda:us-east-2:123:function:api';
+  t.after(() => {
+    delete process.env.SCHEDULER_INVOKE_ROLE_ARN;
+    delete process.env.SCHEDULER_TARGET_LAMBDA_ARN;
+  });
+  const socialDistribution = require('../src/services/social-distribution');
+  await seedSocialDelivery(memory, {
+    deliveryId: 'delayed-real-service',
+    sk: 'DELIVERY#delayed-real-service',
+    provider: 'linkedin',
+    accountId: 'linkedin-person',
+    runAt: '2099-07-22T12:00:00.000Z',
+    status: 'draft',
+    requiresReview: true,
+    lastError: '',
+  });
+
+  const result = await socialDistribution.scheduleDeliveryAtForUser(
+    { sub: 'author-sub' }, 'delayed-real-service');
+  const stored = memory.getByKey('social-distribution-test', {
+    pk: 'USER#author-sub', sk: 'DELIVERY#delayed-real-service',
+  });
+  assert.equal(result.scheduled, true);
+  assert.equal(result.delivery.status, 'scheduled');
+  assert.equal(stored.requiresReview, false);
+  assert.equal(stored.status, 'scheduled');
+  assert.match(stored.scheduleName, /^social-[a-f0-9]{40}$/);
+});
+
 test('social delivery identity rejects payload changes and sent deliveries never repost', async () => {
   const memory = createMemoryDdb();
   loadMcpModules(memory);
