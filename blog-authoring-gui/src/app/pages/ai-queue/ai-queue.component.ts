@@ -44,6 +44,7 @@ export class AiQueueComponent implements OnInit {
     'site:read': 'Site inventory',
     'content:read': 'Content reads',
     'content:write:draft': 'Content drafts',
+    'collections:write:hidden': 'Hidden Collections imports',
     'blog:read': 'Blog reads',
     'blog:write:draft': 'Blog drafts',
     'blog:propose': 'Blog approvals',

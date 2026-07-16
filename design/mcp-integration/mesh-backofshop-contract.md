@@ -1,7 +1,7 @@
 # Mesh → back-of-shop publishing contract
 
-Status: social delivery implemented and hardened 2026-07-13; blog publishing
-contract still requires an ADR decision.
+Status: social delivery implemented and hardened 2026-07-13; ADR-027 selected
+the canonical blog draft plus auto-executed exact schedule request on 2026-07-15.
 
 ## Trust boundary
 
@@ -56,30 +56,27 @@ duplicate prevention in ambiguous outcomes.
 5. Never mint a new key merely to bypass `sending` or `unknown`; that authorizes
    a second public effect.
 
-## Blog publishing decision still open
+## Blog scheduling
 
-The mesh blog publisher still targets the development stub shape
-`POST /api/posts`. Production Portfolio writes are canonical at
-`/api/blog/posts` and require a Cognito user token; the existing machine MCP
-surface separates `blog.create_draft` from approval-backed
-`blog.request_publish`. Bridging these without either bypassing a gate or
-adding a redundant one is a contract/approval decision, not a compatibility
-alias to add silently.
+After an exact Mesh `blog_draft` decision, Mesh uploads the selected image (or
+records the explicit no-image choice), calls `blog.create_draft`, then calls
+`blog.request_schedule` with the human-selected instant. The dedicated Mesh
+client must carry `blog:read`, `blog:write:draft`, `media:write:draft`, and
+`blog:propose`, and its auto-execute allowlist contains only the required
+`blog.request_schedule` action. Both calls use stable effect-derived
+idempotency keys; a non-auto-executed schedule response is a configuration
+failure, not success.
 
-ADR options:
+`blog.get_post` and `blog.list_posts` return a canonical `publicUrl`. Mesh
+treats `status=published` plus that URL and a timezone-aware `publishDate` as
+publication evidence. Until all three are present, its effect remains
+scheduled and no `content.published` event is emitted.
 
-1. Use `blog.create_draft` plus `blog.request_publish`, and configure only the
-   mesh client to auto-execute publish requests after the upstream Grayson
-   gate. This reuses canonical services and preserves an executed approval
-   audit record, but requires two replay-safe calls and client policy setup.
-2. Add a narrowly scoped `blog.publish_preapproved` MCP tool. This is simpler
-   for the mesh and mirrors social delivery, but creates a second privileged
-   direct-publish surface and needs a new non-default scope.
-3. Add a machine-authenticated HTTP compatibility endpoint. This matches the
-   current worker with the smallest mesh diff, but duplicates MCP auth,
-   auditing, rate limiting, and idempotency policy.
+## Hidden Collections projection
 
-Recommendation: option 1. It reuses the existing canonical post and
-notification paths, keeps one machine credential, and leaves an AWS-side audit
-record explaining why publication was allowed. Implement it only after the
-approval-policy ADR is accepted.
+`collections.create_entry` requires the non-default
+`collections:write:hidden` scope. It accepts only `visibility=hidden`, derives
+a stable entry identity from the owner and Mesh source reference, returns the
+same record for an identical replay, and rejects attempts to rewrite that
+source in place. This tool is called only after the exact `audio_routing` gate;
+it cannot make a Collection public.

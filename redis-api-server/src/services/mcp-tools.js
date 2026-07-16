@@ -679,14 +679,31 @@ function buildMcpServer(client) {
       offset: z.number().optional(),
       limit: z.number().optional(),
     },
-  }, blogPosts.listPosts);
+  }, async (args) => {
+    const result = await blogPosts.listPosts(args);
+    return {
+      ...result,
+      items: (result.items || []).map((post) => ({
+        ...post,
+        publicUrl: `${getPublicSiteUrl()}/blog/${encodeURIComponent(post.listItemID)}`,
+      })),
+    };
+  });
 
   registerTool(server, client, 'blog.get_post', {
     description: 'Fetch a full canonical blog post bundle.',
     scope: 'blog:read',
     inputSchema: { listItemID: z.string() },
     targetIds: (args) => [args.listItemID],
-  }, async (args) => ({ post: await blogPosts.getPost(args.listItemID) }));
+  }, async (args) => {
+    const post = await blogPosts.getPost(args.listItemID);
+    return {
+      post: {
+        ...post,
+        publicUrl: `${getPublicSiteUrl()}/blog/${encodeURIComponent(post.listItemID)}`,
+      },
+    };
+  });
 
   registerTool(server, client, 'media.list_assets', {
     description: 'List photo assets.',
@@ -768,6 +785,77 @@ function buildMcpServer(client) {
       draftOnly: true,
     }),
   }));
+
+  registerTool(server, client, 'collections.create_entry', {
+    description: 'Create one immutable hidden Collections entry from an upstream human-routed source.',
+    scope: 'collections:write:hidden',
+    category: 'draftMutation',
+    inputSchema: {
+      collectionType: z.enum(['lyrics', 'poem', 'quote', 'transcript', 'interview', 'note', 'article', 'custom']),
+      title: z.string(),
+      content: z.string(),
+      sourceRef: z.string(),
+      visibility: z.literal('hidden'),
+      notes: z.string().optional(),
+    },
+    targetIds: (_args, data) => [data?.entry?.entryId].filter(Boolean),
+  }, async (args) => {
+    const sourceRef = String(args.sourceRef || '').trim();
+    if (!sourceRef) throw httpError(400, 'sourceRef is required');
+    const identity = sha256Hex(`${client.ownerSub}:${sourceRef}`).slice(0, 40);
+    const entryId = `collections-entry-mesh-${identity}`;
+    const existing = await ddbGetContentById(entryId).catch(() => null);
+    if (existing) {
+      const metadata = existing.Metadata || {};
+      if (String(metadata.sourceRef || '') !== sourceRef
+          || String(existing.Text || '') !== String(args.content || '')
+          || String(metadata.title || '') !== String(args.title || '').trim()) {
+        throw httpError(409, 'A hidden Collections source cannot be rewritten in place');
+      }
+      return {
+        entry: {
+          entryId,
+          listItemID: existing.ListItemID,
+          visibility: 'hidden',
+          replayed: true,
+        },
+      };
+    }
+    const now = new Date().toISOString();
+    const entryType = args.collectionType === 'lyrics' ? 'lyrics' : 'note';
+    const item = await ddbPutContent({
+      ID: entryId,
+      Text: String(args.content || ''),
+      PageID: 4,
+      PageContentID: 17,
+      ListItemID: `mesh-${identity}`,
+      Metadata: {
+        title: String(args.title || '').trim() || 'Untitled',
+        summary: String(args.notes || '').trim(),
+        entryType,
+        categoryId: `mesh-${args.collectionType}`,
+        categorySlug: `mesh-${args.collectionType}`,
+        categoryName: `Mesh ${args.collectionType.replaceAll('_', ' ')}`,
+        tags: ['mesh-import', args.collectionType],
+        isPublic: false,
+        visibility: 'hidden',
+        sourceRef,
+        meshCollectionType: args.collectionType,
+        createdAt: now,
+        updatedAt: now,
+      },
+      CreatedAt: now,
+      UpdatedAt: now,
+    });
+    return {
+      entry: {
+        entryId: item.ID,
+        listItemID: item.ListItemID,
+        visibility: item.Metadata.visibility,
+        replayed: false,
+      },
+    };
+  });
 
   registerTool(server, client, 'blog.update_mcp_draft', {
     description: 'Update a draft created by the same MCP client.',

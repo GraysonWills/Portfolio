@@ -22,6 +22,7 @@ const ALL_SCOPES = [
   'site:read',
   'content:read',
   'content:write:draft',
+  'collections:write:hidden',
   'blog:read',
   'blog:write:draft',
   'blog:propose',

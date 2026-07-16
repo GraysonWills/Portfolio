@@ -153,9 +153,43 @@ test('MCP tool registry exposes draft delete and idempotency-capable mutation sc
   const server = buildMcpServer(testClient(mcpControl.ALL_SCOPES));
 
   assert.ok(server._registeredTools['blog.delete_mcp_draft']);
+  assert.ok(server._registeredTools['collections.create_entry']);
   assert.ok(hasSchemaField(server._registeredTools['blog.create_draft'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['blog.propose_update'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['content.propose_update'], 'route'));
+});
+
+test('hidden Collections projection is scoped, replay-safe, and cannot become public', async () => {
+  const memory = createMemoryDdb();
+  const { mcpControl, buildMcpServer } = loadMcpModules(memory);
+  const server = buildMcpServer(testClient(mcpControl.ALL_SCOPES));
+  const request = {
+    collectionType: 'lyrics',
+    title: 'Verse fragment',
+    content: 'A line from the recorder.',
+    sourceRef: 'mesh://audio/unit-1/lyrics',
+    visibility: 'hidden',
+    idempotencyKey: 'mesh-unit-1-lyrics',
+  };
+  const first = await callRegisteredTool(server, 'collections.create_entry', request);
+  const second = await callRegisteredTool(server, 'collections.create_entry', request);
+  assert.equal(second.structuredContent.entry.entryId, first.structuredContent.entry.entryId);
+  const stored = contentItems(memory).find((item) => item.ID === first.structuredContent.entry.entryId);
+  assert.equal(stored.Metadata.visibility, 'hidden');
+  assert.equal(stored.Metadata.isPublic, false);
+
+  const readOnly = buildMcpServer(testClient(['content:read']));
+  await assert.rejects(
+    () => callRegisteredTool(readOnly, 'collections.create_entry', request),
+    /missing scope: collections:write:hidden/,
+  );
+  await assert.rejects(
+    () => callRegisteredTool(server, 'collections.create_entry', {
+      ...request,
+      visibility: 'public',
+      idempotencyKey: 'mesh-unit-1-public',
+    }),
+  );
 });
 
 test('MCP draft create, update, and delete are restricted to the owning client', async () => {
@@ -288,9 +322,17 @@ test('MCP read and draft tools cover blog, content, media, comments, social, and
 
   const listedPosts = await callRegisteredTool(server, 'blog.list_posts', { status: 'all', limit: 5 });
   assert.ok(listedPosts.structuredContent.items.some((item) => item.listItemID === post.listItemID));
+  assert.equal(
+    listedPosts.structuredContent.items.find((item) => item.listItemID === post.listItemID).publicUrl,
+    `https://www.example.test/blog/${post.listItemID}`
+  );
 
   const fetchedPost = await callRegisteredTool(server, 'blog.get_post', { listItemID: post.listItemID });
   assert.equal(fetchedPost.structuredContent.post.title, post.title);
+  assert.equal(
+    fetchedPost.structuredContent.post.publicUrl,
+    `https://www.example.test/blog/${post.listItemID}`
+  );
 
   const listedAssets = await callRegisteredTool(server, 'media.list_assets', { limit: 5 });
   assert.ok(listedAssets.structuredContent.items.some((item) => item.asset_id === asset.asset_id));

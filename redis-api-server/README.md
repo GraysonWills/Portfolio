@@ -394,7 +394,7 @@ MCP clients can create, update, and delete isolated drafts they own, plus create
 
 Current MCP tool groups:
 - Read: `site.get_inventory`, `content.list`, `content.get`, `blog.list_posts`, `blog.get_post`, `media.list_assets`, `comments.list_recent`, `comments.get_thread`, `social.get_status`, `social.list_deliveries`.
-- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `media.upload_image_base64`, `social.create_delivery_draft`.
+- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `collections.create_entry`, `preview.create`, `media.upload_image_from_url`, `media.upload_image_base64`, `social.create_delivery_draft`. `collections.create_entry` requires the non-default `collections:write:hidden` scope and can only create immutable hidden records.
 - Pre-gated external effects: `social.schedule_delivery` immediately sends, while `social.schedule_delivery_at` creates one exact delayed LinkedIn delivery. Both require the non-default `social:write:send` scope and a stable `idempotencyKey`. The delayed tool preserves the human-selected future time exactly; nearby deliveries are shown upstream as advisory context and do not block the reservation.
 - Approval-backed: `blog.propose_update`, `blog.request_publish`, `blog.request_schedule`, `blog.request_unpublish`, `blog.request_delete`, `content.propose_update`, `media.request_delete`, `comments.propose_reply`, `comments.request_delete`, `social.propose_settings_update`, `social.request_send_delivery`.
 
