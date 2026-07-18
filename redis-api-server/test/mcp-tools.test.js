@@ -207,6 +207,36 @@ test('MCP draft create, update, and delete are restricted to the owning client',
   );
 });
 
+test('MCP blog drafts retain the exact Mesh Author Studio metadata package', async () => {
+  const memory = createMemoryDdb();
+  const { mcpControl, buildMcpServer } = loadMcpModules(memory);
+  const server = buildMcpServer(testClient(mcpControl.ALL_SCOPES));
+
+  const created = await callRegisteredTool(server, 'blog.create_draft', {
+    listItemID: 'mesh-author-studio-metadata',
+    title: 'A Better Capture Habit',
+    summary: 'A grounded description for the exact reviewed article.',
+    contentMarkdown: '# A Better Capture Habit\n\n' + 'word '.repeat(800),
+    tags: ['Creativity', 'Productivity', 'Tools'],
+    privateSeoTags: ['tape recorder', 'voice notes', 'creative capture'],
+    category: 'Personal Development',
+    readTimeMinutes: 4,
+    coverImageUrl: 'https://cdn.example.test/mesh-cover.png',
+    idempotencyKey: 'mesh-author-studio-metadata-v1',
+  });
+  const post = created.structuredContent.post;
+
+  assert.equal(post.status, 'draft');
+  assert.equal(post.title, 'A Better Capture Habit');
+  assert.equal(post.summary, 'A grounded description for the exact reviewed article.');
+  assert.deepEqual(post.tags, ['Creativity', 'Productivity', 'Tools']);
+  assert.deepEqual(post.privateSeoTags, ['tape recorder', 'voice notes', 'creative capture']);
+  assert.equal(post.category, 'Personal Development');
+  assert.equal(post.readTimeMinutes, 4);
+  assert.equal(post.coverImageUrl, 'https://cdn.example.test/mesh-cover.png');
+  assert.equal(post.source.clientId, 'client-a');
+});
+
 test('MCP mutation idempotency replays same response and rejects changed payloads', async () => {
   const memory = createMemoryDdb();
   const { mcpControl, buildMcpServer } = loadMcpModules(memory);
