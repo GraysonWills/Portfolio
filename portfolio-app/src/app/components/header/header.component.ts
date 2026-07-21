@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, OnDestroy } from '@angular/core';
+import { Component, ElementRef, HostListener, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -7,6 +7,7 @@ import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { SiteAuthService, SiteUser } from '../../services/site-auth.service';
 import { MenuItem } from 'primeng/api';
+import { SupportService } from '../../services/support.service';
 
 @Component({
   selector: 'app-header',
@@ -15,6 +16,9 @@ import { MenuItem } from 'primeng/api';
   styleUrl: './header.component.scss'
 })
 export class HeaderComponent implements OnInit, OnDestroy {
+  @ViewChild('mobileDrawer') private mobileDrawer?: ElementRef<HTMLElement>;
+  @ViewChild('mobileMenuToggle') private mobileMenuToggle?: ElementRef<HTMLButtonElement>;
+
   headerContent: RedisContent[] = [];
   menuItems: MenuItem[] = [];
   contactInfo: any = {};
@@ -28,6 +32,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
     private siteAuth: SiteAuthService,
+    private support: SupportService,
     private router: Router
   ) {}
 
@@ -45,6 +50,7 @@ export class HeaderComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routerSub?.unsubscribe();
     this.authSub?.unsubscribe();
+    if (typeof document !== 'undefined') document.body.style.overflow = '';
   }
 
   /**
@@ -168,16 +174,49 @@ export class HeaderComponent implements OnInit, OnDestroy {
    * Toggle mobile menu drawer
    */
   toggleMobileMenu(): void {
-    this.mobileMenuOpen = !this.mobileMenuOpen;
-    document.body.style.overflow = this.mobileMenuOpen ? 'hidden' : '';
+    if (this.mobileMenuOpen) {
+      this.closeMobileMenu(true);
+      return;
+    }
+    this.mobileMenuOpen = true;
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => this.mobileDrawer?.nativeElement.focus());
   }
 
   /**
    * Close mobile menu drawer
    */
-  closeMobileMenu(): void {
+  closeMobileMenu(restoreFocus = true): void {
     this.mobileMenuOpen = false;
     document.body.style.overflow = '';
+    if (restoreFocus) setTimeout(() => this.mobileMenuToggle?.nativeElement.focus());
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.mobileMenuOpen) this.closeMobileMenu(true);
+  }
+
+  onMobileDrawerKeydown(event: KeyboardEvent): void {
+    if (!this.mobileMenuOpen || event.key !== 'Tab') return;
+    const focusable = Array.from(this.mobileDrawer?.nativeElement.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ) || []).filter(element => !element.hasAttribute('inert'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  openSupport(): void {
+    this.closeMobileMenu(false);
+    this.support.open({ placement: 'header' });
   }
 
   @HostListener('window:scroll')

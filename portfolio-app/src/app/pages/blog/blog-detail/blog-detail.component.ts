@@ -1,4 +1,5 @@
 import { Component, DestroyRef, OnInit, OnDestroy, inject } from '@angular/core';
+import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { RedisService } from '../../../services/redis.service';
@@ -17,10 +18,10 @@ import { marked } from 'marked';
 import { BlogComment, CommentService } from '../../../services/comment.service';
 import { SiteAuthService, SiteUser } from '../../../services/site-auth.service';
 import { SupportService } from '../../../services/support.service';
-import { SubscriptionService } from '../../../services/subscription.service';
 
 interface RecentPostCard {
   listItemID: string;
+  slug?: string;
   title: string;
   summary: string;
   image?: string;
@@ -46,6 +47,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   coverImage = '';
   coverAlt = '';
   publishDate: Date | null = null;
+  dateModified: Date | null = null;
+  seoTitle = '';
+  seoDescription = '';
+  canonicalPath = '';
   readTime = 1;
   roughDraftReadTime = 1;
   tags: string[] = [];
@@ -60,6 +65,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   recentPosts: ContentGroup[] = [];
   recentPostCards: RecentPostCard[] = [];
   currentListItemId = '';
+  postSlug = '';
 
   // State
   isLoading = true;
@@ -88,22 +94,17 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
   siteUser: SiteUser | null = null;
   private commentAuthTimerId: number | null = null;
 
-  // End-of-post subscribe card
-  subscribeEmail = '';
-  subscribing = false;
-  subscribed = false;
-
   constructor(
     private route: ActivatedRoute,
     private router: Router,
+    private location: Location,
     private redisService: RedisService,
     private commentService: CommentService,
     readonly siteAuth: SiteAuthService,
     private sanitizer: DomSanitizer,
     private seo: SeoService,
     private messageService: MessageService,
-    private support: SupportService,
-    private subscriptionService: SubscriptionService
+    private support: SupportService
   ) {
     marked.setOptions({ breaks: false, gfm: true });
   }
@@ -131,16 +132,54 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     this.route.params
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(params => {
-        this.currentListItemId = params['id'];
-        this.loadPost(this.currentListItemId);
-        this.loadComments(this.currentListItemId);
-        this.loadRecentPosts();
+        this.resolveAndLoadPost(String(params['id'] || ''));
       });
   }
 
   ngOnDestroy(): void {
     this.seo.clearStructuredData('article');
+    this.seo.clearStructuredData('article-breadcrumbs');
     this.clearCommentCodeExpiry();
+  }
+
+  private resolveAndLoadPost(routeValue: string): void {
+    this.isLoading = true;
+    this.notFound = false;
+    if (this.redisService.isPreviewModeActive()) {
+      this.loadResolvedPost(routeValue, routeValue, `/blog/${encodeURIComponent(routeValue)}`);
+      return;
+    }
+
+    this.redisService.resolveBlogRouteV3(routeValue).subscribe({
+      next: (resolution) => {
+        if (!resolution?.listItemID) {
+          this.showNotFound();
+          return;
+        }
+        if (resolution.canonicalPath && resolution.canonicalPath !== `/blog/${routeValue}`) {
+          this.location.replaceState(resolution.canonicalPath);
+        }
+        this.loadResolvedPost(
+          resolution.listItemID,
+          resolution.slug || routeValue,
+          resolution.canonicalPath || `/blog/${resolution.slug || routeValue}`,
+          resolution.dateModified || null
+        );
+      },
+      error: () => {
+        this.showNotFound();
+      }
+    });
+  }
+
+  private loadResolvedPost(listItemID: string, slug: string, canonicalPath: string, dateModified?: string | null): void {
+    this.currentListItemId = listItemID;
+    this.postSlug = slug;
+    this.canonicalPath = canonicalPath;
+    this.dateModified = dateModified ? new Date(dateModified) : null;
+    this.loadPost(listItemID);
+    this.loadComments(listItemID);
+    this.loadRecentPosts();
   }
 
   private loadPost(listItemId: string): void {
@@ -162,12 +201,16 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     this.redisService.getBlogPostDetailV3(listItemId).subscribe({
       next: (payload) => {
         if (!payload?.listItemID) {
-          this.notFound = true;
-          this.isLoading = false;
+          this.showNotFound();
           return;
         }
 
         this.title = payload.title || 'Untitled';
+        this.postSlug = String(payload.slug || this.postSlug || '').trim();
+        this.seoTitle = String(payload.seoTitle || '').trim();
+        this.seoDescription = String(payload.seoDescription || '').trim();
+        this.canonicalPath = String(payload.canonicalPath || this.canonicalPath || `/blog/${this.postSlug || listItemId}`).trim();
+        this.dateModified = payload.dateModified ? new Date(payload.dateModified) : this.dateModified;
         this.summary = payload.summary || '';
         this.coverImage = payload.coverImage || '';
         this.coverAlt = payload.coverAlt || this.title;
@@ -186,8 +229,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
         this.isLoading = false;
       },
       error: () => {
-        this.notFound = true;
-        this.isLoading = false;
+        this.showNotFound();
         this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load blog post' });
       }
     });
@@ -279,6 +321,11 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   private applyMetadata(meta: any): void {
     this.title = meta.title || 'Untitled';
+    this.postSlug = String(meta.slug || '').trim();
+    this.seoTitle = String(meta.seoTitle || '').trim();
+    this.seoDescription = String(meta.seoDescription || '').trim();
+    this.canonicalPath = String(meta.canonicalPath || this.canonicalPath || '').trim();
+    this.dateModified = meta.dateModified ? new Date(meta.dateModified) : this.dateModified;
     this.summary = meta.summary || '';
     this.tags = meta.tags || [];
     this.privateSeoTags = Array.isArray(meta.privateSeoTags) ? meta.privateSeoTags : [];
@@ -294,12 +341,25 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     return !!(bypassVisibility || (status === 'published' && !(publishTs && publishTs > Date.now())));
   }
 
+  private showNotFound(): void {
+    this.notFound = true;
+    this.isLoading = false;
+    this.seo.clearStructuredData('article');
+    this.seo.clearStructuredData('article-breadcrumbs');
+    this.seo.update({
+      title: 'Blog Post Not Found',
+      description: 'The requested blog post does not exist or is not publicly available.',
+      url: this.canonicalPath || this.router.url.split('?')[0],
+      robots: 'noindex,nofollow,noarchive'
+    });
+  }
+
   private updateSeo(listItemId: string): void {
-    const urlPath = `/blog/${listItemId}`;
+    const urlPath = this.canonicalPath || `/blog/${this.postSlug || listItemId}`;
     const seoKeywords = this.buildSeoKeywords(this.tags, this.privateSeoTags, this.category);
     this.seo.update({
-      title: this.title,
-      description: this.summary || `${this.title} — a blog post by Grayson Wills.`,
+      title: this.seoTitle || this.title,
+      description: this.seoDescription || this.summary || `${this.title} — a blog post by Grayson Wills.`,
       url: urlPath,
       image: this.coverImage || undefined,
       imageAlt: this.coverAlt || undefined,
@@ -311,19 +371,38 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
     const jsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'BlogPosting',
+      '@id': `${canonicalUrl}#article`,
       headline: this.title,
-      description: this.summary || undefined,
+      description: this.seoDescription || this.summary || undefined,
       image: this.coverImage || 'https://www.grayson-wills.com/og-image.png',
       datePublished: this.publishDate ? this.publishDate.toISOString() : undefined,
+      dateModified: this.dateModified ? this.dateModified.toISOString() : (this.publishDate ? this.publishDate.toISOString() : undefined),
       keywords: seoKeywords.length ? seoKeywords.join(', ') : undefined,
-      mainEntityOfPage: canonicalUrl,
+      url: canonicalUrl,
+      mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
+      isPartOf: { '@type': 'Blog', '@id': 'https://www.grayson-wills.com/blog#blog' },
       author: {
         '@type': 'Person',
+        '@id': 'https://www.grayson-wills.com/#person',
         name: 'Grayson Wills',
         url: 'https://www.grayson-wills.com/'
+      },
+      publisher: {
+        '@type': 'Person',
+        '@id': 'https://www.grayson-wills.com/#person',
+        name: 'Grayson Wills'
       }
     };
     this.seo.setStructuredData('article', jsonLd);
+    this.seo.setStructuredData('article-breadcrumbs', {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.grayson-wills.com/' },
+        { '@type': 'ListItem', position: 2, name: 'Blog', item: 'https://www.grayson-wills.com/blog' },
+        { '@type': 'ListItem', position: 3, name: this.title, item: canonicalUrl }
+      ]
+    });
   }
 
   private loadRecentPosts(): void {
@@ -341,6 +420,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
           this.recentPostCards = cards.map((item) => ({
             listItemID: item.listItemID,
+            slug: item.slug,
             title: item.title || 'Untitled',
             summary: item.summary || '',
             image: undefined,
@@ -773,6 +853,7 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
     return {
       listItemID: post.listItemID,
+      slug: String(meta?.slug || '').trim() || undefined,
       title: meta?.title || 'Untitled',
       summary: meta?.summary || content.substring(0, 150),
       image: imgItem?.Photo,
@@ -796,32 +877,10 @@ export class BlogDetailComponent implements OnInit, OnDestroy {
 
   /** Open the global support (buy-me-a-coffee) modal. */
   openSupport(): void {
-    this.support.open();
-  }
-
-  /** End-of-post email subscribe. */
-  subscribe(): void {
-    if (this.subscribing || this.subscribed) return;
-    const email = String(this.subscribeEmail || '').trim();
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      this.messageService.add({ severity: 'warn', summary: 'Check Your Email', detail: 'Enter a valid email address.' });
-      return;
-    }
-
-    this.subscribing = true;
-    this.subscriptionService.request(email, ['blog_posts'], 'blog-post').subscribe({
-      next: () => {
-        this.subscribing = false;
-        this.subscribed = true;
-      },
-      error: (err) => {
-        this.subscribing = false;
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Subscription Failed',
-          detail: err?.error?.message || err?.message || 'Could not subscribe right now.'
-        });
-      }
+    this.support.open({
+      placement: 'article_end',
+      postId: this.currentListItemId,
+      postSlug: this.postSlug
     });
   }
 

@@ -1,0 +1,81 @@
+<div
+  class="subscription-cta"
+  [class.subscription-cta--popover]="mode === 'popover'"
+  [class.subscription-cta--dark]="theme === 'dark'"
+  [appGrowthCtaImpression]="'subscribe'"
+  [growthPlacement]="placement"
+  [growthPostId]="postId"
+  [growthPostSlug]="postSlug">
+  <button
+    *ngIf="mode === 'popover'"
+    #triggerButton
+    type="button"
+    class="subscription-trigger"
+    [attr.aria-expanded]="expanded"
+    [attr.aria-controls]="'subscription-panel-' + instanceId"
+    (click)="togglePopover($event)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+    <span>{{ triggerLabel }}</span>
+  </button>
+
+  <section
+    *ngIf="mode === 'inline' || expanded"
+    class="subscription-panel"
+    [class.subscription-panel--floating]="mode === 'popover'"
+    [id]="'subscription-panel-' + instanceId"
+    [attr.aria-label]="mode === 'popover' ? 'Subscribe to blog updates' : null"
+    (click)="$event.stopPropagation()">
+    <div class="subscription-panel__top" *ngIf="showCopy">
+      <div>
+        <h3>{{ heading }}</h3>
+        <p>{{ description }}</p>
+      </div>
+      <button *ngIf="mode === 'popover'" type="button" class="subscription-close" aria-label="Close subscription form" (click)="closePopover(true)">×</button>
+    </div>
+
+    <div
+      *ngIf="showsCompletion"
+      class="subscription-result"
+      [class.subscription-result--confirmed]="state.status === 'confirmed' || state.status === 'already_subscribed'"
+      role="status"
+      aria-live="polite">
+      <span class="subscription-result__icon" aria-hidden="true">✓</span>
+      <div>
+        <strong>{{ statusTitle }}</strong>
+        <p>{{ state.message }}</p>
+        <button
+          *ngIf="state.status === 'confirmed' || state.status === 'already_subscribed'"
+          type="button"
+          class="subscription-manage"
+          (click)="managePreferences()">Manage preferences</button>
+      </div>
+    </div>
+
+    <form *ngIf="!showsCompletion" class="subscription-form" (ngSubmit)="submit()" novalidate>
+      <label [for]="inputId">Email address</label>
+      <div class="subscription-form__row">
+        <input
+          #emailInput
+          [id]="inputId"
+          type="email"
+          name="email"
+          autocomplete="email"
+          [ngModel]="state.email"
+          (ngModelChange)="updateEmail($event)"
+          placeholder="you@example.com"
+          [disabled]="isSubmitting"
+          [attr.aria-invalid]="state.status === 'invalid' ? 'true' : null"
+          [attr.aria-describedby]="statusId" />
+        <button type="submit" [disabled]="isSubmitting" [attr.aria-busy]="isSubmitting ? 'true' : 'false'">
+          {{ isSubmitting ? 'Sending…' : submitLabel }}
+        </button>
+      </div>
+      <p class="subscription-privacy">Confirm once. Unsubscribe any time. Your email is never sent to analytics.</p>
+      <p
+        [id]="statusId"
+        class="subscription-message"
+        [class.subscription-message--error]="state.status === 'invalid' || state.status === 'error'"
+        aria-live="polite">{{ state.message }}</p>
+    </form>
+  </section>
+</div>

@@ -90,7 +90,7 @@ expect_content_type_prefix() {
 
 echo "== Static sites =="
 retry 30 10 expect_code "${PORTFOLIO_URL}/" "200"
-retry 30 10 expect_code "${PORTFOLIO_URL}/this/does/not/exist" "200"
+retry 30 10 expect_code "${PORTFOLIO_URL}/this/does/not/exist" "404"
 retry 30 10 expect_code "${BLOG_URL}/" "200"
 retry 30 10 expect_code "${BLOG_URL}/content-studio" "200"
 

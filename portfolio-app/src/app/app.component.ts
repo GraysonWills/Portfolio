@@ -1,13 +1,11 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, ElementRef, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Router, NavigationEnd, NavigationStart, ActivatedRoute, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter, map, mergeMap } from 'rxjs/operators';
 import { RedisService } from './services/redis.service';
 import { SeoService } from './services/seo.service';
-import { SubscriptionService } from './services/subscription.service';
 import { environment } from '../environments/environment';
 import { routeTransition } from './animations/route-animations';
-import { MessageService } from 'primeng/api';
 import { AnalyticsService } from './services/analytics.service';
 import { SiteConsentService } from './services/site-consent.service';
 import { RouteViewStateService } from './services/route-view-state.service';
@@ -20,30 +18,31 @@ import { RouteViewStateService } from './services/route-view-state.service';
   animations: [routeTransition]
 })
 export class AppComponent implements OnInit, OnDestroy {
+  @ViewChild('cookieBanner') private cookieBanner?: ElementRef<HTMLElement>;
+
   title = 'Grayson Wills - Portfolio';
-  readonly supportWidgetUrl = 'https://buymeacoffee.com/calvarygmak';
   private currentRouteKey = '/';
   private routerSub!: Subscription;
   private navigationStartSub?: Subscription;
   private consentSub?: Subscription;
   private consentReviewSub?: Subscription;
   previewModeActive = false;
-  showSubscribePrompt = false;
+  cookieUiReady = false;
   showCookieBanner = false;
-  subscribePromptEmail = '';
-  isSubscribePromptSubmitting = false;
-  private subscribePromptTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly subscribePromptDelayMs = 1400;
+  currentAnalyticsPreference: boolean | null = null;
+  consentConfirmation: { summary: string; detail: string } | null = null;
   private readonly previewStorageKey = 'portfolio_preview_token_v1';
+  private cookiePreferenceTrigger: HTMLElement | null = null;
+  private cookieUiReadyTimer: ReturnType<typeof setTimeout> | null = null;
+  private cookieFocusTimer: ReturnType<typeof setTimeout> | null = null;
+  private consentConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private redisService: RedisService,
     private seo: SeoService,
-    private subscriptions: SubscriptionService,
     private analytics: AnalyticsService,
     private consent: SiteConsentService,
     private routeViewState: RouteViewStateService,
-    private messageService: MessageService,
     private router: Router,
     private activatedRoute: ActivatedRoute
   ) {}
@@ -51,7 +50,9 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.redisService.setApiEndpoint(environment.redisApiUrl);
     this.initializePreviewMode();
-    this.showCookieBanner = this.consent.needsDecision();
+    const initialConsent = this.consent.getConsentSnapshot();
+    this.currentAnalyticsPreference = initialConsent.analytics;
+    this.showCookieBanner = initialConsent.analytics === null;
     this.currentRouteKey = this.getCurrentPathOnly();
     this.syncOverlayBodyState();
     this.navigationStartSub = this.router.events.pipe(
@@ -64,17 +65,18 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     });
     this.consentSub = this.consent.consent$.subscribe((state) => {
+      this.currentAnalyticsPreference = state.analytics;
       this.showCookieBanner = state.analytics === null;
-      if (this.showCookieBanner) {
-        this.showSubscribePrompt = false;
-      }
       this.syncOverlayBodyState();
     });
     this.consentReviewSub = this.consent.reviewRequests$.subscribe(() => {
+      this.captureCookiePreferenceTrigger();
+      this.cookieUiReady = true;
       this.showCookieBanner = true;
-      this.showSubscribePrompt = false;
       this.syncOverlayBodyState();
+      this.focusCookiePreferenceAction();
     });
+    this.prepareCookiePreferenceUi();
 
     this.routerSub = this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
@@ -88,19 +90,24 @@ export class AppComponent implements OnInit, OnDestroy {
       const pageTitle = data['title'] as string | undefined;
       const description = data['description'] as string | undefined;
       const type = data['type'] as ('website' | 'article') | undefined;
+      const configuredRobots = data['robots'] as string | undefined;
 
       const pathOnly = this.getCurrentPathOnly();
-      this.seo.update({ title: pageTitle, description, url: pathOnly, type });
+      const previewNoindex = /(?:\?|&)previewToken=/.test(this.router.url);
+      this.seo.update({
+        title: pageTitle,
+        description,
+        url: pathOnly,
+        type,
+        robots: previewNoindex ? 'noindex,nofollow,noarchive' : configuredRobots
+      });
+      this.updateRouteStructuredData(pathOnly);
       this.analytics.trackPageView(pathOnly, pageTitle);
-      this.subscriptions.trackPromptRoute(pathOnly);
-      this.maybeShowSubscribePrompt(pathOnly);
       this.currentRouteKey = pathOnly;
     });
 
     const initialPath = this.getCurrentPathOnly();
     this.currentRouteKey = initialPath;
-    this.subscriptions.trackPromptRoute(initialPath);
-    this.maybeShowSubscribePrompt(initialPath);
   }
 
   ngOnDestroy(): void {
@@ -108,9 +115,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.navigationStartSub?.unsubscribe();
     this.consentSub?.unsubscribe();
     this.consentReviewSub?.unsubscribe();
-    this.clearSubscribePromptTimer();
+    if (this.cookieUiReadyTimer) clearTimeout(this.cookieUiReadyTimer);
+    if (this.cookieFocusTimer) clearTimeout(this.cookieFocusTimer);
+    if (this.consentConfirmationTimer) clearTimeout(this.consentConfirmationTimer);
     this.setBodyClass('cookie-banner-active', false);
-    this.setBodyClass('subscribe-prompt-active', false);
     this.setBodyClass('mobile-overlay-active', false);
   }
 
@@ -136,122 +144,15 @@ export class AppComponent implements OnInit, OnDestroy {
     window.location.assign(url.toString());
   }
 
-  dismissSubscribePrompt(): void {
-    const promptState = this.subscriptions.dismissPrompt();
-    const currentPath = this.getCurrentPathOnly();
-    this.showSubscribePrompt = false;
-    this.subscribePromptEmail = '';
-    this.syncOverlayBodyState();
-    this.analytics.track('subscribe_prompt_dismissed', {
-      route: currentPath,
-      page: 'blog',
-      metadata: {
-        source: 'blog-engagement-modal',
-        dismissCount: promptState.dismissCount,
-        permanentlyDismissed: promptState.permanentlyDismissed
-      }
-    });
-  }
-
-  submitSubscribePrompt(): void {
-    const currentPath = this.getCurrentPathOnly();
-    const email = (this.subscribePromptEmail || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      this.analytics.track('subscribe_prompt_invalid_email', {
-        route: currentPath,
-        page: 'blog',
-        metadata: { source: 'blog-engagement-modal' }
-      });
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Invalid Email',
-        detail: 'Please enter a valid email address.'
-      });
-      return;
-    }
-
-    if (this.isSubscribePromptSubmitting) return;
-    this.isSubscribePromptSubmitting = true;
-    this.analytics.track('subscribe_prompt_submit_attempt', {
-      route: currentPath,
-      page: 'blog',
-      metadata: { source: 'blog-engagement-modal' }
-    });
-
-    this.subscriptions.request(email, ['blog_posts'], 'blog-engagement-modal').subscribe({
-      next: (result) => {
-        this.isSubscribePromptSubmitting = false;
-        this.showSubscribePrompt = false;
-        this.subscribePromptEmail = '';
-        this.syncOverlayBodyState();
-
-        const status = String(result?.status || '').toUpperCase();
-        if (status === 'ALREADY_SUBSCRIBED' || result?.alreadySubscribed) {
-          this.analytics.track('subscribe_prompt_already_subscribed', {
-            route: currentPath,
-            page: 'blog',
-            metadata: { source: 'blog-engagement-modal' }
-          });
-          this.subscriptions.setPromptState('subscribed');
-          this.messageService.add({
-            severity: 'info',
-            summary: 'Already Subscribed',
-            detail: 'This email is already subscribed to blog updates.'
-          });
-          return;
-        }
-
-        if (status === 'ALREADY_PENDING' || result?.alreadyPending) {
-          this.analytics.track('subscribe_prompt_already_pending', {
-            route: currentPath,
-            page: 'blog',
-            metadata: { source: 'blog-engagement-modal' }
-          });
-          this.subscriptions.setPromptState('requested');
-          this.messageService.add({
-            severity: 'info',
-            summary: 'Check Your Email',
-            detail: 'You already requested access. Please confirm from your inbox.'
-          });
-          return;
-        }
-
-        this.subscriptions.setPromptState('requested');
-        this.analytics.track('subscribe_prompt_requested', {
-          route: currentPath,
-          page: 'blog',
-          metadata: { source: 'blog-engagement-modal' }
-        });
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Almost Done',
-          detail: 'Check your email to confirm your subscription.'
-        });
-      },
-      error: (err) => {
-        this.isSubscribePromptSubmitting = false;
-        this.analytics.track('subscribe_prompt_error', {
-          route: currentPath,
-          page: 'blog',
-          metadata: {
-            source: 'blog-engagement-modal',
-            error: String(err?.error?.error || err?.message || 'unknown')
-          }
-        });
-        const msg = err?.error?.error || err?.message || 'Failed to start subscription.';
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Subscribe Failed',
-          detail: msg
-        });
-      }
-    });
-  }
-
   acceptAnalyticsCookies(): void {
     this.consent.acceptAnalytics();
     this.showCookieBanner = false;
     this.syncOverlayBodyState();
+    this.notifyCookiePreferenceSaved(
+      'Analytics enabled',
+      'Your choice was saved. Anonymous analytics are now allowed.'
+    );
+    this.restoreCookiePreferenceTrigger();
     const currentPath = this.getCurrentPathOnly();
     this.analytics.track('cookie_consent_updated', {
       route: currentPath,
@@ -261,15 +162,67 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     });
     this.analytics.trackPageView(currentPath, document.title || undefined);
-    this.maybeShowSubscribePrompt(currentPath);
   }
 
   useNecessaryCookiesOnly(): void {
     this.consent.rejectAnalytics();
     this.showCookieBanner = false;
     this.syncOverlayBodyState();
-    const currentPath = this.getCurrentPathOnly();
-    this.maybeShowSubscribePrompt(currentPath);
+    this.notifyCookiePreferenceSaved(
+      'Preference saved',
+      'Only the necessary cookie used to remember this choice will remain.'
+    );
+    this.restoreCookiePreferenceTrigger();
+  }
+
+  private captureCookiePreferenceTrigger(): void {
+    if (typeof document === 'undefined') return;
+    this.cookiePreferenceTrigger = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  }
+
+  private focusCookiePreferenceAction(): void {
+    if (typeof window === 'undefined') return;
+    if (this.cookieFocusTimer) clearTimeout(this.cookieFocusTimer);
+
+    this.cookieFocusTimer = setTimeout(() => {
+      this.cookieFocusTimer = null;
+      const choice = this.currentAnalyticsPreference === false ? 'necessary' : 'analytics';
+      this.cookieBanner?.nativeElement
+        .querySelector<HTMLButtonElement>(`[data-consent-choice="${choice}"]`)
+        ?.focus();
+    });
+  }
+
+  private restoreCookiePreferenceTrigger(): void {
+    const trigger = this.cookiePreferenceTrigger;
+    this.cookiePreferenceTrigger = null;
+    if (typeof window === 'undefined' || !trigger?.isConnected) return;
+    setTimeout(() => trigger.focus());
+  }
+
+  private notifyCookiePreferenceSaved(summary: string, detail: string): void {
+    if (this.consentConfirmationTimer) clearTimeout(this.consentConfirmationTimer);
+    this.consentConfirmation = { summary, detail };
+    this.consentConfirmationTimer = setTimeout(() => {
+      this.consentConfirmation = null;
+      this.consentConfirmationTimer = null;
+    }, 4000);
+  }
+
+  private prepareCookiePreferenceUi(): void {
+    if (typeof window === 'undefined') return;
+    if (this.cookieUiReadyTimer) clearTimeout(this.cookieUiReadyTimer);
+
+    this.cookieUiReadyTimer = setTimeout(() => {
+      this.cookieUiReadyTimer = null;
+      const state = this.consent.getConsentSnapshot();
+      this.currentAnalyticsPreference = state.analytics;
+      this.showCookieBanner = state.analytics === null;
+      this.cookieUiReady = true;
+      this.syncOverlayBodyState();
+    });
   }
 
   private initializePreviewMode(): void {
@@ -314,73 +267,10 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private maybeShowSubscribePrompt(pathOnly: string): void {
-    if (typeof window === 'undefined') return;
-    if (this.previewModeActive) {
-      this.clearSubscribePromptTimer();
-      this.showSubscribePrompt = false;
-      this.syncOverlayBodyState();
-      return;
-    }
-    if (this.showCookieBanner || this.consent.needsDecision()) {
-      this.clearSubscribePromptTimer();
-      this.showSubscribePrompt = false;
-      this.syncOverlayBodyState();
-      return;
-    }
-
-    if (this.shouldHidePromptForRoute(pathOnly)) {
-      this.clearSubscribePromptTimer();
-      this.showSubscribePrompt = false;
-      this.syncOverlayBodyState();
-      return;
-    }
-
-    if (!this.subscriptions.shouldShowPromptForPath(pathOnly)) {
-      this.clearSubscribePromptTimer();
-      this.showSubscribePrompt = false;
-      this.syncOverlayBodyState();
-      return;
-    }
-
-    if (this.showSubscribePrompt || this.subscribePromptTimer) return;
-
-    this.subscribePromptTimer = setTimeout(() => {
-      this.subscribePromptTimer = null;
-      const currentPath = this.getCurrentPathOnly();
-      if (this.shouldHidePromptForRoute(currentPath)) return;
-      if (!this.subscriptions.shouldShowPromptForPath(currentPath)) return;
-      this.subscriptions.markPromptShown();
-      this.showSubscribePrompt = true;
-      this.syncOverlayBodyState();
-      this.analytics.track('subscribe_prompt_shown', {
-        route: currentPath,
-        page: 'blog',
-        metadata: {
-          source: 'blog-engagement-modal',
-          blogVisitCount: this.subscriptions.getPromptInteractionState().blogVisitCount
-        }
-      });
-    }, this.subscribePromptDelayMs);
-  }
-
-  private shouldHidePromptForRoute(pathOnly: string): boolean {
-    const path = String(pathOnly || '/');
-    return path.startsWith('/notifications');
-  }
-
-  private clearSubscribePromptTimer(): void {
-    if (!this.subscribePromptTimer) return;
-    clearTimeout(this.subscribePromptTimer);
-    this.subscribePromptTimer = null;
-  }
-
   private syncOverlayBodyState(): void {
-    const cookieOpen = this.showCookieBanner;
-    const subscribeOpen = this.showSubscribePrompt;
+    const cookieOpen = this.cookieUiReady && this.showCookieBanner;
     this.setBodyClass('cookie-banner-active', cookieOpen);
-    this.setBodyClass('subscribe-prompt-active', subscribeOpen);
-    this.setBodyClass('mobile-overlay-active', cookieOpen || subscribeOpen);
+    this.setBodyClass('mobile-overlay-active', cookieOpen);
   }
 
   private setBodyClass(className: string, enabled: boolean): void {
@@ -390,6 +280,78 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private getCurrentPathOnly(): string {
     return this.getPathOnly(this.router.url);
+  }
+
+  private updateRouteStructuredData(path: string): void {
+    this.seo.clearStructuredData('route-entity');
+    this.seo.clearStructuredData('route-breadcrumbs');
+    const baseUrl = 'https://www.grayson-wills.com';
+    const breadcrumb = (name: string) => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${baseUrl}/` },
+        { '@type': 'ListItem', position: 2, name, item: `${baseUrl}${path}` }
+      ]
+    });
+
+    if (path === '/') {
+      this.seo.setStructuredData('route-entity', {
+        '@context': 'https://schema.org',
+        '@type': 'ProfilePage',
+        '@id': `${baseUrl}/#profile`,
+        url: `${baseUrl}/`,
+        name: 'Grayson Wills — Profile and Portfolio',
+        mainEntity: { '@id': `${baseUrl}/#person` },
+        isPartOf: { '@id': `${baseUrl}/#website` }
+      });
+      return;
+    }
+
+    if (path === '/blog') {
+      this.seo.setStructuredData('route-entity', {
+        '@context': 'https://schema.org',
+        '@type': 'Blog',
+        '@id': `${baseUrl}/blog#blog`,
+        url: `${baseUrl}/blog`,
+        name: 'Grayson Wills Blog',
+        description: 'Field notes for curious builders on technology, creativity, personal development, and honest process.',
+        author: { '@id': `${baseUrl}/#person` },
+        publisher: { '@id': `${baseUrl}/#person` },
+        isPartOf: { '@id': `${baseUrl}/#website` },
+        inLanguage: 'en-US'
+      });
+      this.seo.setStructuredData('route-breadcrumbs', breadcrumb('Blog'));
+      return;
+    }
+
+    if (path === '/projects') {
+      this.seo.setStructuredData('route-entity', {
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        '@id': `${baseUrl}/projects#collection`,
+        url: `${baseUrl}/projects`,
+        name: 'Projects by Grayson Wills',
+        about: { '@id': `${baseUrl}/#person` },
+        mainEntity: { '@type': 'ItemList', name: 'Selected projects' },
+        isPartOf: { '@id': `${baseUrl}/#website` }
+      });
+      this.seo.setStructuredData('route-breadcrumbs', breadcrumb('Projects'));
+      return;
+    }
+
+    if (path === '/work') {
+      this.seo.setStructuredData('route-entity', {
+        '@context': 'https://schema.org',
+        '@type': 'ProfilePage',
+        '@id': `${baseUrl}/work#profile`,
+        url: `${baseUrl}/work`,
+        name: 'Work experience of Grayson Wills',
+        mainEntity: { '@id': `${baseUrl}/#person` },
+        isPartOf: { '@id': `${baseUrl}/#website` }
+      });
+      this.seo.setStructuredData('route-breadcrumbs', breadcrumb('Work'));
+    }
   }
 
   private getPathOnly(url: string | undefined | null): string {

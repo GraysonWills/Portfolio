@@ -1,4 +1,5 @@
 import { fakeAsync, tick } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { LandingComponent } from './landing.component';
 
 describe('LandingComponent hero prefetching', () => {
@@ -120,6 +121,33 @@ describe('LandingComponent hero prefetching', () => {
     expect(slide.srcset).toBeUndefined();
   });
 
+  it('hydrates the latest homepage posts with their cover images', () => {
+    const redisService = {
+      getBlogCardsV2: jasmine.createSpy('getBlogCardsV2').and.returnValue(of({
+        items: [{
+          listItemID: 'post-1',
+          slug: 'post-one',
+          title: 'Post one',
+          summary: 'Summary',
+          publishDate: '2026-07-15T12:00:00.000Z',
+          readTimeMinutes: 4
+        }]
+      })),
+      getBlogCardsMedia: jasmine.createSpy('getBlogCardsMedia').and.returnValue(of([
+        { listItemID: 'post-1', imageUrl: 'https://cdn.example.com/post-one.webp' }
+      ]))
+    };
+    const component = createComponent(redisService);
+
+    (component as unknown as { loadLatestPosts(): void }).loadLatestPosts();
+
+    expect(redisService.getBlogCardsMedia).toHaveBeenCalledWith(
+      ['post-1'],
+      { cacheScope: 'route:/:landing-latest-media' }
+    );
+    expect(component.latestPosts[0].image).toBe('https://cdn.example.com/post-one.webp');
+  });
+
   function setConnection(connection: { saveData: boolean; effectiveType: string }): void {
     Object.defineProperty(navigator, 'connection', {
       configurable: true,
@@ -128,18 +156,17 @@ describe('LandingComponent hero prefetching', () => {
   }
 });
 
-function createComponent(): LandingComponent {
+function createComponent(redisService: unknown = {}): LandingComponent {
   const routeViewState = {
     setState(): void {}
   };
 
   return new LandingComponent(
-    {} as never,
+    redisService as never,
     {} as never,
     {} as never,
     {} as never,
     routeViewState as never,
-    {} as never,
     {} as never
   );
 }

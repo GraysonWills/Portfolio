@@ -9,7 +9,7 @@ import { RedisService } from './services/redis.service';
 import { SeoService } from './services/seo.service';
 import { SubscriptionService } from './services/subscription.service';
 import { AnalyticsService } from './services/analytics.service';
-import { MessageService } from 'primeng/api';
+import { SiteConsentService } from './services/site-consent.service';
 
 class RedisServiceStub {
   setApiEndpoint(): void {}
@@ -43,10 +43,6 @@ class AnalyticsServiceStub {
   track(): void {}
 }
 
-class MessageServiceStub {
-  add(): void {}
-}
-
 describe('AppComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -57,7 +53,6 @@ describe('AppComponent', () => {
         { provide: SeoService, useClass: SeoServiceStub },
         { provide: SubscriptionService, useClass: SubscriptionServiceStub },
         { provide: AnalyticsService, useClass: AnalyticsServiceStub },
-        { provide: MessageService, useClass: MessageServiceStub },
         { provide: Title, useClass: TitleStub },
       ],
       schemas: [NO_ERRORS_SCHEMA],
@@ -82,5 +77,68 @@ describe('AppComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     const main = compiled.querySelector<HTMLElement>('main#main-content');
     expect(main).toBeTruthy();
+  });
+
+  it('does not render the cookie banner before the client UI is ready', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    const app = fixture.componentInstance;
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    fixture.detectChanges();
+    app.cookieUiReady = false;
+    app.showCookieBanner = true;
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.cookie-banner')).toBeNull();
+  });
+
+  it('saves analytics consent and removes the banner from the DOM', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    const app = fixture.componentInstance;
+    const consent = TestBed.inject(SiteConsentService);
+    const compiled = fixture.nativeElement as HTMLElement;
+    spyOn(consent, 'acceptAnalytics').and.callThrough();
+
+    fixture.detectChanges();
+    app.cookieUiReady = true;
+    app.showCookieBanner = true;
+    fixture.detectChanges();
+    compiled
+      .querySelector<HTMLButtonElement>('[data-consent-choice="analytics"]')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(consent.acceptAnalytics).toHaveBeenCalled();
+    expect(consent.getConsentSnapshot().analytics).toBeTrue();
+    expect(app.showCookieBanner).toBeFalse();
+    expect(compiled.querySelector('.cookie-banner')).toBeNull();
+    expect(compiled.querySelector('.consent-confirmation')).toBeNull();
+    expect(compiled.querySelector('.consent-status')?.textContent).toContain('Analytics enabled');
+    expect(app.consentConfirmation?.summary).toBe('Analytics enabled');
+  });
+
+  it('saves necessary-only consent and removes the banner from the DOM', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    const app = fixture.componentInstance;
+    const consent = TestBed.inject(SiteConsentService);
+    const compiled = fixture.nativeElement as HTMLElement;
+    spyOn(consent, 'rejectAnalytics').and.callThrough();
+
+    fixture.detectChanges();
+    app.cookieUiReady = true;
+    app.showCookieBanner = true;
+    fixture.detectChanges();
+    compiled
+      .querySelector<HTMLButtonElement>('[data-consent-choice="necessary"]')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(consent.rejectAnalytics).toHaveBeenCalled();
+    expect(consent.getConsentSnapshot().analytics).toBeFalse();
+    expect(app.showCookieBanner).toBeFalse();
+    expect(compiled.querySelector('.cookie-banner')).toBeNull();
+    expect(compiled.querySelector('.consent-confirmation')).toBeNull();
+    expect(compiled.querySelector('.consent-status')?.textContent).toContain('Preference saved');
+    expect(app.consentConfirmation?.summary).toBe('Preference saved');
   });
 });

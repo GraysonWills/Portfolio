@@ -203,18 +203,21 @@
 
 .support-btn {
   margin-top: 18px;
+  width: 100%;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 9px;
   font-family: var(--f-display);
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.04em;
-  color: #0b1b30;
-  background: linear-gradient(120deg, #f0b46f, #d9803f);
-  border: none;
-  border-radius: var(--btn-r);
-  padding: 11px 19px;
+  color: #fff;
+  background: var(--warm);
+  border: 1px solid var(--warm);
+  border-radius: var(--r-sm);
+  padding: 10px 19px;
   cursor: pointer;
   transition: filter 0.2s ease, transform 0.2s ease;
 

@@ -11,80 +11,48 @@
   <app-support></app-support>
 
   <section
+    #cookieBanner
     class="cookie-banner"
-    *ngIf="showCookieBanner"
+    *ngIf="cookieUiReady && showCookieBanner"
     role="region"
     aria-labelledby="cookie-banner-title"
-    aria-live="polite">
+    aria-describedby="cookie-banner-description">
     <div class="cookie-banner-copy">
       <h2 id="cookie-banner-title">Cookie Preferences</h2>
-      <p>
+      <p id="cookie-banner-description">
         We always use one necessary cookie to remember your choice. If you allow analytics cookies,
         we set anonymous visitor, session, and attribution cookies so we can measure traffic and improve the site.
       </p>
+      <p class="cookie-banner-current" *ngIf="currentAnalyticsPreference !== null" role="status">
+        Current choice:
+        <strong>{{ currentAnalyticsPreference ? 'Analytics allowed' : 'Necessary cookies only' }}</strong>
+      </p>
     </div>
     <div class="cookie-banner-actions">
-      <button type="button" class="cookie-banner-btn cookie-banner-btn-secondary" (click)="useNecessaryCookiesOnly()">
+      <button
+        type="button"
+        class="cookie-banner-btn cookie-banner-btn-secondary"
+        data-consent-choice="necessary"
+        (click)="useNecessaryCookiesOnly()">
         Necessary Only
       </button>
-      <button type="button" class="cookie-banner-btn cookie-banner-btn-primary" (click)="acceptAnalyticsCookies()">
+      <button
+        type="button"
+        class="cookie-banner-btn cookie-banner-btn-primary"
+        data-consent-choice="analytics"
+        (click)="acceptAnalyticsCookies()">
         Allow Analytics
       </button>
     </div>
   </section>
 
-  <div
-    class="subscribe-modal-backdrop"
-    *ngIf="showSubscribePrompt"
-    (click)="dismissSubscribePrompt()"
-    aria-hidden="true"></div>
-
-  <section
-    class="subscribe-modal"
-    *ngIf="showSubscribePrompt"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="subscribe-modal-title">
-    <div class="subscribe-modal-topbar">
-      <button type="button" class="subscribe-modal-close" (click)="dismissSubscribePrompt()" aria-label="Close">×</button>
-    </div>
-    <div class="subscribe-modal-content">
-      <h2 id="subscribe-modal-title">Stay Updated</h2>
-      <p>Get an email when a new blog post goes live. Confirm once, unsubscribe anytime.</p>
-      <div class="subscribe-modal-form">
-        <input
-          type="email"
-          pInputText
-          [(ngModel)]="subscribePromptEmail"
-          (keyup.enter)="submitSubscribePrompt()"
-          placeholder="you@example.com"
-          class="subscribe-modal-input"
-          aria-label="Email address for blog updates" />
-        <button
-          type="button"
-          class="subscribe-modal-submit"
-          (click)="submitSubscribePrompt()"
-          [disabled]="isSubscribePromptSubmitting"
-          [attr.aria-busy]="isSubscribePromptSubmitting ? 'true' : 'false'">
-          {{ isSubscribePromptSubmitting ? 'Sending...' : 'Subscribe' }}
-        </button>
-      </div>
-      <button type="button" class="subscribe-modal-dismiss" (click)="dismissSubscribePrompt()">No Thanks</button>
-    </div>
-  </section>
-
-  <a
-    class="support-widget"
-    [href]="supportWidgetUrl"
-    target="_blank"
-    rel="noopener noreferrer"
-    aria-label="Support my work on Buy Me a Coffee">
-    <span class="support-widget-badge" aria-hidden="true">☕</span>
-    <span class="support-widget-copy">
-      <strong>Support my work</strong>
-      <span>If you’ve found value in my projects, writing, or tools, you can support the work here.</span>
-    </span>
-  </a>
-
+  <p
+    *ngIf="consentConfirmation as confirmation"
+    class="consent-status"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true">
+    {{ confirmation.summary }}. {{ confirmation.detail }}
+  </p>
   <p-toast position="bottom-right" [life]="4000"></p-toast>
 </div>

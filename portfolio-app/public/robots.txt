@@ -1,5 +1,49 @@
 User-agent: *
 Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: Claude-SearchBot
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: Claude-User
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: Perplexity-User
+Allow: /
+Allow: /api/content/
+Disallow: /account
+Disallow: /api/
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
 
 Sitemap: https://www.grayson-wills.com/sitemap.xml
-

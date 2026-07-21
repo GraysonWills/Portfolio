@@ -94,6 +94,12 @@ export interface LinkedInProfile {
 export interface BlogPostMetadata {
   title: string;
   summary: string;
+  slug?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  coverAlt?: string;
+  canonicalPath?: string;
+  dateModified?: string;
   tags: string[];
   privateSeoTags?: string[];
   readTimeMinutes?: number;

@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
 import { LandingComponent } from './pages/landing/landing.component';
+import { NotFoundComponent } from './pages/not-found/not-found.component';
 
 const routes: Routes = [
   {
@@ -60,7 +61,15 @@ const routes: Routes = [
       description: 'Manage your reader account, profile, and email subscriptions.'
     }
   },
-  { path: '**', redirectTo: '', pathMatch: 'full' }
+  {
+    path: '**',
+    component: NotFoundComponent,
+    data: {
+      title: 'Page Not Found',
+      description: 'The requested page could not be found.',
+      robots: 'noindex, nofollow'
+    }
+  }
 ];
 
 @NgModule({

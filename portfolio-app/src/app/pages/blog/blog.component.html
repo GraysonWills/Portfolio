@@ -7,37 +7,31 @@
       <p class="page-subtitle">Essays, reflections, and the occasional technical note. Written for me first — shared in case it's useful to you.</p>
     </section>
 
-    <!-- Subscribe Hero -->
-    <section class="subscribe-section" appScrollReveal aria-label="Subscribe to blog updates">
+    <!-- Reader Actions -->
+    <section class="subscribe-section" appScrollReveal aria-label="Reader actions">
       <div class="subscribe-hero">
         <div class="subscribe-hero-grid" aria-hidden="true"></div>
         <div class="subscribe-hero-inner">
           <div class="subscribe-copy">
-            <div class="subscribe-kicker">// stay updated</div>
-            <h2 class="subscribe-title">Subscribe to the blog</h2>
-            <p class="subscribe-blurb">One short email when a new post goes live. No spam, double opt-in, unsubscribe in a click.</p>
+            <div class="subscribe-kicker">// choose your next step</div>
+            <h2 class="subscribe-title">Want the next useful idea?</h2>
+            <p class="subscribe-blurb">Subscribe for field notes, or make a one-time contribution to the experiments behind them.</p>
           </div>
-
-          <div class="subscribe-confirm" *ngIf="subscribedInline" role="status" aria-live="polite">
-            ✓ You're on the list — check your inbox to confirm.
-          </div>
-
-          <div class="subscribe-form" *ngIf="!subscribedInline">
-            <input
-              type="email"
-              pInputText
-              [(ngModel)]="subscribeEmail"
-              (keyup.enter)="subscribe()"
-              placeholder="you@example.com"
-              class="subscribe-input"
-              aria-label="Email address" />
+          <div class="blog-growth-actions">
+            <div class="blog-subscribe-action">
+              <app-subscription-cta
+                placement="blog_index"
+                mode="inline"
+                theme="dark"
+                [showCopy]="false"
+                submitLabel="Subscribe"></app-subscription-cta>
+            </div>
             <button
-              class="subscribe-btn"
-              (click)="subscribe()"
-              [disabled]="isSubscribing"
-              [attr.aria-busy]="isSubscribing ? 'true' : 'false'">
-              {{ isSubscribing ? 'Sending...' : 'Subscribe' }}
-            </button>
+              type="button"
+              class="blog-support-action"
+              [appGrowthCtaImpression]="'support'"
+              growthPlacement="blog_index"
+              (click)="openSupport()">Support</button>
           </div>
         </div>
       </div>
@@ -110,7 +104,7 @@
         <article *ngFor="let post of visiblePosts; trackBy: trackByPost"
                 class="blog-card"
                 role="listitem"
-                [routerLink]="['/blog', post.listItemID]"
+                [routerLink]="['/blog', post.slug || post.listItemID]"
                 (click)="trackPostOpen(post.source)"
                 [attr.aria-label]="'Read: ' + post.title"
                 appScrollReveal>

@@ -1,26 +1,55 @@
-<button type="button" class="float-btn" (click)="support.open()" aria-label="Support my work">
-  <span class="float-icon">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+<button
+  type="button"
+  class="support-float"
+  [class.support-float--modal-open]="state.open"
+  [appGrowthCtaImpression]="'support'"
+  growthPlacement="floating_support"
+  aria-haspopup="dialog"
+  [attr.aria-expanded]="state.open"
+  aria-label="Buy me a coffee and support this site"
+  (click)="openFloatingSupport()">
+  <span class="support-float-icon" aria-hidden="true">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
   </span>
-  <span class="float-text">
-    <span class="float-title">Support My Work</span>
-    <span class="float-sub">Buy me a coffee →</span>
+  <span class="support-float-copy">
+    <span class="support-float-title">Support my work</span>
+    <span class="support-float-subtitle">Buy me a coffee →</span>
   </span>
 </button>
 
-<div class="modal-backdrop" *ngIf="support.isOpen" (click)="support.close()">
-  <div class="modal" (click)="$event.stopPropagation()">
-    <div class="modal-icon">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+<div class="modal-backdrop" *ngIf="state.open" (click)="onBackdropClick($event)">
+  <section
+    #dialog
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="support-modal-title"
+    aria-describedby="support-modal-description">
+    <div class="modal-accent" aria-hidden="true"></div>
+    <div class="modal-content">
+      <div class="modal-top">
+        <div class="modal-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+        </div>
+        <button #closeButton type="button" class="modal-close" (click)="close()" aria-label="Close support dialog">×</button>
+      </div>
+      <h2 id="support-modal-title">Help fund the next build.</h2>
+      <p id="support-modal-description" class="modal-body">This site is independently maintained. A one-time contribution helps cover tools, hosting, experiments, and the time it takes to document what actually happened.</p>
+      <ul class="support-points">
+        <li>One-time support—no membership claim</li>
+        <li>Checkout is handled by Buy Me a Coffee</li>
+        <li>This site measures the outbound click, not payment completion</li>
+      </ul>
+      <div class="modal-actions">
+        <a
+          class="cta"
+          [href]="support.canonicalUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          (click)="onOutboundClick()">Continue to Buy Me a Coffee</a>
+        <button type="button" class="later" (click)="close()">Not now</button>
+      </div>
+      <p class="destination">buymeacoffee.com/calvarygmak</p>
     </div>
-    <div class="modal-title">Support the work</div>
-    <p class="modal-body">Everything here — the writing, the tools, the open projects — is free. If it's been useful, a coffee helps keep it going and ad-free.</p>
-    <div class="tiers">
-      <div class="tier"><div class="amt">$3</div><div class="lbl">a coffee</div></div>
-      <div class="tier featured"><div class="amt">$5</div><div class="lbl warm">a big one</div></div>
-      <div class="tier"><div class="amt">$15</div><div class="lbl">a round</div></div>
-    </div>
-    <a class="cta" [href]="coffeeUrl" target="_blank" rel="noopener">Open Buy Me a Coffee →</a>
-    <button type="button" class="later" (click)="support.close()">Maybe later</button>
-  </div>
+  </section>
 </div>

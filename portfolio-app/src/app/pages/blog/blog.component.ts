@@ -3,14 +3,15 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { BlogCardV2, RedisService } from '../../services/redis.service';
 import { ContentGroup, BlogPostMetadata, PageContentID } from '../../models/redis-content.model';
 import { MessageService } from 'primeng/api';
-import { SubscriptionService } from '../../services/subscription.service';
 import { AnalyticsService } from '../../services/analytics.service';
 import { firstValueFrom, Subscription } from 'rxjs';
 import { RouteViewStateService } from '../../services/route-view-state.service';
+import { SupportService } from '../../services/support.service';
 
 interface BlogPostCard {
   source: ContentGroup;
   listItemID: string;
+  slug?: string;
   title: string;
   summary: string;
   content: string;
@@ -47,10 +48,6 @@ export class BlogComponent implements OnInit, OnDestroy {
   layout: 'list' | 'grid' = 'list';
   searchQuery: string = '';
   isLoading: boolean = true;
-  subscribeEmail: string = '';
-  isSubscribing: boolean = false;
-  /** Drives the inline "✓ You're on the list" confirmation card (presentation only). */
-  subscribedInline: boolean = false;
   currentPage: number = 1;
   isPageTransitioning: boolean = false;
   private readonly pageSize = 12;
@@ -88,8 +85,8 @@ export class BlogComponent implements OnInit, OnDestroy {
   constructor(
     private redisService: RedisService,
     private messageService: MessageService,
-    private subscriptions: SubscriptionService,
     private analytics: AnalyticsService,
+    private support: SupportService,
     private route: ActivatedRoute,
     private router: Router,
     private routeViewState: RouteViewStateService
@@ -242,6 +239,7 @@ export class BlogComponent implements OnInit, OnDestroy {
     return {
       source: post,
       listItemID: post.listItemID,
+      slug: String(metadata?.slug || '').trim() || undefined,
       title: metadata?.title || 'Untitled',
       summary,
       content: content,
@@ -272,10 +270,12 @@ export class BlogComponent implements OnInit, OnDestroy {
           publishDate: publishDate || undefined,
           status: post.status as any,
           category: post.category,
-          readTimeMinutes: post.readTimeMinutes
+          readTimeMinutes: post.readTimeMinutes,
+          slug: post.slug
         } as any
       },
       listItemID: post.listItemID,
+      slug: post.slug,
       title: post.title || 'Untitled',
       summary: post.summary || '',
       content: '',
@@ -558,98 +558,8 @@ export class BlogComponent implements OnInit, OnDestroy {
     });
   }
 
-  subscribe(): void {
-    const email = (this.subscribeEmail || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      this.analytics.track('blog_subscribe_invalid_email', {
-        route: '/blog',
-        page: 'blog',
-        metadata: { source: 'blog-list' }
-      });
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Invalid Email',
-        detail: 'Please enter a valid email address.'
-      });
-      return;
-    }
-
-    if (this.isSubscribing) return;
-    this.isSubscribing = true;
-    this.analytics.track('blog_subscribe_attempt', {
-      route: '/blog',
-      page: 'blog',
-      metadata: { source: 'blog-list' }
-    });
-
-    this.subscriptions.request(email, ['blog_posts'], 'blog-list').subscribe({
-      next: (result) => {
-        this.isSubscribing = false;
-
-        const status = String(result?.status || '').toUpperCase();
-        if (status === 'ALREADY_SUBSCRIBED' || result?.alreadySubscribed) {
-          this.analytics.track('blog_subscribe_already_subscribed', {
-            route: '/blog',
-            page: 'blog',
-            metadata: { source: 'blog-list' }
-          });
-          this.subscriptions.setPromptState('subscribed');
-          this.messageService.add({
-            severity: 'info',
-            summary: 'Already Subscribed',
-            detail: 'This email is already subscribed to blog updates.'
-          });
-          return;
-        }
-
-        if (status === 'ALREADY_PENDING' || result?.alreadyPending) {
-          this.analytics.track('blog_subscribe_already_pending', {
-            route: '/blog',
-            page: 'blog',
-            metadata: { source: 'blog-list' }
-          });
-          this.subscriptions.setPromptState('requested');
-          this.subscribedInline = true;
-          this.messageService.add({
-            severity: 'info',
-            summary: 'Check Your Email',
-            detail: 'You already requested access. Please confirm from your inbox.'
-          });
-          return;
-        }
-
-        this.subscribeEmail = '';
-        this.subscribedInline = true;
-        this.subscriptions.setPromptState('requested');
-        this.analytics.track('blog_subscribe_requested', {
-          route: '/blog',
-          page: 'blog',
-          metadata: { source: 'blog-list' }
-        });
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Almost Done',
-          detail: 'Check your email to confirm your subscription.'
-        });
-      },
-      error: (err) => {
-        this.isSubscribing = false;
-        this.analytics.track('blog_subscribe_error', {
-          route: '/blog',
-          page: 'blog',
-          metadata: {
-            source: 'blog-list',
-            error: String(err?.error?.error || err?.message || 'unknown')
-          }
-        });
-        const msg = err?.error?.error || err?.message || 'Failed to start subscription.';
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Subscribe Failed',
-          detail: msg
-        });
-      }
-    });
+  openSupport(): void {
+    this.support.open({ placement: 'blog_index' });
   }
 
   private applySavedViewPreferences(state: BlogViewState | null): void {

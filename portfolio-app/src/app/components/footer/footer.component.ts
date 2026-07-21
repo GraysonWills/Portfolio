@@ -3,8 +3,6 @@ import { RedisService } from '../../services/redis.service';
 import { RedisContent, PageContentID } from '../../models/redis-content.model';
 import { LinkedInDataService } from '../../services/linkedin-data.service';
 import { SiteConsentService } from '../../services/site-consent.service';
-import { SubscriptionService } from '../../services/subscription.service';
-import { AnalyticsService } from '../../services/analytics.service';
 import { SupportService } from '../../services/support.service';
 
 @Component({
@@ -19,18 +17,10 @@ export class FooterComponent implements OnInit {
   currentYear: number = new Date().getFullYear();
   private brokenIconIds = new Set<string>();
 
-  // Stay Updated subscribe form
-  subscribeEmail = '';
-  isSubscribed = false;
-  isSubscribing = false;
-  subscribeError = '';
-
   constructor(
     private redisService: RedisService,
     private linkedInService: LinkedInDataService,
     private consent: SiteConsentService,
-    private subscriptionService: SubscriptionService,
-    private analytics: AnalyticsService,
     private support: SupportService
   ) {}
 
@@ -132,39 +122,8 @@ export class FooterComponent implements OnInit {
     this.consent.requestPreferencesReview();
   }
 
-  /**
-   * Request a newsletter subscription from the footer form. Mirrors the
-   * landing-page inline subscribe wiring (analytics + SubscriptionService).
-   */
-  subscribe(): void {
-    const email = (this.subscribeEmail || '').trim();
-    this.subscribeError = '';
-    if (!/.+@.+\..+/.test(email)) {
-      this.subscribeError = 'Please enter a valid email address.';
-      return;
-    }
-    if (this.isSubscribing || this.isSubscribed) {
-      return;
-    }
-    this.isSubscribing = true;
-    this.analytics.track('subscribe_requested', {
-      metadata: { location: 'footer' }
-    });
-    this.subscriptionService.request(email, ['blog_posts'], 'footer').subscribe({
-      next: () => {
-        this.isSubscribing = false;
-        this.isSubscribed = true;
-      },
-      error: (error) => {
-        console.error('Error requesting subscription:', error);
-        this.isSubscribing = false;
-        this.subscribeError = 'Something went wrong. Please try again.';
-      }
-    });
-  }
-
   /** Open the global support (buy-me-a-coffee) modal. */
   openSupport(): void {
-    this.support.open();
+    this.support.open({ placement: 'footer' });
   }
 }

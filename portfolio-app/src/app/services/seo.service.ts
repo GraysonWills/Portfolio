@@ -10,6 +10,7 @@ export type SeoTags = {
   imageAlt?: string;
   type?: 'website' | 'article';
   keywords?: string[];
+  robots?: string;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -38,9 +39,11 @@ export class SeoService {
     const imageAlt = (tags.imageAlt || 'Grayson Wills portfolio preview').trim() || 'Grayson Wills portfolio preview';
     const type = tags.type || 'website';
     const keywords = this.normalizeKeywords(tags.keywords || []);
+    const robots = String(tags.robots || 'index,follow').trim() || 'index,follow';
 
     this.title.setTitle(fullTitle);
     this.meta.updateTag({ name: 'description', content: description });
+    this.meta.updateTag({ name: 'robots', content: robots });
 
     // Open Graph
     this.meta.updateTag({ property: 'og:title', content: fullTitle });

@@ -202,7 +202,6 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   overflow-x: hidden;
-  padding-top: var(--site-header-offset);
 }
 
 @media (max-width: 640px) {
@@ -657,6 +656,10 @@ input, select, textarea {
 
 * {
   -webkit-tap-highlight-color: transparent;
+}
+
+body.support-modal-active {
+  overflow: hidden;
 }
 
 /* ── Safe area insets for notched devices ── */

@@ -1,0 +1,28 @@
+.not-found {
+  min-height: 62vh;
+  display: grid;
+  place-content: center;
+  gap: 0.85rem;
+  padding: 7rem 1.5rem;
+  text-align: center;
+  color: var(--pw-ink, #17202a);
+}
+
+.not-found__code {
+  margin: 0;
+  color: var(--pw-blue, #1854a3);
+  font: 700 0.82rem/1.2 var(--pw-font-mono, monospace);
+  letter-spacing: 0.16em;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+a {
+  justify-self: center;
+  margin-top: 0.6rem;
+  color: var(--pw-blue, #1854a3);
+  font-weight: 700;
+}

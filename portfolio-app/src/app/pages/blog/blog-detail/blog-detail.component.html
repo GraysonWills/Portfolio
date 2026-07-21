@@ -54,6 +54,10 @@
           <span class="meta-item">
             {{ getActiveReadTime() }} min read
           </span>
+          <span class="meta-divider" *ngIf="dateModified" aria-hidden="true">·</span>
+          <span *ngIf="dateModified" class="meta-item">
+            Updated {{ dateModified | date:'mediumDate' }}
+          </span>
           <div class="article-tags" *ngIf="tags.length">
             <span *ngFor="let tag of tags" class="article-tag">{{ tag }}</span>
           </div>
@@ -155,31 +159,28 @@
     <section class="bd-wrap bd-wrap-cover end-of-post">
       <div class="eop-card eop-subscribe">
         <div class="eop-eyebrow">Keep reading</div>
-        <div class="eop-title">Get the next one by email</div>
-        <div class="eop-subscribed" *ngIf="subscribed; else subscribeForm">
-          ✓ Subscribed — welcome aboard.
-        </div>
-        <ng-template #subscribeForm>
-          <form class="eop-subscribe-form" (ngSubmit)="subscribe()">
-            <input
-              type="email"
-              name="subscribeEmail"
-              [(ngModel)]="subscribeEmail"
-              [disabled]="subscribing"
-              autocomplete="email"
-              placeholder="you@example.com"
-              aria-label="Email address" />
-            <button type="submit" class="eop-subscribe-btn" [disabled]="subscribing">
-              {{ subscribing ? 'Subscribing…' : 'Subscribe' }}
-            </button>
-          </form>
-        </ng-template>
+        <div class="eop-title">Get the next field note.</div>
+        <p class="eop-copy">Occasional, useful writing for curious builders. Confirm once and unsubscribe whenever you like.</p>
+        <app-subscription-cta
+          placement="article_end"
+          mode="inline"
+          [showCopy]="false"
+          [postId]="currentListItemId"
+          [postSlug]="postSlug"
+          submitLabel="Subscribe by email"></app-subscription-cta>
       </div>
       <div class="eop-card eop-support">
-        <div class="eop-eyebrow">If this landed</div>
-        <div class="eop-title">Buy me a coffee</div>
-        <p class="eop-support-copy">The writing stays free. If it helped, a small tip keeps it coming.</p>
-        <button type="button" class="eop-support-btn" (click)="openSupport()">Support the work →</button>
+        <div class="eop-eyebrow">Keep it independent</div>
+        <div class="eop-title">Help fund the work.</div>
+        <p class="eop-copy">If this was useful, a one-time contribution helps pay for the next experiment and the time to document it.</p>
+        <button
+          type="button"
+          class="eop-support-btn"
+          [appGrowthCtaImpression]="'support'"
+          growthPlacement="article_end"
+          [growthPostId]="currentListItemId"
+          [growthPostSlug]="postSlug"
+          (click)="openSupport()">Support on Buy Me a Coffee →</button>
       </div>
     </section>
 
@@ -460,7 +461,7 @@
       <div class="recent-posts-grid">
         <article *ngFor="let post of recentPostCards; trackBy: trackByRecentPost"
                  class="related-card"
-                 [routerLink]="['/blog', post.listItemID]"
+                 [routerLink]="['/blog', post.slug || post.listItemID]"
                  role="link"
                  [attr.aria-label]="'Read: ' + post.title">
           <div class="related-card-image">

@@ -7,7 +7,6 @@ import { MessageService } from 'primeng/api';
 import { AnalyticsService } from '../../services/analytics.service';
 import { RouteViewStateService } from '../../services/route-view-state.service';
 import { SupportService } from '../../services/support.service';
-import { SubscriptionService } from '../../services/subscription.service';
 
 interface LandingViewState extends Record<string, unknown> {
   scrollY?: number;
@@ -25,10 +24,12 @@ interface FeaturedRole {
 
 interface LandingPostCard {
   listItemID: string;
+  slug?: string;
   title: string;
   dateLabel: string;
   readLabel: string;
   excerpt: string;
+  image?: string;
 }
 
 interface LandingProjectCard {
@@ -68,11 +69,6 @@ export class LandingComponent implements OnInit, OnDestroy {
   activeHeroIndex: number = 0;
   isResumeCooldown = false;
 
-  // Inline subscribe band
-  subscribeEmail = '';
-  isSubscribed = false;
-  isSubscribing = false;
-  subscribeError = '';
   private heroAutoplayHandle: ReturnType<typeof setInterval> | null = null;
   private heroPrefetchIdleHandle: number | null = null;
   private heroPrefetchTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -115,8 +111,7 @@ export class LandingComponent implements OnInit, OnDestroy {
     private messageService: MessageService,
     private analytics: AnalyticsService,
     private routeViewState: RouteViewStateService,
-    private support: SupportService,
-    private subscriptionService: SubscriptionService
+    private support: SupportService
   ) {}
 
   ngOnInit(): void {
@@ -230,14 +225,40 @@ export class LandingComponent implements OnInit, OnDestroy {
         const cards = Array.isArray(response?.items) ? response.items : [];
         this.latestPosts = cards.slice(0, 3).map((card) => ({
           listItemID: card.listItemID,
+          slug: card.slug,
           title: card.title || 'Untitled',
           dateLabel: this.formatPostDate(card.publishDate),
           readLabel: `${Math.max(1, Math.round(Number(card.readTimeMinutes) || 1))} min read`,
           excerpt: card.summary || ''
         }));
+        this.hydrateLatestPostImages();
       },
       error: (error) => {
         console.error('Error loading latest posts:', error);
+      }
+    });
+  }
+
+  private hydrateLatestPostImages(): void {
+    const listItemIDs = this.latestPosts.map((post) => post.listItemID).filter(Boolean);
+    if (!listItemIDs.length) return;
+
+    this.redisService.getBlogCardsMedia(listItemIDs, {
+      cacheScope: 'route:/:landing-latest-media'
+    }).subscribe({
+      next: (mediaItems) => {
+        const mediaMap = new Map(
+          (Array.isArray(mediaItems) ? mediaItems : [])
+            .filter((item) => !!item?.listItemID && !!item?.imageUrl)
+            .map((item) => [item.listItemID, item.imageUrl])
+        );
+        this.latestPosts = this.latestPosts.map((post) => ({
+          ...post,
+          image: mediaMap.get(post.listItemID) || post.image
+        }));
+      },
+      error: (error) => {
+        console.error('Error loading latest post images:', error);
       }
     });
   }
@@ -307,36 +328,7 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   openSupport(): void {
-    this.support.open();
-  }
-
-  subscribe(): void {
-    const email = (this.subscribeEmail || '').trim();
-    this.subscribeError = '';
-    if (!/.+@.+\..+/.test(email)) {
-      this.subscribeError = 'Please enter a valid email address.';
-      return;
-    }
-    if (this.isSubscribing || this.isSubscribed) {
-      return;
-    }
-    this.isSubscribing = true;
-    this.analytics.track('subscribe_requested', {
-      route: '/',
-      page: 'home',
-      metadata: { location: 'landing-inline' }
-    });
-    this.subscriptionService.request(email, ['blog_posts'], 'landing-inline').subscribe({
-      next: () => {
-        this.isSubscribing = false;
-        this.isSubscribed = true;
-      },
-      error: (error) => {
-        console.error('Error requesting subscription:', error);
-        this.isSubscribing = false;
-        this.subscribeError = 'Something went wrong. Please try again.';
-      }
-    });
+    this.support.open({ placement: 'home_writing' });
   }
 
   downloadResume(): void {

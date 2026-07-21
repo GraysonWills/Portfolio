@@ -48,6 +48,11 @@ export type BlogCardV2 = {
   listItemID: string;
   title: string;
   summary: string;
+  slug?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  canonicalPath?: string;
+  dateModified?: string | null;
   publishDate: string | null;
   status: 'draft' | 'scheduled' | 'published' | string;
   tags: string[];
@@ -126,6 +131,11 @@ export type BlogPostDetailV3Response = {
   listItemID: string;
   title: string;
   summary: string;
+  slug?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  canonicalPath?: string;
+  dateModified?: string | null;
   coverImage: string;
   coverAlt: string;
   publishDate: string | null;
@@ -137,6 +147,15 @@ export type BlogPostDetailV3Response = {
   signature: any | null;
   bodyBlocks: any[];
   roughDraftHtml?: string;
+};
+
+export type BlogRouteResolutionV3 = {
+  listItemID: string;
+  slug: string;
+  canonicalPath: string;
+  redirect: boolean;
+  routeKind: 'canonical' | 'alias' | 'legacy-id' | string;
+  dateModified?: string | null;
 };
 
 export type RouteCacheOptions = {
@@ -1171,6 +1190,19 @@ export class RedisService {
     );
     this.blogDetailV3Cache.set(cacheKey, { cachedAt: now, stream$ });
     return stream$;
+  }
+
+  resolveBlogRouteV3(value: string): Observable<BlogRouteResolutionV3> {
+    const safeValue = String(value || '').trim();
+    if (!safeValue) {
+      return throwError(() => new Error('Missing blog route value'));
+    }
+    return this.readRequest(
+      this.http.get<BlogRouteResolutionV3>(
+        `${this.apiUrl}/content/v3/blog/resolve/${encodeURIComponent(safeValue)}`,
+        { headers: this.headers }
+      )
+    );
   }
 
   /**

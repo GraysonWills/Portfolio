@@ -255,8 +255,16 @@
       <a
         class="post-card"
         *ngFor="let post of latestPosts"
-        [routerLink]="['/blog', post.listItemID]">
-        <div class="post-image" aria-hidden="true"></div>
+        [routerLink]="['/blog', post.slug || post.listItemID]">
+        <div class="post-image">
+          <img
+            *ngIf="post.image"
+            class="post-cover"
+            [src]="post.image"
+            [alt]="post.title + ' cover image'"
+            loading="lazy"
+            decoding="async" />
+        </div>
         <div class="post-body">
           <div class="post-meta">{{ post.dateLabel }}<ng-container *ngIf="post.dateLabel && post.readLabel"> · </ng-container>{{ post.readLabel }}</div>
           <div class="post-title">{{ post.title }}</div>
@@ -268,50 +276,32 @@
       New writing is on the way. <a routerLink="/blog">Visit the blog →</a>
     </p>
 
-    <!-- inline subscribe -->
-    <div class="subscribe-band">
-      <div class="subscribe-copy">
-        <div class="subscribe-title">Never miss a post.</div>
-        <div class="subscribe-sub">A short email when something new goes live. Double opt-in, unsubscribe anytime.</div>
-      </div>
-
-      <div class="subscribe-success" *ngIf="isSubscribed">
-        ✓ You're on the list — check your inbox.
-      </div>
-
-      <form class="subscribe-form" *ngIf="!isSubscribed" (ngSubmit)="subscribe()">
-        <label class="sr-only" for="landing-subscribe-email">Email address</label>
-        <input
-          id="landing-subscribe-email"
-          class="subscribe-input"
-          type="email"
-          name="landingSubscribeEmail"
-          [(ngModel)]="subscribeEmail"
-          placeholder="you@example.com"
-          autocomplete="email"
-          [attr.aria-invalid]="subscribeError ? 'true' : null" />
-        <button type="submit" class="subscribe-btn" [disabled]="isSubscribing">
-          {{ isSubscribing ? 'Sending…' : 'Subscribe' }}
-        </button>
-      </form>
-    </div>
-    <p class="subscribe-error" *ngIf="subscribeError" role="alert">{{ subscribeError }}</p>
-  </section>
-
-  <!-- ============ SUPPORT ============ -->
-  <section class="pw-shell support-shell" aria-label="Support">
-    <div class="support-band">
-      <div class="support-grid" aria-hidden="true"></div>
-      <div class="support-left">
-        <div class="support-icon" aria-hidden="true">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v2M11 3v2"/></svg>
+    <div class="growth-pair" aria-label="Reader actions">
+      <article class="growth-card growth-card--subscribe">
+        <div>
+          <div class="growth-eyebrow">Stay in the loop</div>
+          <h3>Get thoughtful field notes.</h3>
+          <p>New essays and practical lessons, delivered only when there is something useful to share.</p>
         </div>
-        <div class="support-copy">
-          <div class="support-title">Enjoying the work?</div>
-          <div class="support-sub">If a project, essay, or tool here helped you, a coffee keeps the writing and the open work coming.</div>
+        <app-subscription-cta
+          placement="home_writing"
+          mode="inline"
+          [showCopy]="false"
+          submitLabel="Subscribe by email"></app-subscription-cta>
+      </article>
+      <article class="growth-card growth-card--support">
+        <div>
+          <div class="growth-eyebrow">Fund the next build</div>
+          <h3>Support independent work.</h3>
+          <p>One-time support helps fund hosting, tools, experiments, and the time it takes to document them honestly.</p>
         </div>
-      </div>
-      <button type="button" class="support-btn" (click)="openSupport()">Buy me a coffee →</button>
+        <button
+          type="button"
+          class="growth-support-btn"
+          [appGrowthCtaImpression]="'support'"
+          growthPlacement="home_writing"
+          (click)="openSupport()">Support the work →</button>
+      </article>
     </div>
   </section>
 

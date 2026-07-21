@@ -31,6 +31,11 @@
             "outputPath": "dist/portfolio-app",
             "index": "src/index.html",
             "browser": "src/main.ts",
+            "server": "src/main.server.ts",
+            "ssr": {
+              "entry": "server.ts"
+            },
+            "outputMode": "server",
             "polyfills": [
               "zone.js",
               "src/polyfills.ts"

@@ -10,9 +10,15 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { InputTextModule } from 'primeng/inputtext';
 
 import { ScrollRevealDirective } from '../directives/scroll-reveal.directive';
+import { GrowthCtaImpressionDirective } from '../directives/growth-cta-impression.directive';
+import { SubscriptionCtaComponent } from '../components/subscription-cta/subscription-cta.component';
 
 @NgModule({
-  declarations: [ScrollRevealDirective],
+  declarations: [
+    ScrollRevealDirective,
+    GrowthCtaImpressionDirective,
+    SubscriptionCtaComponent
+  ],
   imports: [
     CommonModule,
     FormsModule,
@@ -24,7 +30,9 @@ import { ScrollRevealDirective } from '../directives/scroll-reveal.directive';
     FormsModule,
     ReactiveFormsModule,
     InputTextModule,
-    ScrollRevealDirective
+    ScrollRevealDirective,
+    GrowthCtaImpressionDirective,
+    SubscriptionCtaComponent
   ]
 })
 export class SharedModule { }
