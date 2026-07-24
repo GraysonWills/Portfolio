@@ -903,6 +903,17 @@ function buildMcpServer(client) {
     targetIds: (_args, data) => [data?.draft?.id, data?.draft?.messageId].filter(Boolean),
   }, async (args) => googleWorkspace.createDraft(ownerUser(client), args));
 
+  registerTool(server, client, 'google.gmail.send_draft', {
+    description: 'Send one existing Gmail draft whose deterministic Message-ID matches the supplied idempotency key. Grant google:gmail:send only to automation that has already gated the exact recipient, subject, body, links, and attachment upstream.',
+    scope: 'google:gmail:send',
+    category: 'externalMutation',
+    inputSchema: {
+      draftId: z.string(),
+      idempotencyKey: z.string().min(1),
+    },
+    targetIds: (_args, data) => [data?.message?.id, data?.message?.threadId].filter(Boolean),
+  }, async (args) => googleWorkspace.sendDraft(ownerUser(client), args));
+
   registerTool(server, client, 'job_tracker.replace_workbook', {
     description: 'Conditionally replace the configured job-tracker workbook. Fails if its ETag changed after download.',
     scope: 'job_tracker:write',

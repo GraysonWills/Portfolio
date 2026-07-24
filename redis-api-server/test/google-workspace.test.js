@@ -174,3 +174,95 @@ test('Gmail MIME includes deterministic Message-ID when idempotency is supplied'
   assert.match(messageId, /^<job-outreach-[a-f0-9]{64}@drafts\.local>$/);
   assert.equal(second.match(/^Message-ID: (.+)$/m)?.[1], messageId);
 });
+
+test('Gmail draft send binds the idempotency key to the exact draft before sending', async (t) => {
+  const originalFetch = global.fetch;
+  const originalCredential = socialAuth.getPostingCredential;
+  const calls = [];
+  t.after(() => {
+    global.fetch = originalFetch;
+    socialAuth.getPostingCredential = originalCredential;
+  });
+  socialAuth.getPostingCredential = async () => ({
+    scope: 'https://www.googleapis.com/auth/gmail.modify',
+    token: { access_token: 'google-access-token' },
+  });
+  const key = 'approved-job-outreach-effect';
+  const digest = require('node:crypto').createHash('sha256').update(key).digest('hex');
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes('/messages?')) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (String(url).includes('/drafts/draft-id?')) {
+      return new Response(JSON.stringify({
+        id: 'draft-id',
+        message: {
+          id: 'draft-message-id',
+          payload: {
+            headers: [{
+              name: 'Message-ID',
+              value: `<job-outreach-${digest}@drafts.local>`,
+            }],
+          },
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (String(url).endsWith('/drafts/send')) {
+      return new Response(JSON.stringify({ id: 'sent-message-id', threadId: 'thread-id' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+
+  const result = await googleWorkspace.sendDraft({ sub: 'owner' }, {
+    draftId: 'draft-id',
+    idempotencyKey: key,
+  });
+
+  assert.equal(result.message.status, 'sent');
+  assert.equal(result.message.id, 'sent-message-id');
+  assert.equal(calls.length, 3);
+  assert.match(calls[0].url, /\/messages\?q=in%3Asent\+rfc822msgid/);
+  assert.match(calls[1].url, /\/drafts\/draft-id\?format=metadata/);
+  assert.equal(calls[2].url, 'https://gmail.googleapis.com/gmail/v1/users/me/drafts/send');
+  assert.deepEqual(JSON.parse(calls[2].options.body), { id: 'draft-id' });
+});
+
+test('Gmail draft send recovers a lost response without sending twice', async (t) => {
+  const originalFetch = global.fetch;
+  const originalCredential = socialAuth.getPostingCredential;
+  const calls = [];
+  t.after(() => {
+    global.fetch = originalFetch;
+    socialAuth.getPostingCredential = originalCredential;
+  });
+  socialAuth.getPostingCredential = async () => ({
+    scope: 'https://www.googleapis.com/auth/gmail.modify',
+    token: { access_token: 'google-access-token' },
+  });
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes('/messages?')) {
+      return new Response(JSON.stringify({
+        messages: [{ id: 'already-sent-id', threadId: 'already-sent-thread' }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    throw new Error('No draft lookup or send is permitted after the sent message is found');
+  };
+
+  const result = await googleWorkspace.sendDraft({ sub: 'owner' }, {
+    draftId: 'stale-draft-id',
+    idempotencyKey: 'approved-job-outreach-effect',
+  });
+
+  assert.equal(result.message.id, 'already-sent-id');
+  assert.equal(result.message.idempotentReplay, true);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/messages\?/);
+});

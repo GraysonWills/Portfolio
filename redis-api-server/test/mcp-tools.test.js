@@ -159,9 +159,11 @@ test('MCP tool registry exposes draft delete and idempotency-capable mutation sc
   assert.ok(server._registeredTools['google.gmail.search']);
   assert.ok(server._registeredTools['google.gmail.get_messages']);
   assert.ok(server._registeredTools['google.gmail.create_draft']);
+  assert.ok(server._registeredTools['google.gmail.send_draft']);
   assert.ok(server._registeredTools['job_tracker.get_workbook']);
   assert.ok(server._registeredTools['job_tracker.replace_workbook']);
   assert.ok(hasSchemaField(server._registeredTools['google.gmail.create_draft'], 'idempotencyKey'));
+  assert.ok(hasSchemaField(server._registeredTools['google.gmail.send_draft'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['job_tracker.replace_workbook'], 'idempotencyKey'));
   assert.equal(server._registeredTools['google.gmail.send'], undefined);
 });

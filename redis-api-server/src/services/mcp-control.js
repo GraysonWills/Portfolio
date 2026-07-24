@@ -37,6 +37,8 @@ const ALL_SCOPES = [
   // private job-outreach capabilities — opt-in and never default
   'google:gmail:read',
   'google:gmail:draft',
+  // direct email send for Mesh artifacts that have already passed the exact-artifact Gate
+  'google:gmail:send',
   'job_tracker:read',
   'job_tracker:write',
 ];

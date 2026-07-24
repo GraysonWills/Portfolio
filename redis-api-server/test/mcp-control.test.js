@@ -97,16 +97,18 @@ test('private job-outreach scopes are opt-in and not granted by default', async 
   const { mcpControl } = loadMcpControlWithFakeDdb();
   assert.ok(mcpControl.ALL_SCOPES.includes('google:gmail:read'));
   assert.ok(mcpControl.ALL_SCOPES.includes('google:gmail:draft'));
+  assert.ok(mcpControl.ALL_SCOPES.includes('google:gmail:send'));
   assert.ok(mcpControl.ALL_SCOPES.includes('job_tracker:read'));
   assert.ok(mcpControl.ALL_SCOPES.includes('job_tracker:write'));
   assert.equal(mcpControl.DEFAULT_SCOPES.includes('google:gmail:read'), false);
   assert.equal(mcpControl.DEFAULT_SCOPES.includes('google:gmail:draft'), false);
+  assert.equal(mcpControl.DEFAULT_SCOPES.includes('google:gmail:send'), false);
   assert.equal(mcpControl.DEFAULT_SCOPES.includes('job_tracker:read'), false);
   assert.equal(mcpControl.DEFAULT_SCOPES.includes('job_tracker:write'), false);
 
   const result = await mcpControl.createClient({
     name: 'Job outreach worker',
-    scopes: ['google:gmail:read', 'google:gmail:draft', 'job_tracker:read', 'job_tracker:write'],
+    scopes: ['google:gmail:read', 'google:gmail:draft', 'google:gmail:send', 'job_tracker:read', 'job_tracker:write'],
   }, {
     sub: 'author-sub',
     email: 'author@example.com',
@@ -114,6 +116,7 @@ test('private job-outreach scopes are opt-in and not granted by default', async 
   assert.deepEqual(result.client.scopes, [
     'google:gmail:read',
     'google:gmail:draft',
+    'google:gmail:send',
     'job_tracker:read',
     'job_tracker:write',
   ]);

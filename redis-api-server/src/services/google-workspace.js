@@ -24,6 +24,13 @@ const GMAIL_DRAFT_SCOPES = new Set([
   'https://www.googleapis.com/auth/gmail.compose',
 ]);
 
+// Idempotent send recovery must be able to inspect Sent mail. gmail.modify and
+// mail.google.com both permit the draft send and the deterministic Message-ID lookup.
+const GMAIL_SEND_SCOPES = new Set([
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/gmail.modify',
+]);
+
 function httpError(status, message, details) {
   const err = new Error(message);
   err.status = status;
@@ -398,13 +405,82 @@ async function createDraft(user, input = {}) {
   };
 }
 
+function effectMessageId(idempotencyKey) {
+  const safeKey = cleanHeaderValue(idempotencyKey, 'idempotencyKey', 500);
+  if (!safeKey) throw httpError(400, 'idempotencyKey is required');
+  const digest = crypto.createHash('sha256').update(safeKey).digest('hex');
+  return {
+    digest,
+    header: `<job-outreach-${digest}@drafts.local>`,
+    query: `job-outreach-${digest}@drafts.local`,
+  };
+}
+
+function messageHeader(message, name) {
+  const target = String(name || '').toLowerCase();
+  const headers = Array.isArray(message?.payload?.headers) ? message.payload.headers : [];
+  return String(headers.find((header) => String(header?.name || '').toLowerCase() === target)?.value || '');
+}
+
+async function sendDraft(user, input = {}) {
+  const { accessToken } = await googleCredential(user, GMAIL_SEND_SCOPES, 'idempotent draft sending');
+  const draftId = String(input.draftId || '').trim();
+  if (!/^[A-Za-z0-9_-]{4,200}$/.test(draftId)) throw httpError(400, 'Invalid Gmail draft id');
+  const identity = effectMessageId(input.idempotencyKey);
+
+  // First recover any successful send whose HTTP response was lost. This makes
+  // retries converge on the original provider message instead of sending twice.
+  const sentUrl = new URL(`${GMAIL_API_BASE}/messages`);
+  sentUrl.searchParams.set('q', `in:sent rfc822msgid:${identity.query}`);
+  sentUrl.searchParams.set('maxResults', '1');
+  const sentListing = await fetchGoogleJson(sentUrl.toString(), accessToken);
+  const existing = sentListing.messages?.[0];
+  if (existing?.id) {
+    return {
+      message: {
+        id: String(existing.id),
+        threadId: String(existing.threadId || ''),
+        status: 'sent',
+        idempotentReplay: true,
+      },
+    };
+  }
+
+  // Bind the reviewed effect identity to the exact provider draft before the
+  // irreversible call. A caller cannot substitute an unrelated draft id.
+  const draftUrl = new URL(`${GMAIL_API_BASE}/drafts/${encodeURIComponent(draftId)}`);
+  draftUrl.searchParams.set('format', 'metadata');
+  draftUrl.searchParams.append('metadataHeaders', 'Message-ID');
+  const draft = await fetchGoogleJson(draftUrl.toString(), accessToken);
+  const actualMessageId = messageHeader(draft?.message, 'Message-ID');
+  if (actualMessageId !== identity.header) {
+    throw httpError(409, 'Gmail draft does not match the approved idempotent effect');
+  }
+
+  const payload = await fetchGoogleJson(`${GMAIL_API_BASE}/drafts/send`, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: draftId }),
+  });
+  return {
+    message: {
+      id: String(payload.id || ''),
+      threadId: String(payload.threadId || ''),
+      status: 'sent',
+      idempotentReplay: false,
+    },
+  };
+}
+
 module.exports = {
   GMAIL_DRAFT_SCOPES,
   GMAIL_READ_SCOPES,
+  GMAIL_SEND_SCOPES,
   buildMimeMessage,
   createDraft,
   readMessages,
   searchMessages,
+  sendDraft,
   summarizeMessage,
   toBase64Url,
 };
