@@ -35,6 +35,11 @@ PROVIDER_KEYS=(
   SOCIAL_GOOGLE_CLIENT_ID
   SOCIAL_GOOGLE_CLIENT_SECRET
   SOCIAL_GOOGLE_SCOPES
+  MICROSOFT_GRAPH_CLIENT_ID
+  MICROSOFT_GRAPH_CLIENT_SECRET
+  MICROSOFT_GRAPH_SCOPES
+  JOB_TRACKER_DRIVE_ID
+  JOB_TRACKER_ITEM_ID
   SOCIAL_DISCORD_WEBHOOK_URL
 )
 
@@ -104,6 +109,11 @@ Set one or more of these environment variables and rerun:
   SOCIAL_GOOGLE_CLIENT_ID
   SOCIAL_GOOGLE_CLIENT_SECRET
   SOCIAL_GOOGLE_SCOPES
+  MICROSOFT_GRAPH_CLIENT_ID
+  MICROSOFT_GRAPH_CLIENT_SECRET
+  MICROSOFT_GRAPH_SCOPES
+  JOB_TRACKER_DRIVE_ID
+  JOB_TRACKER_ITEM_ID
   SOCIAL_DISCORD_WEBHOOK_URL
 EOF
     exit 1
@@ -150,6 +160,7 @@ Register these callback URLs in the provider apps:
   Tumblr:      https://api.grayson-wills.com/api/social-auth/tumblr/callback
   Medium:      https://api.grayson-wills.com/api/social-auth/medium/callback
   Google APIs: https://api.grayson-wills.com/api/social-auth/google/callback
+  Microsoft:   https://api.grayson-wills.com/api/social-auth/microsoft/callback
 
 Discord uses SOCIAL_DISCORD_WEBHOOK_URL and does not use OAuth.
 EOF

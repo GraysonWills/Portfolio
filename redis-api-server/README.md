@@ -328,6 +328,8 @@ Production resources:
 | `SOCIAL_MEDIUM_CLIENT_ID` / `SOCIAL_MEDIUM_CLIENT_SECRET` | Medium API integration credentials where available |
 | `SOCIAL_GOOGLE_CLIENT_ID` / `SOCIAL_GOOGLE_CLIENT_SECRET` | Google OAuth web app credentials for Gmail, YouTube, Ads, Analytics, and Drive access |
 | `SOCIAL_GOOGLE_SCOPES` | optional whitespace/comma-separated override for Google OAuth scopes |
+| `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_CLIENT_SECRET` | Microsoft OAuth web app credentials for consumer OneDrive access |
+| `MICROSOFT_GRAPH_SCOPES` | optional whitespace/comma-separated Microsoft scope override; the tracker requires `offline_access User.Read Files.ReadWrite` |
 | `SOCIAL_DISCORD_WEBHOOK_URL` | Discord announcement webhook URL |
 
 Provision the baseline DynamoDB table/IAM/env with:
@@ -353,6 +355,8 @@ SOCIAL_TIKTOK_CLIENT_KEY=... \
 SOCIAL_TIKTOK_CLIENT_SECRET=... \
 SOCIAL_GOOGLE_CLIENT_ID=... \
 SOCIAL_GOOGLE_CLIENT_SECRET=... \
+MICROSOFT_GRAPH_CLIENT_ID=... \
+MICROSOFT_GRAPH_CLIENT_SECRET=... \
 AWS_PROFILE=grayson-sso \
 scripts/set_social_provider_credentials.sh
 ```
@@ -365,6 +369,8 @@ The raw OAuth token payloads produced by user login are never returned to the br
 |---|---|
 | `MCP_CONTROL_TABLE_NAME` | DynamoDB table for MCP clients, token indexes, audit records, rate counters, idempotency records, and approvals |
 | `MCP_TOKEN_HASH_SECRET` | optional HMAC secret for machine-token hashing; falls back to `SOCIAL_AUTH_TOKEN_SECRET` / `TOKEN_ENCRYPTION_SECRET` |
+| `JOB_TRACKER_DRIVE_ID` | Microsoft Graph drive id for the configured OneDrive Personal tracker |
+| `JOB_TRACKER_ITEM_ID` | Microsoft Graph driveItem id for the configured `.xlsx` tracker |
 
 Provision the low-cost on-demand control table/IAM/env with:
 
@@ -393,10 +399,20 @@ Canonical blog APIs are mounted at `/api/blog/posts`, `/api/blog/categories`, an
 MCP clients can create, update, and delete isolated drafts they own, plus create preview sessions directly. Approval-backed actions either enter the human approval queue or auto-execute immediately when the calling client's `autoExecuteActions` allowlist includes that action.
 
 Current MCP tool groups:
-- Read: `site.get_inventory`, `content.list`, `content.get`, `blog.list_posts`, `blog.get_post`, `media.list_assets`, `comments.list_recent`, `comments.get_thread`, `social.get_status`, `social.list_deliveries`.
-- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `media.upload_image_base64`, `social.create_delivery_draft`.
+- Read: `site.get_inventory`, `content.list`, `content.get`, `blog.list_posts`, `blog.get_post`, `media.list_assets`, `comments.list_recent`, `comments.get_thread`, `social.get_status`, `social.list_deliveries`, `google.gmail.search`, `google.gmail.get_messages`, `job_tracker.get_workbook`.
+- Direct draft/previews: `blog.create_draft`, `blog.update_mcp_draft`, `blog.delete_mcp_draft`, `preview.create`, `media.upload_image_from_url`, `media.upload_image_base64`, `social.create_delivery_draft`, `google.gmail.create_draft`, `job_tracker.replace_workbook`.
 - Pre-gated external send: `social.schedule_delivery` requires the non-default `social:write:send` scope and a stable `idempotencyKey`. It is reserved for callers such as the mesh that have already recorded Grayson's approval upstream. The tool returns success only for a `sent` delivery; ambiguous outcomes become `unknown` and require reconciliation instead of automatic retry.
 - Approval-backed: `blog.propose_update`, `blog.request_publish`, `blog.request_schedule`, `blog.request_unpublish`, `blog.request_delete`, `content.propose_update`, `media.request_delete`, `comments.propose_reply`, `comments.request_delete`, `social.propose_settings_update`, `social.request_send_delivery`.
+
+The private scopes `google:gmail:read`, `google:gmail:draft`,
+`job_tracker:read`, and `job_tracker:write` are opt-in and are never included
+in a new MCP client's default scope set. There is intentionally no Gmail send
+tool in the draft-only release.
+
+Consumer OneDrive does not officially support Microsoft Graph's workbook/range
+APIs. The tracker tools therefore transfer the bounded `.xlsx` file and replace
+it through an upload session guarded by `If-Match`. A stale ETag fails with
+`409` instead of overwriting concurrent Excel changes.
 
 Mutation and approval tools accept optional `idempotencyKey`; replayed requests return the stored result instead of running the mutation again. `blog.delete_mcp_draft` rejects non-owned drafts and supports `expectedVersion` or `expectedUpdatedAt` concurrency checks. `content.propose_update` accepts an optional `route` so reviewers can open a generated preview URL.
 

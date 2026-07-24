@@ -11,6 +11,8 @@ const mcpControl = require('./mcp-control');
 const socialAuth = require('./social-auth');
 const socialDistribution = require('./social-distribution');
 const notifications = require('./notifications');
+const googleWorkspace = require('./google-workspace');
+const microsoftGraph = require('./microsoft-graph');
 const {
   ddbGetContentById,
   ddbPutContent,
@@ -728,6 +730,33 @@ function buildMcpServer(client) {
     inputSchema: { limit: z.number().optional() },
   }, async (args) => socialDistribution.listDeliveries(ownerUser(client), { limit: args.limit || 100 }));
 
+  registerTool(server, client, 'google.gmail.search', {
+    description: 'Search Gmail and return bounded message metadata. Message bodies are not returned.',
+    scope: 'google:gmail:read',
+    inputSchema: {
+      query: z.string(),
+      maxResults: z.number().optional(),
+      pageToken: z.string().optional(),
+    },
+    targetIds: (_args, data) => (data?.messages || []).map((message) => message.id).filter(Boolean),
+  }, async (args) => googleWorkspace.searchMessages(ownerUser(client), args));
+
+  registerTool(server, client, 'google.gmail.get_messages', {
+    description: 'Read a bounded set of Gmail messages by exact message id, including text bodies and attachment metadata.',
+    scope: 'google:gmail:read',
+    inputSchema: {
+      ids: z.array(z.string()),
+    },
+    targetIds: (args) => args.ids || [],
+  }, async (args) => googleWorkspace.readMessages(ownerUser(client), args));
+
+  registerTool(server, client, 'job_tracker.get_workbook', {
+    description: 'Download the configured OneDrive Personal job-tracker workbook with its ETag and checksum.',
+    scope: 'job_tracker:read',
+    inputSchema: {},
+    targetIds: (_args, data) => [data?.workbook?.id].filter(Boolean),
+  }, async () => microsoftGraph.downloadTracker(ownerUser(client)));
+
   registerTool(server, client, 'blog.create_draft', {
     description: 'Create a draft blog post only.',
     scope: 'blog:write:draft',
@@ -850,6 +879,41 @@ function buildMcpServer(client) {
   }, async (args) => ({
     delivery: await socialDistribution.createDeliveryDraftForUser(ownerUser(client), args),
   }));
+
+  registerTool(server, client, 'google.gmail.create_draft', {
+    description: 'Create a Gmail draft only. This tool cannot send email.',
+    scope: 'google:gmail:draft',
+    category: 'draftMutation',
+    inputSchema: {
+      to: z.array(z.string()),
+      cc: z.array(z.string()).optional(),
+      bcc: z.array(z.string()).optional(),
+      replyTo: z.string().optional(),
+      subject: z.string(),
+      bodyText: z.string(),
+      threadId: z.string().optional(),
+      inReplyTo: z.string().optional(),
+      references: z.string().optional(),
+      attachments: z.array(z.object({
+        filename: z.string(),
+        contentType: z.string().optional(),
+        dataBase64: z.string(),
+      })).optional(),
+    },
+    targetIds: (_args, data) => [data?.draft?.id, data?.draft?.messageId].filter(Boolean),
+  }, async (args) => googleWorkspace.createDraft(ownerUser(client), args));
+
+  registerTool(server, client, 'job_tracker.replace_workbook', {
+    description: 'Conditionally replace the configured job-tracker workbook. Fails if its ETag changed after download.',
+    scope: 'job_tracker:write',
+    category: 'draftMutation',
+    inputSchema: {
+      expectedETag: z.string(),
+      dataBase64: z.string(),
+      sha256: z.string().optional(),
+    },
+    targetIds: (_args, data) => [data?.workbook?.id].filter(Boolean),
+  }, async (args) => microsoftGraph.replaceTracker(ownerUser(client), args));
 
   registerTool(server, client, 'media.upload_image_base64', {
     description: 'Store a base64-encoded image as a photo asset (for callers whose storage is not publicly fetchable).',

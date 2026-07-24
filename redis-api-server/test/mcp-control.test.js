@@ -93,6 +93,32 @@ test('MCP clients return raw token once and store only token hashes', async () =
   assert.equal(mcpControl.canAutoExecute(authenticated, 'blog.request_delete'), false);
 });
 
+test('private job-outreach scopes are opt-in and not granted by default', async () => {
+  const { mcpControl } = loadMcpControlWithFakeDdb();
+  assert.ok(mcpControl.ALL_SCOPES.includes('google:gmail:read'));
+  assert.ok(mcpControl.ALL_SCOPES.includes('google:gmail:draft'));
+  assert.ok(mcpControl.ALL_SCOPES.includes('job_tracker:read'));
+  assert.ok(mcpControl.ALL_SCOPES.includes('job_tracker:write'));
+  assert.equal(mcpControl.DEFAULT_SCOPES.includes('google:gmail:read'), false);
+  assert.equal(mcpControl.DEFAULT_SCOPES.includes('google:gmail:draft'), false);
+  assert.equal(mcpControl.DEFAULT_SCOPES.includes('job_tracker:read'), false);
+  assert.equal(mcpControl.DEFAULT_SCOPES.includes('job_tracker:write'), false);
+
+  const result = await mcpControl.createClient({
+    name: 'Job outreach worker',
+    scopes: ['google:gmail:read', 'google:gmail:draft', 'job_tracker:read', 'job_tracker:write'],
+  }, {
+    sub: 'author-sub',
+    email: 'author@example.com',
+  });
+  assert.deepEqual(result.client.scopes, [
+    'google:gmail:read',
+    'google:gmail:draft',
+    'job_tracker:read',
+    'job_tracker:write',
+  ]);
+});
+
 test('sanitizeBlogHtml strips scripts and unsafe attributes', () => {
   const { sanitizeBlogHtml } = require('../src/services/blog-posts');
   const clean = sanitizeBlogHtml('<p onclick="alert(1)">Hello</p><script>alert(2)</script><a href="javascript:alert(3)">bad</a>');

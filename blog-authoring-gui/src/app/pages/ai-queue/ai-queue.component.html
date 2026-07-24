@@ -145,6 +145,7 @@
           <button type="button" (click)="applyScopePreset('recommended')">Recommended</button>
           <button type="button" (click)="applyScopePreset('readOnly')">Read only</button>
           <button type="button" (click)="applyScopePreset('draftOnly')">Draft only</button>
+          <button type="button" (click)="applyScopePreset('jobOutreach')">Job outreach</button>
           <button type="button" (click)="applyScopePreset('full')">Full suite</button>
         </div>
         <label class="scope-option" *ngFor="let scope of availableScopes; trackBy: trackByScope">

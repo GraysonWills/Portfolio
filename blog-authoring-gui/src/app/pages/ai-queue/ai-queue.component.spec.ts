@@ -62,7 +62,11 @@ describe('AiQueueComponent', () => {
       'blog:write:draft',
       'blog:propose',
       'media:write:draft',
-      'social:write:draft'
+      'social:write:draft',
+      'google:gmail:read',
+      'google:gmail:draft',
+      'job_tracker:read',
+      'job_tracker:write'
     ];
 
     component.applyScopePreset('readOnly');
@@ -72,6 +76,15 @@ describe('AiQueueComponent', () => {
     expect(component.isScopeSelected('blog:write:draft')).toBeTrue();
     expect(component.isScopeSelected('media:write:draft')).toBeTrue();
     expect(component.isScopeSelected('blog:propose')).toBeFalse();
+
+    component.applyScopePreset('jobOutreach');
+    expect(Array.from(component.selectedScopes)).toEqual([
+      'google:gmail:read',
+      'google:gmail:draft',
+      'job_tracker:read',
+      'job_tracker:write'
+    ]);
+    expect(component.isScopeSelected('social:write:draft')).toBeFalse();
 
     component.applyScopePreset('full');
     expect(component.selectedScopes.size).toBe(component.availableScopes.length);

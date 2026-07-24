@@ -34,6 +34,11 @@ const ALL_SCOPES = [
   'social:propose',
   // direct external send for pre-gated automation (the mesh) — NEVER a default
   'social:write:send',
+  // private job-outreach capabilities — opt-in and never default
+  'google:gmail:read',
+  'google:gmail:draft',
+  'job_tracker:read',
+  'job_tracker:write',
 ];
 
 const DEFAULT_SCOPES = [

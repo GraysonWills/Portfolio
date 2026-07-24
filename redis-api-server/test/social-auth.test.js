@@ -264,6 +264,56 @@ test('builds Google provider config with broad API scopes and offline OAuth para
   assert.ok(config.scopes.includes('https://www.googleapis.com/auth/adwords'));
 });
 
+test('builds Microsoft Graph provider config for consumer OneDrive access', () => {
+  const config = socialAuth.getProviderConfig('microsoft');
+  assert.equal(config.id, 'microsoft');
+  assert.equal(config.family, 'microsoft');
+  assert.equal(config.authUrl, 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize');
+  assert.equal(config.tokenUrl, 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token');
+  assert.equal(config.redirectUri, 'https://api.grayson-wills.com/api/social-auth/microsoft/callback');
+  assert.equal(config.pkce, true);
+  assert.deepEqual(config.scopes, ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Files.ReadWrite']);
+});
+
+test('builds Microsoft OAuth authorize URLs with PKCE and offline file access', async (t) => {
+  const previousClientId = process.env.MICROSOFT_GRAPH_CLIENT_ID;
+  const previousClientSecret = process.env.MICROSOFT_GRAPH_CLIENT_SECRET;
+  const previousTableName = process.env.SOCIAL_AUTH_TABLE_NAME;
+
+  t.after(() => {
+    if (previousClientId === undefined) delete process.env.MICROSOFT_GRAPH_CLIENT_ID;
+    else process.env.MICROSOFT_GRAPH_CLIENT_ID = previousClientId;
+    if (previousClientSecret === undefined) delete process.env.MICROSOFT_GRAPH_CLIENT_SECRET;
+    else process.env.MICROSOFT_GRAPH_CLIENT_SECRET = previousClientSecret;
+    if (previousTableName === undefined) delete process.env.SOCIAL_AUTH_TABLE_NAME;
+    else process.env.SOCIAL_AUTH_TABLE_NAME = previousTableName;
+    clearPortfolioModuleCache();
+  });
+
+  setMcpTestEnv();
+  process.env.MICROSOFT_GRAPH_CLIENT_ID = 'microsoft-client-id';
+  process.env.MICROSOFT_GRAPH_CLIENT_SECRET = 'microsoft-client-secret';
+  const memory = createMemoryDdb();
+  installFakeAws(memory);
+  const freshSocialAuth = require('../src/services/social-auth');
+
+  const result = await freshSocialAuth.startOAuth('microsoft', {
+    sub: 'author-sub',
+    username: 'author'
+  }, {
+    returnUrl: 'https://author.grayson-wills.com/distribution'
+  });
+
+  const url = new URL(result.authUrl);
+  assert.equal(`${url.origin}${url.pathname}`, 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize');
+  assert.equal(url.searchParams.get('client_id'), 'microsoft-client-id');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://api.grayson-wills.com/api/social-auth/microsoft/callback');
+  assert.equal(url.searchParams.get('prompt'), 'select_account');
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.ok(url.searchParams.get('scope').includes('offline_access'));
+  assert.ok(url.searchParams.get('scope').includes('Files.ReadWrite'));
+});
+
 test('allows Google scopes to be narrowed from environment', () => {
   const previousScopes = process.env.SOCIAL_GOOGLE_SCOPES;
   process.env.SOCIAL_GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/youtube.upload';

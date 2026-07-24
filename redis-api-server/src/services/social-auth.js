@@ -187,6 +187,22 @@ const PROVIDERS = {
       include_granted_scopes: 'true',
       prompt: 'consent'
     }
+  },
+  microsoft: {
+    id: 'microsoft',
+    label: 'Microsoft Graph',
+    family: 'microsoft',
+    clientIdEnv: ['MICROSOFT_GRAPH_CLIENT_ID', 'SOCIAL_MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_ID'],
+    clientSecretEnv: ['MICROSOFT_GRAPH_CLIENT_SECRET', 'SOCIAL_MICROSOFT_CLIENT_SECRET', 'MICROSOFT_CLIENT_SECRET'],
+    scopeEnv: ['MICROSOFT_GRAPH_SCOPES'],
+    authUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Files.ReadWrite'],
+    pkce: true,
+    scopeSeparator: ' ',
+    authParams: {
+      prompt: 'select_account'
+    }
   }
 };
 
@@ -451,7 +467,8 @@ function providerSupportsRefresh(config) {
   return config.family === 'x'
     || config.family === 'instagram'
     || config.family === 'threads'
-    || config.family === 'google';
+    || config.family === 'google'
+    || config.family === 'microsoft';
 }
 
 function tokenNeedsRefresh(config, item) {
@@ -471,6 +488,9 @@ async function refreshStoredConnection(config, item) {
   } else if (config.family === 'google') {
     if (!currentToken?.refresh_token) return item;
     nextToken = await refreshGoogleAccessToken(config, currentToken.refresh_token);
+  } else if (config.family === 'microsoft') {
+    if (!currentToken?.refresh_token) return item;
+    nextToken = await refreshMicrosoftAccessToken(config, currentToken.refresh_token);
   } else if (config.family === 'instagram') {
     if (!currentToken?.access_token) return item;
     nextToken = await refreshImportedInstagramToken(currentToken.access_token);
@@ -692,7 +712,8 @@ async function completeOAuth(provider, { code, state }) {
     || config.family === 'reddit'
     || config.family === 'mastodon'
     || config.family === 'medium'
-    || config.family === 'google';
+    || config.family === 'google'
+    || config.family === 'microsoft';
 
   await getDdbDoc().send(new PutCommand({
     TableName: getTableName(),
@@ -842,7 +863,10 @@ async function exchangeCodeForToken(config, code, verifier) {
     client_id: config.clientId
   });
   if (verifier) params.set('code_verifier', verifier);
-  if (['linkedin', 'instagram', 'mastodon', 'tumblr', 'medium', 'google'].includes(config.family)) params.set('client_secret', config.clientSecret);
+  if (['linkedin', 'instagram', 'mastodon', 'tumblr', 'medium', 'google', 'microsoft'].includes(config.family)) {
+    params.set('client_secret', config.clientSecret);
+  }
+  if (config.family === 'microsoft') params.set('scope', config.scopes.join(' '));
 
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (config.family === 'x' && config.clientSecret) {
@@ -885,6 +909,20 @@ async function refreshGoogleAccessToken(config, refreshToken) {
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret
+    }).toString()
+  });
+}
+
+async function refreshMicrosoftAccessToken(config, refreshToken) {
+  return fetchJson(config.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      scope: config.scopes.join(' ')
     }).toString()
   });
 }
@@ -933,6 +971,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'tumblr') url = 'https://api.tumblr.com/v2/user/info';
   if (config.family === 'medium') url = 'https://api.medium.com/v1/me';
   if (config.family === 'google') url = 'https://openidconnect.googleapis.com/v1/userinfo';
+  if (config.family === 'microsoft') url = 'https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName';
   if (!url) return '';
 
   const payload = await fetchJson(url, {
@@ -954,6 +993,7 @@ async function fetchAccountLabel(config, accessToken) {
   if (config.family === 'tumblr') return payload?.response?.user?.name || 'Tumblr account';
   if (config.family === 'medium') return payload?.data?.username ? `@${payload.data.username}` : payload?.data?.name || 'Medium account';
   if (config.family === 'google') return payload?.email || payload?.name || 'Google account';
+  if (config.family === 'microsoft') return payload?.mail || payload?.userPrincipalName || payload?.displayName || 'Microsoft account';
   return '';
 }
 
@@ -1163,6 +1203,20 @@ async function fetchProviderProfile(config, accessToken) {
       extra: {
         hostedDomain: payload?.hd || ''
       }
+    };
+  }
+
+  if (config.family === 'microsoft') {
+    const payload = await fetchJson('https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const email = String(payload?.mail || payload?.userPrincipalName || '');
+    return {
+      id: String(payload?.id || email),
+      label: email || String(payload?.displayName || 'Microsoft account'),
+      handle: email,
+      platform: config.id,
+      picture: ''
     };
   }
 
@@ -1478,7 +1532,7 @@ async function listProviderAccounts(provider, user) {
   }
 
   let accounts = [];
-  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google'].includes(config.family)) {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google', 'microsoft'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);
@@ -1519,7 +1573,7 @@ async function selectProviderAccount(provider, user, { accountId } = {}) {
   }
 
   let accounts = [];
-  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google'].includes(config.family)) {
+  if (['x', 'linkedin', 'instagram', 'threads', 'tiktok', 'reddit', 'mastodon', 'medium', 'google', 'microsoft'].includes(config.family)) {
     const profile = item.selectedAccount
       || await fetchProviderProfile(config, accessToken).catch(() => null)
       || (config.family === 'instagram' ? instagramProfileFromTokenPayload(tokenPayload) : null);

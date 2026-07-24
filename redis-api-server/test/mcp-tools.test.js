@@ -156,6 +156,14 @@ test('MCP tool registry exposes draft delete and idempotency-capable mutation sc
   assert.ok(hasSchemaField(server._registeredTools['blog.create_draft'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['blog.propose_update'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['content.propose_update'], 'route'));
+  assert.ok(server._registeredTools['google.gmail.search']);
+  assert.ok(server._registeredTools['google.gmail.get_messages']);
+  assert.ok(server._registeredTools['google.gmail.create_draft']);
+  assert.ok(server._registeredTools['job_tracker.get_workbook']);
+  assert.ok(server._registeredTools['job_tracker.replace_workbook']);
+  assert.ok(hasSchemaField(server._registeredTools['google.gmail.create_draft'], 'idempotencyKey'));
+  assert.ok(hasSchemaField(server._registeredTools['job_tracker.replace_workbook'], 'idempotencyKey'));
+  assert.equal(server._registeredTools['google.gmail.send'], undefined);
 });
 
 test('MCP draft create, update, and delete are restricted to the owning client', async () => {

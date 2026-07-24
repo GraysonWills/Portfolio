@@ -547,6 +547,7 @@ MCP_BASE_URL=https://api.grayson-wills.com/api/mcp node scripts/mcp_smoke.mjs --
 - Queue-aware subscription mockup: `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/portfolio-subscription-update.html`
 - Queue-aware authoring mockup: `/Users/grayson/Desktop/Portfolio/design/email-notifications/mockups/blog-authoring-notifications-update.html`
 - MCP research docs: `/Users/grayson/Desktop/Portfolio/design/mcp-integration`
+- Draft-only job outreach design: `/Users/grayson/Desktop/Portfolio/design/job-outreach/draft-only-pipeline.md`
 - Bedrock research: `/Users/grayson/Desktop/Portfolio/design/bedrock`
 - Reusable architecture blueprint: `/Users/grayson/Desktop/Portfolio/platform-blueprint`
 

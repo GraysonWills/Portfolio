@@ -53,7 +53,11 @@ export class AiQueueComponent implements OnInit {
     'comments:propose': 'Comment approvals',
     'social:read': 'Social reads',
     'social:write:draft': 'Social drafts',
-    'social:propose': 'Social approvals'
+    'social:propose': 'Social approvals',
+    'google:gmail:read': 'Gmail search and message reads',
+    'google:gmail:draft': 'Gmail draft creation (no send tool)',
+    'job_tracker:read': 'Job tracker workbook reads',
+    'job_tracker:write': 'ETag-protected job tracker updates'
   };
 
   readonly autoActionDescriptions: Record<string, string> = {
@@ -69,6 +73,13 @@ export class AiQueueComponent implements OnInit {
     'social.propose_settings_update': 'Social settings',
     'social.request_send_delivery': 'Send social posts'
   };
+
+  readonly privateJobOutreachScopes = new Set([
+    'google:gmail:read',
+    'google:gmail:draft',
+    'job_tracker:read',
+    'job_tracker:write'
+  ]);
 
   readonly statusOptions = [
     { label: 'Pending', value: 'pending' },
@@ -112,7 +123,8 @@ export class AiQueueComponent implements OnInit {
         this.riskyAutoExecuteActions = response.riskyAutoExecuteActions || [];
         if (!this.selectedScopes.size) {
           for (const scope of this.availableScopes) {
-            if (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose')) {
+            if (!this.privateJobOutreachScopes.has(scope)
+              && (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose'))) {
               this.selectedScopes.add(scope);
             }
           }
@@ -185,7 +197,7 @@ export class AiQueueComponent implements OnInit {
     }
   }
 
-  applyScopePreset(preset: 'recommended' | 'readOnly' | 'draftOnly' | 'full'): void {
+  applyScopePreset(preset: 'recommended' | 'readOnly' | 'draftOnly' | 'jobOutreach' | 'full'): void {
     this.selectedScopes.clear();
     const scopes = new Set(this.availableScopes || []);
     const add = (scope: string) => {
@@ -199,7 +211,9 @@ export class AiQueueComponent implements OnInit {
 
     if (preset === 'readOnly') {
       for (const scope of this.availableScopes) {
-        if (scope.endsWith(':read')) this.selectedScopes.add(scope);
+        if (scope.endsWith(':read') && !this.privateJobOutreachScopes.has(scope)) {
+          this.selectedScopes.add(scope);
+        }
       }
       return;
     }
@@ -216,8 +230,17 @@ export class AiQueueComponent implements OnInit {
       return;
     }
 
+    if (preset === 'jobOutreach') {
+      add('google:gmail:read');
+      add('google:gmail:draft');
+      add('job_tracker:read');
+      add('job_tracker:write');
+      return;
+    }
+
     for (const scope of this.availableScopes) {
-      if (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose')) {
+      if (!this.privateJobOutreachScopes.has(scope)
+        && (scope.includes(':read') || scope === 'blog:write:draft' || scope.endsWith(':propose'))) {
         this.selectedScopes.add(scope);
       }
     }
