@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Ensures the portfolio CloudFront distribution has a LIVE viewer-request function
-# that enforces apex -> www redirect and SPA route rewriting.
+# that enforces the apex -> www redirect without rewriting SSR routes.
 #
 # Usage:
 #   ./scripts/configure_cloudfront_portfolio_viewer_request.sh \
@@ -55,12 +55,12 @@ if aws cloudfront describe-function --name "${FUNCTION_NAME}" --stage DEVELOPMEN
   aws cloudfront update-function \
     --name "${FUNCTION_NAME}" \
     --if-match "${DEV_ETAG}" \
-    --function-config "Comment=Portfolio apex redirect + SPA viewer-request handler,Runtime=cloudfront-js-1.0" \
+    --function-config "Comment=Portfolio canonical-host viewer-request handler,Runtime=cloudfront-js-1.0" \
     --function-code "fileb://${FUNCTION_FILE}" >/tmp/cf-fn-updated.json
 else
   aws cloudfront create-function \
     --name "${FUNCTION_NAME}" \
-    --function-config "Comment=Portfolio apex redirect + SPA viewer-request handler,Runtime=cloudfront-js-1.0" \
+    --function-config "Comment=Portfolio canonical-host viewer-request handler,Runtime=cloudfront-js-1.0" \
     --function-code "fileb://${FUNCTION_FILE}" >/tmp/cf-fn-updated.json
 fi
 

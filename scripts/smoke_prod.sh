@@ -55,17 +55,6 @@ expect_redirect_location() {
   fi
 }
 
-expect_json_array_len_gt() {
-  local url="$1"
-  local min="$2"
-  local len
-  len="$(curl -sS "$url" | jq 'length' 2>/dev/null || echo -1)"
-  if [[ "$len" -le "$min" ]]; then
-    echo "expected array length > $min, got $len: $url"
-    return 1
-  fi
-}
-
 expect_cors_allow_origin() {
   local url="$1"
   local origin="$2"
@@ -106,7 +95,9 @@ retry 30 10 expect_redirect_location "${APEX_URL}/some/path?x=1" "https://www.gr
 
 echo "== API =="
 retry 30 10 expect_code "${API_URL}/health" "200"
-retry 30 10 expect_json_array_len_gt "${API_URL}/content" 0
+# Canonical content reads are private behind the CloudFront edge secret. The
+# browser-facing site supplies that secret; direct internet callers must not.
+retry 30 10 expect_code "${API_URL}/content" "403"
 # Note: API Gateway custom domains serve HTTPS only; plain HTTP on port 80 is not expected.
 
 echo "== Authz sanity (writes must be protected) =="

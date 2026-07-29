@@ -31,7 +31,6 @@ function serializeQueryString(querystring) {
 function handler(event) {
   var request = event.request;
   var uri = request.uri || "/";
-  var method = (request.method || "GET").toUpperCase();
   var hostHeader = request.headers && request.headers.host;
   var host = hostHeader && hostHeader.value ? hostHeader.value.toLowerCase() : "";
 
@@ -48,19 +47,8 @@ function handler(event) {
     };
   }
 
-  if (method !== "GET" && method !== "HEAD") {
-    return request;
-  }
-
-  // Do not rewrite concrete asset/API paths.
-  if (uri.indexOf("/api/") === 0 || uri.indexOf("/assets/") === 0 || uri.indexOf("/uploads/") === 0) {
-    return request;
-  }
-  if (uri.indexOf(".") !== -1) {
-    return request;
-  }
-
-  // Rewrite extensionless application routes to SPA shell.
-  request.uri = "/index.html";
+  // The default origin is the SSR renderer. Preserve the original route so it
+  // can return accurate status codes and canonical metadata. Static assets are
+  // routed to S3 by their dedicated cache behaviors.
   return request;
 }
