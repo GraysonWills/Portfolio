@@ -356,7 +356,26 @@
               <i class="pi pi-sitemap"></i>
               <span>{{ getSocialAutomationSummary() }}</span>
             </div>
-            <div class="automation-labels" *ngIf="getSocialAutomationLabels().length">
+            <div class="linked-social-drafts" *ngIf="hasLinkedSocialAutomation()" formGroupName="socialCopy">
+              <div class="linked-social-draft" *ngFor="let platform of linkedSocialPlatforms">
+                <div class="linked-social-heading">
+                  <label [for]="'social-copy-' + platform.id">{{ platform.label }}</label>
+                  <span>{{ getLinkedSocialLength(platform.id) }} / {{ platform.maxChars }}</span>
+                </div>
+                <small>{{ getLinkedSocialSchedule(platform.id) }}</small>
+                <textarea
+                  [id]="'social-copy-' + platform.id"
+                  [formControlName]="platform.id"
+                  [attr.maxlength]="platform.maxChars"
+                  rows="5"
+                  aria-label="Editable generated social summary">
+                </textarea>
+              </div>
+              <small class="help-text">
+                These are the exact Mesh summaries. Changes saved here are read again before delivery.
+              </small>
+            </div>
+            <div class="automation-labels" *ngIf="!hasLinkedSocialAutomation() && getSocialAutomationLabels().length">
               <span *ngFor="let label of getSocialAutomationLabels()">{{ label }}</span>
             </div>
             <p-button

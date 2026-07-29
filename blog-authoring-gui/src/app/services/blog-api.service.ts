@@ -15,7 +15,10 @@ import {
   CollectionsEntryMetadata,
   CollectionsEntryType
 } from '../models/redis-content.model';
-import { SocialAutomationSettings } from './social-distribution-automation.service';
+import {
+  LinkedBlogSocialAutomation,
+  SocialAutomationSettings
+} from './social-distribution-automation.service';
 
 export type ApiHealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 
@@ -327,6 +330,7 @@ export type CanonicalBlogPost = {
   publishDate: string | null;
   scheduleName?: string | null;
   scheduledAt?: string | null;
+  socialAutomation?: LinkedBlogSocialAutomation | null;
   metadata?: Record<string, any>;
   version: number;
   updatedAt: string | null;
@@ -357,6 +361,7 @@ export type CanonicalBlogPostPayload = {
   status?: 'draft' | 'scheduled' | 'published';
   signatureId?: string;
   signatureSnapshot?: BlogSignature;
+  socialAutomation?: LinkedBlogSocialAutomation;
   expectedUpdatedAt?: string;
   expectedVersion?: number;
 };
@@ -1434,7 +1439,8 @@ export class BlogApiService {
     signatureId?: string,
     signatureSnapshot?: BlogSignature,
     expectedVersion?: number,
-    expectedUpdatedAt?: string
+    expectedUpdatedAt?: string,
+    socialAutomation?: LinkedBlogSocialAutomation
   ): CanonicalBlogPostPayload {
     return {
       ...(listItemID ? { listItemID } : {}),
@@ -1451,6 +1457,7 @@ export class BlogApiService {
       ...(image && image.trim() ? { coverImageUrl: image.trim() } : {}),
       ...(signatureId ? { signatureId } : {}),
       ...(signatureSnapshot ? { signatureSnapshot } : {}),
+      ...(socialAutomation ? { socialAutomation } : {}),
       ...(Number.isFinite(Number(expectedVersion)) ? { expectedVersion: Number(expectedVersion) } : {}),
       ...(expectedUpdatedAt ? { expectedUpdatedAt } : {})
     };
@@ -1516,7 +1523,8 @@ export class BlogApiService {
     category?: string,
     readTimeMinutes?: number,
     signatureId?: string,
-    signatureSnapshot?: BlogSignature
+    signatureSnapshot?: BlogSignature,
+    socialAutomation?: LinkedBlogSocialAutomation
   ): Observable<RedisContent[]> {
     return this.createCanonicalBlogPost(this.buildCanonicalBlogPostPayload(
       title,
@@ -1532,7 +1540,10 @@ export class BlogApiService {
       category,
       readTimeMinutes,
       signatureId,
-      signatureSnapshot
+      signatureSnapshot,
+      undefined,
+      undefined,
+      socialAutomation
     )).pipe(map((response) => this.canonicalPostItems(response.post)));
   }
 
@@ -1555,7 +1566,8 @@ export class BlogApiService {
     signatureId?: string,
     signatureSnapshot?: BlogSignature,
     expectedVersion?: number,
-    expectedUpdatedAt?: string
+    expectedUpdatedAt?: string,
+    socialAutomation?: LinkedBlogSocialAutomation
   ): Observable<RedisContent[]> {
     return this.updateCanonicalBlogPost(listItemID, this.buildCanonicalBlogPostPayload(
       title,
@@ -1573,7 +1585,8 @@ export class BlogApiService {
       signatureId,
       signatureSnapshot,
       expectedVersion,
-      expectedUpdatedAt
+      expectedUpdatedAt,
+      socialAutomation
     )).pipe(map((response) => this.canonicalPostItems(response.post)));
   }
 

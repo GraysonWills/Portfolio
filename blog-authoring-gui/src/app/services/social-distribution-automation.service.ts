@@ -55,6 +55,13 @@ export type SocialAutomationSettings = {
   rules: SocialAutomationRule[];
 };
 
+export type LinkedBlogSocialAutomation = {
+  source: 'mesh' | 'authoring';
+  profile?: string;
+  copy: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
+  schedule: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
+};
+
 @Injectable({
   providedIn: 'root'
 })

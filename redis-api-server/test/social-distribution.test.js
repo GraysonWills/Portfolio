@@ -2,6 +2,25 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const socialDistribution = require('../src/services/social-distribution');
+const notifications = require('../src/services/notifications');
+
+test('identifies Mesh-managed per-post copy so global rules cannot duplicate it', () => {
+  const platforms = notifications.meshManagedSocialPlatforms({
+    socialAutomation: {
+      source: 'mesh',
+      copy: {
+        linkedin: 'LinkedIn summary.',
+        mastodon: 'Mastodon summary.',
+        threads: 'Threads summary.',
+      },
+    },
+  });
+
+  assert.deepEqual(platforms, ['linkedin', 'mastodon', 'threads']);
+  assert.deepEqual(notifications.meshManagedSocialPlatforms({
+    socialAutomation: { source: 'authoring', copy: { linkedin: 'Template copy.' } },
+  }), []);
+});
 
 test('normalizes social distribution settings with default templates and rules', () => {
   const settings = socialDistribution.normalizeSettings({

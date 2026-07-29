@@ -214,6 +214,21 @@ function contentHtmlFromInput(input) {
   return '';
 }
 
+const blogSocialAutomationSchema = z.object({
+  source: z.enum(['mesh', 'authoring']).optional().default('mesh'),
+  profile: z.string().trim().max(120).optional().default(''),
+  copy: z.object({
+    linkedin: z.string().trim().min(1).max(1400).optional(),
+    mastodon: z.string().trim().min(1).max(450).optional(),
+    threads: z.string().trim().min(1).max(450).optional(),
+  }).strict().optional().default({}),
+  schedule: z.object({
+    linkedin: z.string().trim().max(80).optional(),
+    mastodon: z.string().trim().max(80).optional(),
+    threads: z.string().trim().max(80).optional(),
+  }).strict().optional().default({}),
+}).passthrough();
+
 const postInputSchema = z.object({
   listItemID: z.string().trim().max(180).optional(),
   title: z.string().trim().min(1).max(220),
@@ -231,6 +246,7 @@ const postInputSchema = z.object({
   status: z.enum(['draft', 'scheduled', 'published']).optional().default('draft'),
   signatureId: z.string().trim().max(120).optional().default(''),
   signatureSnapshot: z.object({}).passthrough().optional(),
+  socialAutomation: blogSocialAutomationSchema.nullable().optional(),
 });
 
 const postPatchSchema = postInputSchema.partial().extend({
@@ -370,6 +386,7 @@ function recordsToPost(items, { includeItems = false } = {}) {
     publishDate: metadata.publishDate ? new Date(metadata.publishDate).toISOString() : null,
     scheduleName: metadata.scheduleName || null,
     scheduledAt: metadata.scheduledAt || null,
+    socialAutomation: metadata.socialAutomation || null,
     metadata,
     version: Number.isFinite(Number(metadata.version)) ? Number(metadata.version) : 0,
     updatedAt,
@@ -423,6 +440,7 @@ function buildRecordsFromInput(input, { existingItems = [], actor = {}, source =
     readTimeMinutes,
     ...(input.signatureId !== undefined ? { signatureId: input.signatureId || null } : {}),
     ...(input.signatureSnapshot !== undefined ? { signatureSnapshot: input.signatureSnapshot || null } : {}),
+    ...(input.socialAutomation !== undefined ? { socialAutomation: input.socialAutomation || null } : {}),
     ...(coverImageUrl ? { coverImageUrl } : {}),
     version: nextVersion,
     updatedAt: timestamp,

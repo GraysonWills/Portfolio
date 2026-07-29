@@ -196,6 +196,14 @@ function buildSocialBlogPayload({ listItemID, items, baseDate = new Date() }) {
   };
 }
 
+function meshManagedSocialPlatforms(meta = {}) {
+  const linkedAutomation = meta?.socialAutomation;
+  if (linkedAutomation?.source !== 'mesh') return [];
+  return Object.keys(linkedAutomation.copy || {}).filter(
+    (platform) => String(linkedAutomation.copy?.[platform] || '').trim()
+  );
+}
+
 async function runSocialAutomationForBlogPost({ userSub, listItemID, trigger = 'blog_published', baseDate = new Date(), items = null } = {}) {
   const normalizedUserSub = String(userSub || '').trim();
   if (!normalizedUserSub) {
@@ -203,6 +211,16 @@ async function runSocialAutomationForBlogPost({ userSub, listItemID, trigger = '
   }
 
   const blogItems = items || await assertBlogPostExists(listItemID);
+  const { meta } = extractBlogMetadata(blogItems);
+  const linkedPlatforms = meshManagedSocialPlatforms(meta);
+  if (linkedPlatforms.length) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'MESH_MANAGED_SOCIAL_AUTOMATION',
+      linkedPlatforms,
+    };
+  }
   const blog = buildSocialBlogPayload({ listItemID, items: blogItems, baseDate });
   try {
     return await socialDistribution.processBlogAutomation({
@@ -1447,6 +1465,7 @@ module.exports = {
   unpublishBlogPost,
   publishBlogPostNow,
   runSocialAutomationForBlogPost,
+  meshManagedSocialPlatforms,
   processNotificationQueueRecords,
   listSubscribedRecipients,
   getConfig,

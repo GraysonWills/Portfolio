@@ -154,6 +154,8 @@ test('MCP tool registry exposes draft delete and idempotency-capable mutation sc
 
   assert.ok(server._registeredTools['blog.delete_mcp_draft']);
   assert.ok(hasSchemaField(server._registeredTools['blog.create_draft'], 'idempotencyKey'));
+  assert.ok(hasSchemaField(server._registeredTools['blog.create_draft'], 'socialAutomation'));
+  assert.ok(hasSchemaField(server._registeredTools['blog.update_mcp_draft'], 'socialAutomation'));
   assert.ok(hasSchemaField(server._registeredTools['blog.propose_update'], 'idempotencyKey'));
   assert.ok(hasSchemaField(server._registeredTools['content.propose_update'], 'route'));
   assert.ok(server._registeredTools['google.gmail.search']);
@@ -177,18 +179,47 @@ test('MCP draft create, update, and delete are restricted to the owning client',
     listItemID: 'mcp-smoke-owned-draft',
     title: 'Owned Draft',
     contentMarkdown: 'Hello from MCP.',
+    signatureSnapshot: {
+      id: 'annie-dillard',
+      quote: 'How we spend our days is how we spend our lives.',
+      quoteAuthor: 'Annie Dillard',
+    },
+    socialAutomation: {
+      source: 'mesh',
+      profile: 'blog.distribution@1',
+      copy: {
+        linkedin: 'LinkedIn summary.',
+        mastodon: 'Mastodon summary.',
+        threads: 'Threads summary.',
+      },
+      schedule: {
+        linkedin: '2099-07-22T12:00:00+00:00',
+        mastodon: '2099-07-22T14:00:00+00:00',
+        threads: '2099-07-22T16:00:00+00:00',
+      },
+    },
     idempotencyKey: 'owned-create',
   });
   assert.equal(created.structuredContent.post.status, 'draft');
   assert.equal(created.structuredContent.post.source.clientId, 'client-a');
+  assert.equal(created.structuredContent.post.metadata.signatureSnapshot.quoteAuthor, 'Annie Dillard');
+  assert.equal(created.structuredContent.post.socialAutomation.copy.threads, 'Threads summary.');
 
   const updated = await callRegisteredTool(server, 'blog.update_mcp_draft', {
     listItemID: 'mcp-smoke-owned-draft',
     summary: 'Updated summary',
+    socialAutomation: {
+      ...created.structuredContent.post.socialAutomation,
+      copy: {
+        ...created.structuredContent.post.socialAutomation.copy,
+        threads: 'Threads summary edited in Back-of-Shop.',
+      },
+    },
     expectedVersion: created.structuredContent.post.version,
     idempotencyKey: 'owned-update',
   });
   assert.equal(updated.structuredContent.post.summary, 'Updated summary');
+  assert.equal(updated.structuredContent.post.socialAutomation.copy.threads, 'Threads summary edited in Back-of-Shop.');
   assert.equal(updated.structuredContent.post.version, created.structuredContent.post.version + 1);
 
   const deleted = await callRegisteredTool(server, 'blog.delete_mcp_draft', {

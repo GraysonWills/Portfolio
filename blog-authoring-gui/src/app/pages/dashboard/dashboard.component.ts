@@ -365,6 +365,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           category: metadata?.category || '',
           signatureId: metadata?.signatureId || metadata?.signatureSnapshot?.id || '',
           signatureSnapshot: metadata?.signatureSnapshot || null,
+          socialAutomation: metadata?.socialAutomation || null,
           scheduleName: metadata?.scheduleName || null,
           sendEmailUpdate: metadata?.notifyEmail ?? true,
           version: Number.isFinite(Number(metadata?.version)) ? Number(metadata.version) : undefined,

@@ -56,6 +56,12 @@ export interface BlogPostMetadata {
   category?: string;
   signatureId?: string;
   signatureSnapshot?: BlogSignature;
+  socialAutomation?: {
+    source: 'mesh' | 'authoring';
+    profile?: string;
+    copy: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
+    schedule: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
+  };
 }
 
 export interface BlogSignature {

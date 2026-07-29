@@ -7,6 +7,7 @@ import { BlogDraftRecoveryService, BlogDraftRecoverySnapshot } from '../../servi
 import { HotkeysService } from '../../services/hotkeys.service';
 import { NativePlatformService } from '../../services/native-platform.service';
 import {
+  LinkedBlogSocialAutomation,
   SocialAutomationSettings,
   SocialAutomationTrigger,
   SocialDistributionAutomationService
@@ -56,6 +57,11 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     { label: 'Scheduled', value: 'scheduled' },
     { label: 'Published', value: 'published' }
   ];
+  readonly linkedSocialPlatforms = [
+    { id: 'linkedin' as const, label: 'LinkedIn', maxChars: 1400 },
+    { id: 'mastodon' as const, label: 'Mastodon', maxChars: 450 },
+    { id: 'threads' as const, label: 'Threads', maxChars: 450 }
+  ];
   editorFormats = [
     'header',
     'bold',
@@ -92,6 +98,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   private previewListItemID: string = '';
   private cleanupHotkeys: (() => void) | null = null;
   private socialAutomationSettings: SocialAutomationSettings | null = null;
+  private linkedSocialAutomation: LinkedBlogSocialAutomation | null = null;
   private draftChangesSubscription: Subscription | null = null;
   private nativeAppStateSubscription: Subscription | null = null;
   private draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,6 +130,11 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       status: ['draft', [Validators.required]],
       category: [''],
       signatureId: [''],
+      socialCopy: this.fb.group({
+        linkedin: ['', [Validators.maxLength(1400)]],
+        mastodon: ['', [Validators.maxLength(450)]],
+        threads: ['', [Validators.maxLength(450)]]
+      }),
       sendEmailUpdate: [false]
     });
     this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
@@ -164,6 +176,9 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
    * Load initial data for editing
    */
   private loadInitialData(): void {
+    this.linkedSocialAutomation = this.normalizeLinkedSocialAutomation(
+      this.initialData.socialAutomation
+    );
     this.blogForm.patchValue({
       title: this.initialData.title || '',
       summary: this.initialData.summary || '',
@@ -174,8 +189,17 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       status: this.initialData.status || 'published',
       category: this.initialData.category || '',
       signatureId: this.initialData.signatureId || this.initialData.signatureSnapshot?.id || '',
+      socialCopy: this.linkedSocialAutomation?.copy || {},
       sendEmailUpdate: this.initialData.sendEmailUpdate ?? true
     });
+    if (this.linkedSocialAutomation?.source === 'mesh') {
+      for (const platform of this.linkedSocialPlatforms) {
+        if (!this.linkedSocialAutomation.copy[platform.id]) continue;
+        const control = this.blogForm.get(`socialCopy.${platform.id}`);
+        control?.addValidators(Validators.required);
+        control?.updateValueAndValidity({ emitEvent: false });
+      }
+    }
     this.publicTags = this.normalizeTagList(this.initialData.tags || []);
     this.privateSeoTags = this.normalizeTagList(this.initialData.privateSeoTags || []);
     this.uploadedImage = this.initialData.image || null;
@@ -219,6 +243,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   }
 
   getSocialAutomationSummary(): string {
+    const linkedCount = this.getLinkedSocialAutomationPreviews().length;
+    if (linkedCount) {
+      return `${linkedCount} Mesh-generated social ${linkedCount === 1 ? 'draft is' : 'drafts are'} linked and editable.`;
+    }
     const previews = this.getSocialAutomationPreviews();
     if (!previews.length) return 'No social automations match this publish state.';
     return `${previews.length} quiet social ${previews.length === 1 ? 'post' : 'posts'} will be staged.`;
@@ -235,6 +263,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   }
 
   private getSocialAutomationPreviews() {
+    const linked = this.getLinkedSocialAutomationPreviews();
+    if (linked.length) return linked;
     const formValue = this.blogForm.value || {};
     const publishDate = formValue.publishDate ? new Date(formValue.publishDate) : new Date();
     const safePublishDate = Number.isNaN(publishDate.getTime()) ? new Date() : publishDate;
@@ -260,6 +290,89 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       readingTime: readTime ? `${readTime} min read` : 'Auto read time',
       coverImage: this.uploadedImage || 'Blog cover image'
     }, trigger, safePublishDate);
+  }
+
+  hasLinkedSocialAutomation(): boolean {
+    return this.getLinkedSocialAutomationPreviews().length > 0;
+  }
+
+  getLinkedSocialSchedule(platformId: 'linkedin' | 'mastodon' | 'threads'): string {
+    const raw = String(this.linkedSocialAutomation?.schedule?.[platformId] || '').trim();
+    if (!raw) return 'Posts after the canonical blog URL is live';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+
+  getLinkedSocialLength(platformId: 'linkedin' | 'mastodon' | 'threads'): number {
+    return String(this.blogForm.get(`socialCopy.${platformId}`)?.value || '').length;
+  }
+
+  private getLinkedSocialAutomationPreviews() {
+    if (this.linkedSocialAutomation?.source !== 'mesh') return [];
+    return this.linkedSocialPlatforms.flatMap((platform) => {
+      const caption = String(
+        this.blogForm.get(`socialCopy.${platform.id}`)?.value || ''
+      ).trim();
+      if (!caption) return [];
+      const scheduled = String(this.linkedSocialAutomation?.schedule?.[platform.id] || '');
+      const runAt = scheduled ? new Date(scheduled) : new Date();
+      return [{
+        ruleId: `mesh-${platform.id}`,
+        ruleName: 'Mesh reviewed summary',
+        templateId: 'mesh-generated-copy',
+        templateName: 'Mesh generated copy',
+        platformId: platform.id,
+        destination: 'Feed post',
+        caption,
+        runAt: Number.isNaN(runAt.getTime()) ? new Date() : runAt,
+        requiresReview: false,
+        quietMode: true,
+        usesCoverImage: true
+      }];
+    });
+  }
+
+  private normalizeLinkedSocialAutomation(value: any): LinkedBlogSocialAutomation | null {
+    if (!value || typeof value !== 'object' || !value.copy || typeof value.copy !== 'object') {
+      return null;
+    }
+    const copy: LinkedBlogSocialAutomation['copy'] = {};
+    const schedule: LinkedBlogSocialAutomation['schedule'] = {};
+    for (const platform of this.linkedSocialPlatforms) {
+      const text = String(value.copy[platform.id] || '').trim();
+      const runAt = String(value.schedule?.[platform.id] || '').trim();
+      if (text) copy[platform.id] = text;
+      if (runAt) schedule[platform.id] = runAt;
+    }
+    if (!Object.keys(copy).length) return null;
+    return {
+      source: value.source === 'authoring' ? 'authoring' : 'mesh',
+      profile: String(value.profile || '').trim() || undefined,
+      copy,
+      schedule
+    };
+  }
+
+  private buildLinkedSocialAutomation(): LinkedBlogSocialAutomation | undefined {
+    if (this.linkedSocialAutomation?.source !== 'mesh') return undefined;
+    const copy: LinkedBlogSocialAutomation['copy'] = {};
+    for (const platform of this.linkedSocialPlatforms) {
+      const text = String(this.blogForm.get(`socialCopy.${platform.id}`)?.value || '').trim();
+      if (text) copy[platform.id] = text;
+    }
+    if (!Object.keys(copy).length) return undefined;
+    return {
+      ...this.linkedSocialAutomation,
+      source: 'mesh',
+      copy,
+      schedule: { ...(this.linkedSocialAutomation.schedule || {}) }
+    };
   }
 
   private getSocialAutomationTrigger(status: string): SocialAutomationTrigger {
@@ -651,6 +764,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         const selectedSignature = this.getSelectedSignature() || undefined;
         const selectedSignatureId = selectedSignature?.id || '';
         const readTimeMinutes = this.normalizeReadTimeMinutes(formValue.readTimeMinutes);
+        const linkedSocialAutomation = this.buildLinkedSocialAutomation();
 
         const listItemID = isEdit && this.initialData?.listItemID
           ? this.initialData.listItemID
@@ -673,7 +787,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
 	              selectedSignatureId,
 	              selectedSignature,
 	              Number.isFinite(Number(this.initialData?.version)) ? Number(this.initialData.version) : undefined,
-	              String(this.initialData?.updatedAt || '').trim() || undefined
+	              String(this.initialData?.updatedAt || '').trim() || undefined,
+	              linkedSocialAutomation
 	            )
           : this.blogApi.createBlogPost(
               formValue.title,
@@ -689,7 +804,8 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
               formValue.category,
               readTimeMinutes || undefined,
               selectedSignatureId,
-              selectedSignature
+              selectedSignature,
+              linkedSocialAutomation
             );
 
         request$.subscribe({
@@ -1323,6 +1439,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     if (selectedSignature) {
       metadata.signatureId = selectedSignature.id;
       metadata.signatureSnapshot = selectedSignature;
+    }
+    const linkedSocialAutomation = this.buildLinkedSocialAutomation();
+    if (linkedSocialAutomation) {
+      metadata.socialAutomation = linkedSocialAutomation;
     }
 
     const blogItemId = this.initialData?.blogItemId || `blog-item-${listItemID}`;

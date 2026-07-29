@@ -774,6 +774,8 @@ function buildMcpServer(client) {
       readTimeMinutes: z.number().optional(),
       coverImageUrl: z.string().optional(),
       signatureId: z.string().optional(),
+      signatureSnapshot: z.object({}).passthrough().optional(),
+      socialAutomation: z.object({}).passthrough().optional(),
     },
     targetIds: (_args, data) => [data?.post?.listItemID].filter(Boolean),
   }, async (args) => ({
@@ -800,6 +802,9 @@ function buildMcpServer(client) {
       category: z.string().optional(),
       readTimeMinutes: z.number().optional(),
       coverImageUrl: z.string().optional(),
+      signatureId: z.string().optional(),
+      signatureSnapshot: z.object({}).passthrough().optional(),
+      socialAutomation: z.object({}).passthrough().optional(),
       expectedUpdatedAt: z.string().optional(),
       expectedVersion: z.number().optional(),
     },
