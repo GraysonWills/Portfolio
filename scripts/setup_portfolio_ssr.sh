@@ -251,8 +251,8 @@ jq \
     | .CacheBehaviors = (.CacheBehaviors // {Quantity:0, Items:[]})
     | .CacheBehaviors.Items = (
         (.CacheBehaviors.Items // [])
-        | map(select((.PathPattern as $p | ($canary + ["sitemap.xml","rss.xml","feed.json","llms.txt","robots.txt"] | index($p))) == null))
-        + (($canary + ["sitemap.xml","rss.xml","feed.json","llms.txt","robots.txt"]) | map(
+        | map(select((.PathPattern as $p | ($canary + ["sitemap.xml","robots.txt"] | index($p))) == null))
+        + ($canary | map(
             ($base + {PathPattern: ., TargetOriginId:$ssrGroup, CachePolicyId:$ssrCachePolicy, Compress:true})
           ))
       )
@@ -260,7 +260,7 @@ jq \
     | if $rollout == "full" then
         .DefaultCacheBehavior.TargetOriginId = $ssrGroup
         | .DefaultCacheBehavior.CachePolicyId = $ssrCachePolicy
-        | .CacheBehaviors.Items += (["*.js","*.css","*.map","*.png","*.jpg","*.jpeg","*.webp","*.svg","*.ico","*.woff","*.woff2","*.ttf","*.eot","*.docx","*.pdf","assets/*","uploads/*"] | map(
+        | .CacheBehaviors.Items += (["*.js","*.css","*.map","*.png","*.jpg","*.jpeg","*.webp","*.svg","*.ico","*.woff","*.woff2","*.ttf","*.eot","*.docx","*.pdf","assets/*","uploads/*","robots.txt","sitemap.xml"] | map(
             ($base + {PathPattern: ., TargetOriginId:$s3Origin, Compress:true})
           ))
         | .CacheBehaviors.Items |= unique_by(.PathPattern)
