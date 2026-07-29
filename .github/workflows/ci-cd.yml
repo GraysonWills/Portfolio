@@ -146,7 +146,12 @@ jobs:
       - name: Deploy shell and stable-name assets
         run: |
           BUILD_DIR="portfolio-app/dist/portfolio-app/browser"
-          aws s3 cp "$BUILD_DIR/index.html" "s3://${S3_BUCKET}/index.html" \
+          SHELL_FILE="$BUILD_DIR/index.html"
+          if [ ! -f "$SHELL_FILE" ]; then
+            SHELL_FILE="$BUILD_DIR/index.csr.html"
+          fi
+          test -f "$SHELL_FILE"
+          aws s3 cp "$SHELL_FILE" "s3://${S3_BUCKET}/index.html" \
             --cache-control "public,max-age=0,s-maxage=60,must-revalidate,stale-while-revalidate=300" \
             --content-type "text/html"
           aws s3 cp "$BUILD_DIR/favicon.ico" "s3://${S3_BUCKET}/favicon.ico" \
