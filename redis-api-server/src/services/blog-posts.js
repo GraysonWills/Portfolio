@@ -101,6 +101,16 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function markdownInlineToHtml(value) {
+  return escapeHtml(value)
+    .replace(
+      /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/gi,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    )
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
 function markdownToHtml(markdown) {
   const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
   const blocks = [];
@@ -131,25 +141,25 @@ function markdownToHtml(markdown) {
       flushParagraph();
       flushList();
       const level = Math.min(4, Math.max(1, heading[1].length));
-      blocks.push(`<h${level}>${escapeHtml(heading[2])}</h${level}>`);
+      blocks.push(`<h${level}>${markdownInlineToHtml(heading[2])}</h${level}>`);
       continue;
     }
 
     const bullet = /^[-*]\s+(.+)$/.exec(line);
     if (bullet) {
       flushParagraph();
-      list.push(escapeHtml(bullet[1]));
+      list.push(markdownInlineToHtml(bullet[1]));
       continue;
     }
 
     if (line.startsWith('>')) {
       flushParagraph();
       flushList();
-      blocks.push(`<blockquote>${escapeHtml(line.replace(/^>+\s*/, ''))}</blockquote>`);
+      blocks.push(`<blockquote>${markdownInlineToHtml(line.replace(/^>+\s*/, ''))}</blockquote>`);
       continue;
     }
 
-    paragraph.push(escapeHtml(line));
+    paragraph.push(markdownInlineToHtml(line));
   }
 
   flushParagraph();

@@ -178,7 +178,7 @@ test('MCP draft create, update, and delete are restricted to the owning client',
   const created = await callRegisteredTool(server, 'blog.create_draft', {
     listItemID: 'mcp-smoke-owned-draft',
     title: 'Owned Draft',
-    contentMarkdown: 'Hello from MCP.',
+    contentMarkdown: '### A useful *resource*\n\n- **Essay:** [Read it](https://example.com/essay)',
     signatureSnapshot: {
       id: 'annie-dillard',
       quote: 'How we spend our days is how we spend our lives.',
@@ -204,6 +204,9 @@ test('MCP draft create, update, and delete are restricted to the owning client',
   assert.equal(created.structuredContent.post.source.clientId, 'client-a');
   assert.equal(created.structuredContent.post.metadata.signatureSnapshot.quoteAuthor, 'Annie Dillard');
   assert.equal(created.structuredContent.post.socialAutomation.copy.threads, 'Threads summary.');
+  assert.match(created.structuredContent.post.contentHtml, /<h3>A useful <em>resource<\/em><\/h3>/);
+  assert.match(created.structuredContent.post.contentHtml, /<strong>Essay:<\/strong>/);
+  assert.match(created.structuredContent.post.contentHtml, /<a href="https:\/\/example\.com\/essay" target="_blank" rel="noopener noreferrer">Read it<\/a>/);
 
   const updated = await callRegisteredTool(server, 'blog.update_mcp_draft', {
     listItemID: 'mcp-smoke-owned-draft',
