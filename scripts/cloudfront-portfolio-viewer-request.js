@@ -31,6 +31,7 @@ function serializeQueryString(querystring) {
 function handler(event) {
   var request = event.request;
   var uri = request.uri || "/";
+  var method = (request.method || "GET").toUpperCase();
   var hostHeader = request.headers && request.headers.host;
   var host = hostHeader && hostHeader.value ? hostHeader.value.toLowerCase() : "";
 
@@ -47,8 +48,15 @@ function handler(event) {
     };
   }
 
-  // The default origin is the SSR renderer. Preserve the original route so it
-  // can return accurate status codes and canonical metadata. Static assets are
-  // routed to S3 by their dedicated cache behaviors.
+  // The default origin is the SSR renderer. Preserve the original route both
+  // as the request URI and as the cache/origin contract consumed by server.ts.
+  // Static assets and APIs keep their normal behavior-specific routing.
+  if ((method === "GET" || method === "HEAD")
+      && uri.indexOf(".") === -1
+      && uri.indexOf("/api/") !== 0
+      && uri.indexOf("/assets/") !== 0
+      && uri.indexOf("/uploads/") !== 0) {
+    request.headers["x-portfolio-original-uri"] = { value: uri };
+  }
   return request;
 }
