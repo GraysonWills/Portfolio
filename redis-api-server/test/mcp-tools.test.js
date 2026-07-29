@@ -276,6 +276,21 @@ test('MCP blog drafts retain the exact Mesh Author Studio metadata package', asy
   assert.equal(post.readTimeMinutes, 4);
   assert.equal(post.coverImageUrl, 'https://cdn.example.test/mesh-cover.png');
   assert.equal(post.source.clientId, 'client-a');
+
+  const updated = await callRegisteredTool(server, 'blog.update_mcp_draft', {
+    listItemID: post.listItemID,
+    summary: 'Only the summary should change.',
+    expectedVersion: post.version,
+    idempotencyKey: 'mesh-author-studio-metadata-summary-v2',
+  });
+  const patched = updated.structuredContent.post;
+  assert.equal(patched.summary, 'Only the summary should change.');
+  assert.equal(patched.status, 'draft');
+  assert.deepEqual(patched.tags, ['Creativity', 'Productivity', 'Tools']);
+  assert.deepEqual(patched.privateSeoTags, ['tape recorder', 'voice notes', 'creative capture']);
+  assert.equal(patched.category, 'Personal Development');
+  assert.equal(patched.readTimeMinutes, 4);
+  assert.equal(patched.coverImageUrl, 'https://cdn.example.test/mesh-cover.png');
 });
 
 test('MCP mutation idempotency replays same response and rejects changed payloads', async () => {

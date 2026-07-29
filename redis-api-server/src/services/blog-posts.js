@@ -278,19 +278,22 @@ function validatePatchInput(input) {
   const parsed = postPatchSchema.safeParse(input || {});
   if (!parsed.success) throw httpError(400, 'Invalid blog post patch', parsed.error.flatten());
   const value = parsed.data;
-  const out = { ...value };
-  if (value.title !== undefined) out.title = normalizeString(value.title, 220);
-  if (value.summary !== undefined) out.summary = normalizeString(value.summary, 1200);
-  if (value.contentHtml !== undefined || value.contentMarkdown !== undefined) {
+  const provided = new Set(Object.keys(input && typeof input === 'object' ? input : {}));
+  const out = Object.fromEntries(
+    Object.entries(value).filter(([key]) => provided.has(key))
+  );
+  if (out.title !== undefined) out.title = normalizeString(out.title, 220);
+  if (out.summary !== undefined) out.summary = normalizeString(out.summary, 1200);
+  if (out.contentHtml !== undefined || out.contentMarkdown !== undefined) {
     out.contentHtml = contentHtmlFromInput(value);
     if (!out.contentHtml) throw httpError(400, 'contentHtml or contentMarkdown cannot be empty');
   }
-  if (value.roughDraftHtml !== undefined) out.roughDraftHtml = sanitizeBlogHtml(value.roughDraftHtml || '');
-  if (value.tags !== undefined) out.tags = normalizeStringList(value.tags);
-  if (value.privateSeoTags !== undefined) out.privateSeoTags = normalizeStringList(value.privateSeoTags, 80);
-  if (value.category !== undefined) out.category = normalizeString(value.category || 'General', 120) || 'General';
-  if (value.coverImageUrl !== undefined || value.imageUrl !== undefined) {
-    out.coverImageUrl = normalizeString(value.coverImageUrl || value.imageUrl || '', 2000);
+  if (out.roughDraftHtml !== undefined) out.roughDraftHtml = sanitizeBlogHtml(out.roughDraftHtml || '');
+  if (out.tags !== undefined) out.tags = normalizeStringList(out.tags);
+  if (out.privateSeoTags !== undefined) out.privateSeoTags = normalizeStringList(out.privateSeoTags, 80);
+  if (out.category !== undefined) out.category = normalizeString(out.category || 'General', 120) || 'General';
+  if (out.coverImageUrl !== undefined || out.imageUrl !== undefined) {
+    out.coverImageUrl = normalizeString(out.coverImageUrl || out.imageUrl || '', 2000);
   }
   return out;
 }
