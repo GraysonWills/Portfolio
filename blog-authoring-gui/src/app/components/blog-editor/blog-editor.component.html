@@ -357,6 +357,20 @@
               <span>{{ getSocialAutomationSummary() }}</span>
             </div>
             <div class="linked-social-drafts" *ngIf="hasLinkedSocialAutomation()" formGroupName="socialCopy">
+              <div class="linked-social-assets">
+                <a
+                  class="linked-social-url"
+                  [href]="getLinkedSocialPostUrl()"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  <i class="pi pi-link"></i>
+                  <span>{{ getLinkedSocialPostUrl() }}</span>
+                </a>
+                <div class="linked-social-image" *ngIf="uploadedImage">
+                  <img [src]="uploadedImage" alt="Selected social cover image">
+                  <span>Selected cover image</span>
+                </div>
+              </div>
               <div class="linked-social-draft" *ngFor="let platform of linkedSocialPlatforms">
                 <div class="linked-social-heading">
                   <label [for]="'social-copy-' + platform.id">{{ platform.label }}</label>

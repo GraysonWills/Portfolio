@@ -313,6 +313,11 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     return String(this.blogForm.get(`socialCopy.${platformId}`)?.value || '').length;
   }
 
+  getLinkedSocialPostUrl(): string {
+    const linkedUrl = String(this.linkedSocialAutomation?.postUrl || '').trim();
+    return linkedUrl || this.getCanonicalPreviewUrl(this.blogForm.get('title')?.value);
+  }
+
   private getLinkedSocialAutomationPreviews() {
     if (this.linkedSocialAutomation?.source !== 'mesh') return [];
     return this.linkedSocialPlatforms.flatMap((platform) => {
@@ -354,6 +359,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     return {
       source: value.source === 'authoring' ? 'authoring' : 'mesh',
       profile: String(value.profile || '').trim() || undefined,
+      postUrl: String(value.postUrl || '').trim() || undefined,
       copy,
       schedule
     };

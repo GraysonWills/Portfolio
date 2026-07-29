@@ -204,6 +204,7 @@ test('MCP draft create, update, and delete are restricted to the owning client',
   assert.equal(created.structuredContent.post.source.clientId, 'client-a');
   assert.equal(created.structuredContent.post.metadata.signatureSnapshot.quoteAuthor, 'Annie Dillard');
   assert.equal(created.structuredContent.post.socialAutomation.copy.threads, 'Threads summary.');
+  assert.equal(created.structuredContent.post.socialAutomation.postUrl, 'https://www.example.test/blog/owned-draft');
   assert.match(created.structuredContent.post.contentHtml, /<h3>A useful <em>resource<\/em><\/h3>/);
   assert.match(created.structuredContent.post.contentHtml, /<strong>Essay:<\/strong>/);
   assert.match(created.structuredContent.post.contentHtml, /<a href="https:\/\/example\.com\/essay" target="_blank" rel="noopener noreferrer">Read it<\/a>/);

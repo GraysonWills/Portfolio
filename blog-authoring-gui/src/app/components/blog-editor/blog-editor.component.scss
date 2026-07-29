@@ -314,6 +314,49 @@
   gap: 0.8rem;
 }
 
+.linked-social-assets {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(11, 79, 159, 0.12);
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.linked-social-url {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--primary-700);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.linked-social-url span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linked-social-image {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--ink-600);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.linked-social-image img {
+  width: 76px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid rgba(11, 79, 159, 0.14);
+}
+
 .linked-social-draft {
   display: grid;
   gap: 0.35rem;

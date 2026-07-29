@@ -227,6 +227,7 @@ function contentHtmlFromInput(input) {
 const blogSocialAutomationSchema = z.object({
   source: z.enum(['mesh', 'authoring']).optional().default('mesh'),
   profile: z.string().trim().max(120).optional().default(''),
+  postUrl: z.string().trim().max(2000).optional(),
   copy: z.object({
     linkedin: z.string().trim().min(1).max(1400).optional(),
     mastodon: z.string().trim().min(1).max(450).optional(),
@@ -440,10 +441,19 @@ function buildRecordsFromInput(input, { existingItems = [], actor = {}, source =
     ? Math.max(1, Math.round(Number(input.readTimeMinutes)))
     : computeReadTimeMinutes(contentHtml);
   const nextVersion = Number(previousMeta.version || 0) + 1;
+  const title = input.title !== undefined ? input.title : existingPost?.title || 'Untitled';
+  const slug = previousMeta.slug || normalizeSlug(title) || 'blog';
+  const publicSiteUrl = String(process.env.PUBLIC_SITE_URL || 'https://www.grayson-wills.com').replace(/\/+$/, '');
+  const plannedUrl = `${publicSiteUrl}/blog/${slug}`;
+  const socialAutomation = input.socialAutomation
+    ? { ...input.socialAutomation, postUrl: input.socialAutomation.postUrl || plannedUrl }
+    : input.socialAutomation;
 
   const metadata = {
     ...previousMeta,
-    title: input.title !== undefined ? input.title : existingPost?.title || 'Untitled',
+    title,
+    slug,
+    plannedUrl,
     summary: input.summary !== undefined ? input.summary : existingPost?.summary || '',
     tags: input.tags !== undefined ? input.tags : existingPost?.tags || [],
     privateSeoTags: input.privateSeoTags !== undefined ? input.privateSeoTags : existingPost?.privateSeoTags || [],
@@ -453,7 +463,7 @@ function buildRecordsFromInput(input, { existingItems = [], actor = {}, source =
     readTimeMinutes,
     ...(input.signatureId !== undefined ? { signatureId: input.signatureId || null } : {}),
     ...(input.signatureSnapshot !== undefined ? { signatureSnapshot: input.signatureSnapshot || null } : {}),
-    ...(input.socialAutomation !== undefined ? { socialAutomation: input.socialAutomation || null } : {}),
+    ...(input.socialAutomation !== undefined ? { socialAutomation: socialAutomation || null } : {}),
     ...(coverImageUrl ? { coverImageUrl } : {}),
     version: nextVersion,
     updatedAt: timestamp,

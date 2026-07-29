@@ -58,6 +58,7 @@ export type SocialAutomationSettings = {
 export type LinkedBlogSocialAutomation = {
   source: 'mesh' | 'authoring';
   profile?: string;
+  postUrl?: string;
   copy: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
   schedule: Partial<Record<'linkedin' | 'mastodon' | 'threads', string>>;
 };
