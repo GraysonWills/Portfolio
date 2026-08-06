@@ -258,6 +258,17 @@ function createApp() {
     message: { error: 'Write rate limit exceeded. Please try again later.' }
   });
 
+  // The blog API exposes reads and writes under one route prefix. Reads already
+  // pass through apiLimiter; only mutations should consume the write budget.
+  // Keep the shared limiter unchanged for route families whose GET callbacks
+  // can intentionally create external state (for example, OAuth callbacks).
+  const blogWriteLimiter = (req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase())) {
+      return next();
+    }
+    return writeLimiter(req, res, next);
+  };
+
   // Analytics endpoint has its own higher-throughput limiter and stays public.
   const analyticsLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -317,7 +328,7 @@ function createApp() {
   app.use('/api/comments', lazyRouter(() => require('./routes/comments')));
   app.use('/api/social-auth', writeLimiter, lazyRouter(() => require('./routes/social-auth')));
   app.use('/api/social-distribution', writeLimiter, lazyRouter(() => require('./routes/social-distribution')));
-  app.use('/api/blog', writeLimiter, lazyRouter(() => require('./routes/blog')));
+  app.use('/api/blog', blogWriteLimiter, lazyRouter(() => require('./routes/blog')));
   app.use('/api/mcp', writeLimiter, lazyRouter(() => require('./routes/mcp')));
   app.use('/media', lazyRouter(() => require('./routes/media')));
 

@@ -51,6 +51,26 @@ test('GET / returns API metadata', async (t) => {
   assert.ok(body.endpoints.health);
 });
 
+test('authenticated API reads do not consume the write rate limit', async (t) => {
+  const app = createApp();
+  const server = http.createServer(app);
+  t.after(() => server.close());
+
+  const address = await listen(server);
+  const url = `http://127.0.0.1:${address.port}/api/blog/posts/mesh-post`;
+
+  // Opening a post can cause a retry, and the studio may open many posts in a
+  // session. None of those GETs should ever hit the stricter 30-write budget.
+  for (let attempt = 0; attempt < 35; attempt += 1) {
+    const res = await fetch(url);
+    assert.notEqual(res.status, 429);
+    assert.notEqual(
+      (await res.json()).error,
+      'Write rate limit exceeded. Please try again later.'
+    );
+  }
+});
+
 test('GET /api/resume/download redirects and rate limits repeated requests', async (t) => {
   process.env.PUBLIC_SITE_URL = 'https://www.grayson-wills.com';
   const app = createApp();
