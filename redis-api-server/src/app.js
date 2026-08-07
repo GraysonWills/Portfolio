@@ -258,31 +258,35 @@ function createApp() {
     message: { error: 'Write rate limit exceeded. Please try again later.' }
   });
 
-  // The blog API exposes reads and writes under one route prefix. Reads already
-  // pass through apiLimiter; only mutations should consume the write budget.
-  // Keep the shared limiter unchanged for route families whose GET callbacks
-  // can intentionally create external state (for example, OAuth callbacks).
-  const blogWriteLimiter = (req, res, next) => {
-    if (['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase())) {
+  // Several route families expose reads and writes under one prefix. Reads
+  // already pass through apiLimiter; only mutations should consume the write
+  // budget. GETs that intentionally create external state (OAuth callbacks,
+  // email confirm/unsubscribe links) stay on the write budget with the
+  // mutations — pass their paths as stateCreatingGets.
+  const writeLimiterExemptingReads = (stateCreatingGets = null) => (req, res, next) => {
+    const method = String(req.method || '').toUpperCase();
+    const isRead = ['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (isRead && !(stateCreatingGets && stateCreatingGets.test(String(req.path || '')))) {
       return next();
     }
     return writeLimiter(req, res, next);
   };
 
-  // Same read/write split for the social routes: the studio's Social Accounts
-  // page fans out a dozen GET status/settings reads on load, which used to
-  // exhaust the 30/15min write budget and mask connection state behind a 429.
-  // OAuth callbacks are GETs that create external state, so they alone stay
-  // on the write budget.
-  const socialWriteLimiter = (req, res, next) => {
-    const method = String(req.method || '').toUpperCase();
-    const isRead = ['GET', 'HEAD', 'OPTIONS'].includes(method);
-    const isOAuthCallback = /\/callback(?:\/|$)/.test(String(req.path || ''));
-    if (isRead && !isOAuthCallback) {
-      return next();
-    }
-    return writeLimiter(req, res, next);
-  };
+  // Pure read/write splits: the studio's Subscribers page lists
+  // /notifications/subscribers on every visit, the editor's photo picker
+  // lists assets, and blog reads retry freely — none of those GETs should
+  // exhaust the 30/15min write budget and 429 the whole back of shop.
+  const readSplitWriteLimiter = writeLimiterExemptingReads();
+
+  // The studio's Social Accounts page fans out a dozen GET status/settings
+  // reads on load, which used to exhaust the write budget and mask connection
+  // state behind a 429. OAuth callbacks are GETs that create external state,
+  // so they alone stay on the write budget.
+  const socialWriteLimiter = writeLimiterExemptingReads(/\/callback(?:\/|$)/);
+
+  // Subscription confirm/unsubscribe are state-changing GETs reached from
+  // email links, so they keep consuming the write budget.
+  const subscriptionsWriteLimiter = writeLimiterExemptingReads(/\/(confirm|unsubscribe)(?:\/|$)/);
 
   // MCP is bearer-authenticated machine traffic with its own per-client daily
   // quotas (mcp-control), and every MCP call — reads included — is a POST, so
@@ -348,16 +352,16 @@ function createApp() {
   app.use('/api/health', lazyRouter(() => require('./routes/health')));
   app.use('/api/content', lazyRouter(() => require('./routes/content')));
   app.use('/api/upload', writeLimiter, lazyRouter(() => require('./routes/upload')));
-  app.use('/api/admin', writeLimiter, lazyRouter(() => require('./routes/admin')));
-  app.use('/api/subscriptions', writeLimiter, lazyRouter(() => require('./routes/subscriptions')));
-  app.use('/api/notifications', writeLimiter, lazyRouter(() => require('./routes/notifications')));
+  app.use('/api/admin', readSplitWriteLimiter, lazyRouter(() => require('./routes/admin')));
+  app.use('/api/subscriptions', subscriptionsWriteLimiter, lazyRouter(() => require('./routes/subscriptions')));
+  app.use('/api/notifications', readSplitWriteLimiter, lazyRouter(() => require('./routes/notifications')));
   app.use('/api/analytics', analyticsLimiter, lazyRouter(() => require('./routes/analytics')));
-  app.use('/api/photo-assets', writeLimiter, lazyRouter(() => require('./routes/photo-assets')));
+  app.use('/api/photo-assets', readSplitWriteLimiter, lazyRouter(() => require('./routes/photo-assets')));
   app.use('/api/resume', resumeLimiter, lazyRouter(() => require('./routes/resume')));
   app.use('/api/comments', lazyRouter(() => require('./routes/comments')));
   app.use('/api/social-auth', socialWriteLimiter, lazyRouter(() => require('./routes/social-auth')));
   app.use('/api/social-distribution', socialWriteLimiter, lazyRouter(() => require('./routes/social-distribution')));
-  app.use('/api/blog', blogWriteLimiter, lazyRouter(() => require('./routes/blog')));
+  app.use('/api/blog', readSplitWriteLimiter, lazyRouter(() => require('./routes/blog')));
   app.use('/api/mcp', mcpLimiter, lazyRouter(() => require('./routes/mcp')));
   app.use('/media', lazyRouter(() => require('./routes/media')));
 
