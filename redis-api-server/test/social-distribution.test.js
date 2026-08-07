@@ -239,7 +239,7 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
   assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:image-1');
 });
 
-test('posts direct Instagram deliveries through graph.instagram.com', async (t) => {
+test('uploads an MP4 before creating a LinkedIn personal-profile video post', async (t) => {
   const calls = [];
   const originalFetch = global.fetch;
   t.after(() => {
@@ -248,27 +248,267 @@ test('posts direct Instagram deliveries through graph.instagram.com', async (t) 
 
   global.fetch = async (url, options = {}) => {
     calls.push({ url: String(url), options });
+    if (calls.length === 1) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          value: {
+            uploadMechanism: {
+              'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest': {
+                uploadUrl: 'https://media-upload.example.test/video'
+              }
+            },
+            asset: 'urn:li:digitalmediaAsset:video-1'
+          }
+        })
+      };
+    }
+    if (calls.length === 2) {
+      return {
+        ok: true,
+        headers: {
+          get: (name) => ({
+            'content-type': 'video/mp4',
+            'content-length': '4'
+          }[String(name).toLowerCase()] || null)
+        },
+        arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
+      };
+    }
+    if (calls.length === 3) {
+      return {
+        ok: true,
+        text: async () => ''
+      };
+    }
     return {
       ok: true,
-      text: async () => JSON.stringify({ id: calls.length === 1 ? 'creation-1' : 'media-1' })
+      headers: {
+        get: (name) => String(name).toLowerCase() === 'x-restli-id' ? 'ugc-video-post-1' : null
+      },
+      text: async () => ''
     };
   };
 
-  const result = await socialDistribution.__private.postToInstagram({
-    family: 'instagram',
-    accountId: '17841400000000000',
-    token: { access_token: 'ig-token' }
+  const result = await socialDistribution.__private.postToLinkedIn({
+    accountId: 'person-1',
+    token: { access_token: 'linkedin-token' }
   }, {
+    caption: 'I built a thing.',
+    title: 'Focus Locker',
+    mediaUrl: 'https://cdn.example.test/focus-locker.mp4'
+  });
+
+  assert.equal(result.providerPostId, 'ugc-video-post-1');
+  assert.equal(calls.length, 4);
+  const registerBody = JSON.parse(calls[0].options.body);
+  assert.deepEqual(
+    registerBody.registerUploadRequest.recipes,
+    ['urn:li:digitalmediaRecipe:feedshare-video']
+  );
+  assert.equal(calls[1].url, 'https://cdn.example.test/focus-locker.mp4');
+  assert.equal(calls[2].url, 'https://media-upload.example.test/video');
+  assert.equal(calls[2].options.headers['Content-Type'], 'video/mp4');
+  const postBody = JSON.parse(calls[3].options.body);
+  const share = postBody.specificContent['com.linkedin.ugc.ShareContent'];
+  assert.equal(share.shareMediaCategory, 'VIDEO');
+  assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:video-1');
+});
+
+function instagramGraphMock(calls, { permalink = 'https://www.instagram.com/p/ABC123/' } = {}) {
+  let containerCount = 0;
+  return async (url, options = {}) => {
+    const target = String(url);
+    calls.push({ url: target, options });
+    let payload;
+    if (/\/media_publish$/.test(target)) payload = { id: 'media-1' };
+    else if (/\/media$/.test(target)) payload = { id: `creation-${containerCount += 1}` };
+    else if (/fields=status_code/.test(target)) payload = { status_code: 'FINISHED' };
+    else if (/fields=permalink/.test(target)) payload = { permalink };
+    else payload = {};
+    return { ok: true, text: async () => JSON.stringify(payload) };
+  };
+}
+
+const igCredential = {
+  family: 'instagram',
+  accountId: '17841400000000000',
+  token: { access_token: 'ig-token' }
+};
+
+test('posts direct Instagram feed deliveries with tags and a permalink', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = instagramGraphMock(calls);
+
+  const result = await socialDistribution.__private.postToInstagram(igCredential, {
+    caption: 'New post',
+    destination: 'feed-post',
+    mediaUrl: 'https://cdn.example.test/cover.jpg',
+    providerOptions: {
+      instagram: {
+        igMediaType: 'feed',
+        items: [{
+          mediaUrl: 'https://cdn.example.test/cover.jpg',
+          mediaType: 'image/jpeg',
+          userTags: [{ username: 'graysonwills', x: 0.25, y: 0.75 }],
+          altText: 'Morning desk'
+        }],
+        collaborators: ['cohost'],
+        locationId: '12345'
+      }
+    }
+  });
+
+  assert.equal(result.providerPostId, 'media-1');
+  assert.equal(result.providerPostUrl, 'https://www.instagram.com/p/ABC123/');
+  // create container -> status poll -> publish -> permalink
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].url, 'https://graph.instagram.com/v23.0/17841400000000000/media');
+  const createBody = String(calls[0].options.body);
+  assert.match(createBody, /caption=New\+post/);
+  assert.match(createBody, /user_tags=/);
+  assert.match(createBody, /collaborators=/);
+  assert.match(createBody, /location_id=12345/);
+  assert.match(createBody, /alt_text=Morning\+desk/);
+  assert.match(calls[1].url, /fields=status_code/);
+  assert.equal(calls[2].url, 'https://graph.instagram.com/v23.0/17841400000000000/media_publish');
+  assert.match(calls[3].url, /fields=permalink/);
+});
+
+test('posts Instagram reels with cover offset, share_to_feed, and username tags', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = instagramGraphMock(calls);
+
+  const result = await socialDistribution.__private.postToInstagram(igCredential, {
+    caption: 'A reel',
+    mediaUrl: 'https://cdn.example.test/clip.mp4',
+    providerOptions: {
+      instagram: {
+        igMediaType: 'reel',
+        items: [{
+          mediaUrl: 'https://cdn.example.test/clip.mp4',
+          mediaType: 'video/mp4',
+          userTags: [{ username: 'graysonwills' }]
+        }],
+        thumbOffsetMs: 1500,
+        shareToFeed: false
+      }
+    }
+  });
+
+  assert.equal(result.providerPostId, 'media-1');
+  const createBody = String(calls[0].options.body);
+  assert.match(createBody, /media_type=REELS/);
+  assert.match(createBody, /video_url=/);
+  assert.match(createBody, /share_to_feed=false/);
+  assert.match(createBody, /thumb_offset=1500/);
+  assert.match(createBody, /user_tags=/);
+  assert.ok(!/alt_text=/.test(createBody));
+});
+
+test('posts Instagram carousels through per-child containers', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = instagramGraphMock(calls);
+
+  const result = await socialDistribution.__private.postToInstagram(igCredential, {
+    caption: 'Carousel',
+    providerOptions: {
+      instagram: {
+        igMediaType: 'carousel',
+        items: [
+          { mediaUrl: 'https://cdn.example.test/a.jpg', mediaType: 'image/jpeg' },
+          { mediaUrl: 'https://cdn.example.test/b.mp4', mediaType: 'video/mp4' }
+        ]
+      }
+    }
+  });
+
+  assert.equal(result.providerPostId, 'media-1');
+  const bodies = calls.map((call) => String(call.options?.body || ''));
+  assert.match(bodies[0], /image_url=/);
+  assert.match(bodies[0], /is_carousel_item=true/);
+  const videoChild = bodies.find((body) => /media_type=VIDEO/.test(body));
+  assert.ok(videoChild, 'video child container created');
+  const parent = bodies.find((body) => /media_type=CAROUSEL/.test(body));
+  assert.ok(parent, 'parent carousel container created');
+  assert.match(parent, /children=creation-1%2Ccreation-2/);
+});
+
+test('posts Instagram stories without caption or tags', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = instagramGraphMock(calls);
+
+  await socialDistribution.__private.postToInstagram(igCredential, {
+    caption: '',
+    destination: 'Story',
+    mediaUrl: 'https://cdn.example.test/story.mp4',
+    providerOptions: { instagram: { igMediaType: 'story' } }
+  });
+
+  const createBody = String(calls[0].options.body);
+  assert.match(createBody, /media_type=STORIES/);
+  assert.match(createBody, /video_url=/);
+  assert.ok(!/caption=/.test(createBody));
+});
+
+test('legacy Instagram deliveries without provider options still post as before', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = instagramGraphMock(calls, { permalink: '' });
+
+  const result = await socialDistribution.__private.postToInstagram(igCredential, {
     caption: 'New post',
     destination: 'feed-post',
     mediaUrl: 'https://cdn.example.test/cover.jpg'
   });
 
   assert.equal(result.providerPostId, 'media-1');
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].url, 'https://graph.instagram.com/v23.0/17841400000000000/media');
-  assert.equal(calls[1].url, 'https://graph.instagram.com/v23.0/17841400000000000/media_publish');
   assert.match(String(calls[0].options.body), /caption=New\+post/);
+  assert.match(String(calls[0].options.body), /image_url=/);
+});
+
+test('a failed Instagram container stops the delivery loudly', async (t) => {
+  const calls = [];
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  global.fetch = async (url, options = {}) => {
+    const target = String(url);
+    calls.push({ url: target, options });
+    const payload = /\/media$/.test(target)
+      ? { id: 'creation-1' }
+      : { status_code: 'ERROR' };
+    return { ok: true, text: async () => JSON.stringify(payload) };
+  };
+
+  await assert.rejects(
+    socialDistribution.__private.postToInstagram(igCredential, {
+      caption: 'Broken',
+      mediaUrl: 'https://cdn.example.test/cover.jpg',
+      providerOptions: { instagram: { igMediaType: 'feed' } }
+    }),
+    /container error/
+  );
 });
 
 test('uploads TikTok photo deliveries through the Content Posting API', async (t) => {

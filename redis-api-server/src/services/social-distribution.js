@@ -355,6 +355,7 @@ function sanitizeDelivery(item) {
     quietMode: item.quietMode !== false,
     providerPostId: item.providerPostId || '',
     providerPostUrl: item.providerPostUrl || '',
+    providerOptions: item.providerOptions || null,
     lastError: item.lastError || '',
     createdAt: item.createdAt || null,
     updatedAt: item.updatedAt || null,
@@ -735,6 +736,9 @@ async function postToLinkedIn(credential, delivery) {
   if (!personId) throw new Error('LinkedIn profile id is missing');
   const author = `urn:li:person:${personId}`;
   const mediaUrl = String(delivery.mediaUrl || '').trim();
+  const isVideo = /\.mp4(?:$|[?#])/i.test(mediaUrl);
+  const mediaKind = isVideo ? 'video' : 'image';
+  const mediaCategory = isVideo ? 'VIDEO' : 'IMAGE';
   let mediaAsset = '';
 
   if (/^https?:\/\//i.test(mediaUrl)) {
@@ -747,7 +751,7 @@ async function postToLinkedIn(credential, delivery) {
       },
       body: JSON.stringify({
         registerUploadRequest: {
-          recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+          recipes: [`urn:li:digitalmediaRecipe:feedshare-${mediaKind}`],
           owner: author,
           serviceRelationships: [
             {
@@ -762,19 +766,29 @@ async function postToLinkedIn(credential, delivery) {
       ?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'];
     const uploadUrl = String(uploadMechanism?.uploadUrl || '');
     mediaAsset = String(registered?.value?.asset || '');
-    if (!uploadUrl || !mediaAsset) throw new Error('LinkedIn did not provide an image upload target');
+    if (!uploadUrl || !mediaAsset) throw new Error(`LinkedIn did not provide a ${mediaKind} upload target`);
 
-    const imageResponse = await fetch(mediaUrl);
-    if (!imageResponse.ok) throw new Error(`Unable to download LinkedIn image (HTTP ${imageResponse.status})`);
-    const contentType = String(imageResponse.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (!['image/jpeg', 'image/png', 'image/gif'].includes(contentType)) {
-      throw new Error('LinkedIn image must be JPEG, PNG, or GIF');
+    const mediaResponse = await fetch(mediaUrl);
+    if (!mediaResponse.ok) throw new Error(`Unable to download LinkedIn ${mediaKind} (HTTP ${mediaResponse.status})`);
+    const contentType = String(mediaResponse.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    const allowedContentTypes = isVideo
+      ? ['video/mp4']
+      : ['image/jpeg', 'image/png', 'image/gif'];
+    if (!allowedContentTypes.includes(contentType)) {
+      throw new Error(isVideo
+        ? 'LinkedIn video must be MP4'
+        : 'LinkedIn image must be JPEG, PNG, or GIF');
     }
-    const contentLength = Number(imageResponse.headers?.get?.('content-length') || 0);
-    if (contentLength > 10 * 1024 * 1024) throw new Error('LinkedIn image exceeds the 10 MB upload limit');
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-    if (!imageBuffer.length) throw new Error('LinkedIn image download was empty');
-    if (imageBuffer.length > 10 * 1024 * 1024) throw new Error('LinkedIn image exceeds the 10 MB upload limit');
+    const maximumBytes = (isVideo ? 500 : 10) * 1024 * 1024;
+    const contentLength = Number(mediaResponse.headers?.get?.('content-length') || 0);
+    if (contentLength > maximumBytes) {
+      throw new Error(`LinkedIn ${mediaKind} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
+    }
+    const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
+    if (!mediaBuffer.length) throw new Error(`LinkedIn ${mediaKind} download was empty`);
+    if (mediaBuffer.length > maximumBytes) {
+      throw new Error(`LinkedIn ${mediaKind} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
+    }
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
@@ -782,11 +796,11 @@ async function postToLinkedIn(credential, delivery) {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': contentType
       },
-      body: imageBuffer
+      body: mediaBuffer
     });
     if (!uploadResponse.ok) {
       const details = await uploadResponse.text().catch(() => '');
-      throw new Error(details || `LinkedIn image upload failed (HTTP ${uploadResponse.status})`);
+      throw new Error(details || `LinkedIn ${mediaKind} upload failed (HTTP ${uploadResponse.status})`);
     }
   }
 
@@ -803,14 +817,14 @@ async function postToLinkedIn(credential, delivery) {
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
           shareCommentary: { text: delivery.caption },
-          shareMediaCategory: mediaAsset ? 'IMAGE' : 'NONE',
+          shareMediaCategory: mediaAsset ? mediaCategory : 'NONE',
           ...(mediaAsset ? {
             media: [
               {
                 status: 'READY',
-                description: { text: String(delivery.title || 'Blog post cover image') },
+                description: { text: String(delivery.title || `LinkedIn ${mediaKind}`) },
                 media: mediaAsset,
-                title: { text: String(delivery.title || 'Blog post cover image') }
+                title: { text: String(delivery.title || `LinkedIn ${mediaKind}`) }
               }
             ]
           } : {})
@@ -856,39 +870,197 @@ async function postToFacebook(credential, delivery) {
   };
 }
 
+const IG_POLL_INTERVAL_MS = Number(process.env.SOCIAL_INSTAGRAM_POLL_INTERVAL_MS || 2000);
+const IG_POLL_BUDGET_MS = Number(process.env.SOCIAL_INSTAGRAM_POLL_BUDGET_MS || 120000);
+const IG_MEDIA_TYPES = new Set(['feed', 'carousel', 'reel', 'story']);
+
+function igIsVideoUrl(url) {
+  return /\.(mp4|mov)(?:$|[?#])/i.test(String(url || ''));
+}
+
+function instagramOptions(delivery) {
+  const raw = (delivery.providerOptions && delivery.providerOptions.instagram) || {};
+  let igMediaType = String(raw.igMediaType || '').trim().toLowerCase();
+  if (!IG_MEDIA_TYPES.has(igMediaType)) {
+    // legacy callers signalled stories via the destination label
+    igMediaType = /story/i.test(String(delivery.destination || ''))
+      ? 'story'
+      : igIsVideoUrl(delivery.mediaUrl) ? 'reel' : 'feed';
+  }
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((item) => ({
+      mediaUrl: String(item?.mediaUrl || '').trim(),
+      mediaType: String(item?.mediaType || '').trim().toLowerCase(),
+      userTags: (Array.isArray(item?.userTags) ? item.userTags : [])
+        .map((tag) => {
+          const username = String(tag?.username || '').replace(/^@/, '').trim();
+          if (!username) return null;
+          const entry = { username };
+          if (Number.isFinite(Number(tag?.x)) && Number.isFinite(Number(tag?.y)) && tag?.x != null) {
+            entry.x = Number(tag.x);
+            entry.y = Number(tag.y);
+          }
+          return entry;
+        })
+        .filter(Boolean)
+        .slice(0, 20),
+      altText: String(item?.altText || '').slice(0, 1000)
+    }))
+    .filter((item) => /^https?:\/\//i.test(item.mediaUrl))
+    .slice(0, 10);
+  if (!items.length && /^https?:\/\//i.test(String(delivery.mediaUrl || ''))) {
+    items.push({ mediaUrl: String(delivery.mediaUrl).trim(), mediaType: '', userTags: [], altText: '' });
+  }
+  return {
+    igMediaType,
+    items,
+    collaborators: (Array.isArray(raw.collaborators) ? raw.collaborators : [])
+      .map((name) => String(name || '').replace(/^@/, '').trim()).filter(Boolean).slice(0, 3),
+    locationId: String(raw.locationId || '').trim(),
+    coverUrl: String(raw.coverUrl || '').trim(),
+    thumbOffsetMs: Number.isFinite(Number(raw.thumbOffsetMs)) && raw.thumbOffsetMs != null
+      ? Math.max(0, Math.round(Number(raw.thumbOffsetMs)))
+      : null,
+    shareToFeed: raw.shareToFeed !== false
+  };
+}
+
+function igItemIsVideo(item) {
+  if (item.mediaType) return item.mediaType.startsWith('video/');
+  return igIsVideoUrl(item.mediaUrl);
+}
+
+async function igAwaitContainer(graphBaseUrl, accessToken, containerId, budgetMs) {
+  const startedAt = Date.now();
+  for (;;) {
+    const status = await fetchJson(
+      `${graphBaseUrl}/${encodeURIComponent(containerId)}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`
+    );
+    const code = String(status?.status_code || '').toUpperCase();
+    if (code === 'FINISHED' || code === 'PUBLISHED') return;
+    if (code === 'ERROR' || code === 'EXPIRED') {
+      throw new Error(`Instagram media container ${code.toLowerCase()}`);
+    }
+    if (Date.now() - startedAt > budgetMs) {
+      // Not fatal: the container keeps processing on Meta's side for 24h and
+      // the creation id is checkpointed on the delivery, so a retried send
+      // resumes the wait instead of re-uploading.
+      throw new Error('Instagram media container is still processing; retry will resume');
+    }
+    await new Promise((resolve) => setTimeout(resolve, IG_POLL_INTERVAL_MS));
+  }
+}
+
 async function postToInstagram(credential, delivery) {
   const accessToken = assertAccessToken(credential);
   const igUserId = credential.accountId || credential.account?.id;
-  const imageUrl = String(delivery.mediaUrl || '').trim();
   if (!igUserId) throw new Error('Instagram account id is missing');
-  if (!/^https?:\/\//i.test(imageUrl)) throw new Error('Instagram requires media');
   const graphBaseUrl = credential.family === 'instagram'
     ? 'https://graph.instagram.com/v23.0'
     : 'https://graph.facebook.com/v22.0';
+  const opts = instagramOptions(delivery);
+  if (!opts.items.length) throw new Error('Instagram requires media at a public https URL');
 
-  const isStory = /story/i.test(String(delivery.destination || ''));
-  const createPayload = {
-    access_token: accessToken,
-    image_url: imageUrl
-  };
-  if (isStory) {
-    createPayload.media_type = 'STORIES';
-  } else {
-    createPayload.caption = delivery.caption;
+  const mediaEndpoint = `${graphBaseUrl}/${encodeURIComponent(igUserId)}/media`;
+  const caption = String(delivery.caption || '');
+
+  async function createContainer(payload) {
+    const created = await postForm(mediaEndpoint, { access_token: accessToken, ...payload });
+    const id = String(created?.id || '');
+    if (!id) throw new Error('Instagram did not create a media container');
+    return id;
   }
 
-  const created = await postForm(`${graphBaseUrl}/${encodeURIComponent(igUserId)}/media`, createPayload);
-  const creationId = String(created?.id || '');
-  if (!creationId) throw new Error('Instagram did not create a media container');
+  function commonParams(target) {
+    const params = {};
+    if (opts.collaborators.length) params.collaborators = JSON.stringify(opts.collaborators);
+    if (opts.locationId) params.location_id = opts.locationId;
+    if (target.userTags?.length) params.user_tags = JSON.stringify(target.userTags);
+    if (target.altText) params.alt_text = target.altText;
+    return params;
+  }
+
+  // Resume path: a checkpointed container from an interrupted attempt is
+  // published instead of re-created (containers stay valid for 24 hours).
+  let creationId = String(delivery.igCreationId || '').trim();
+  if (!creationId) {
+    const [first] = opts.items;
+    if (opts.igMediaType === 'story') {
+      creationId = await createContainer(
+        igItemIsVideo(first)
+          ? { media_type: 'STORIES', video_url: first.mediaUrl }
+          : { media_type: 'STORIES', image_url: first.mediaUrl }
+      );
+    } else if (opts.igMediaType === 'reel') {
+      if (!igItemIsVideo(first)) throw new Error('Instagram reels require a video');
+      const payload = {
+        media_type: 'REELS',
+        video_url: first.mediaUrl,
+        caption,
+        share_to_feed: opts.shareToFeed ? 'true' : 'false',
+        ...commonParams(first)
+      };
+      delete payload.alt_text; // image containers only
+      if (opts.coverUrl) payload.cover_url = opts.coverUrl;
+      else if (opts.thumbOffsetMs != null) payload.thumb_offset = String(opts.thumbOffsetMs);
+      creationId = await createContainer(payload);
+    } else if (opts.igMediaType === 'carousel') {
+      if (opts.items.length < 2) throw new Error('Instagram carousels need at least two items');
+      const children = [];
+      for (const item of opts.items) {
+        const childPayload = igItemIsVideo(item)
+          ? { media_type: 'VIDEO', video_url: item.mediaUrl, is_carousel_item: 'true' }
+          : { image_url: item.mediaUrl, is_carousel_item: 'true' };
+        const perItem = commonParams(item);
+        delete perItem.collaborators;
+        delete perItem.location_id;
+        const childId = await createContainer({ ...childPayload, ...perItem });
+        await igAwaitContainer(graphBaseUrl, accessToken, childId, IG_POLL_BUDGET_MS);
+        children.push(childId);
+      }
+      const parent = {
+        media_type: 'CAROUSEL',
+        children: children.join(','),
+        caption
+      };
+      if (opts.collaborators.length) parent.collaborators = JSON.stringify(opts.collaborators);
+      if (opts.locationId) parent.location_id = opts.locationId;
+      creationId = await createContainer(parent);
+    } else {
+      if (igItemIsVideo(first)) throw new Error('Instagram feed video posts must be reels');
+      creationId = await createContainer({
+        image_url: first.mediaUrl,
+        caption,
+        ...commonParams(first)
+      });
+    }
+    if (delivery.userSub && delivery.deliveryId) {
+      await updateDelivery(delivery.userSub, delivery.deliveryId, { igCreationId: creationId });
+    }
+  }
+
+  await igAwaitContainer(graphBaseUrl, accessToken, creationId, IG_POLL_BUDGET_MS);
 
   const published = await postForm(`${graphBaseUrl}/${encodeURIComponent(igUserId)}/media_publish`, {
     access_token: accessToken,
     creation_id: creationId
   });
   const id = String(published?.id || '');
+
+  let permalink = '';
+  if (id) {
+    try {
+      const media = await fetchJson(
+        `${graphBaseUrl}/${encodeURIComponent(id)}?fields=permalink&access_token=${encodeURIComponent(accessToken)}`
+      );
+      permalink = String(media?.permalink || '');
+    } catch {
+      // the post is live; a missing permalink only degrades the receipt
+    }
+  }
   return {
     providerPostId: id,
-    providerPostUrl: ''
+    providerPostUrl: permalink
   };
 }
 
@@ -1293,7 +1465,10 @@ async function createDeliveryDraftForUser(user, input = {}) {
     err.status = 400;
     throw err;
   }
-  if (!caption) {
+  // Instagram stories are the one delivery the platform forbids captions on.
+  const isCaptionlessStory = provider === 'instagram'
+    && String(input.providerOptions?.instagram?.igMediaType || '').toLowerCase() === 'story';
+  if (!caption && !isCaptionlessStory) {
     const err = new Error('caption is required');
     err.status = 400;
     throw err;
@@ -1340,6 +1515,9 @@ async function createDeliveryDraftForUser(user, input = {}) {
     destination: String(input.destination || 'Post').trim(),
     caption,
     mediaUrl: String(input.mediaUrl || '').trim(),
+    ...(input.providerOptions && typeof input.providerOptions === 'object'
+      ? { providerOptions: input.providerOptions }
+      : {}),
     postUrl: String(input.postUrl || '').trim(),
     title: String(input.title || 'MCP social draft').trim(),
     runAt: runAt.toISOString(),
@@ -1361,6 +1539,15 @@ async function createDeliveryDraftForUser(user, input = {}) {
     throw err;
   }
   return sanitizeDelivery(saved.delivery || delivery);
+}
+
+async function scheduleDeliverySendSoon({ userSub, deliveryId, delaySeconds = 10 }) {
+  // Async execution path for deliveries whose provider call outlives the API
+  // Gateway window (Instagram reels/carousels): a one-shot EventBridge
+  // schedule invokes the internal-event Lambda, which runs sendDeliveryById
+  // without an HTTP timeout. Callers poll the delivery record for the result.
+  const runAt = new Date(Date.now() + Math.max(2, delaySeconds) * 1000).toISOString();
+  return sanitizeDelivery(await scheduleDelivery({ userSub, deliveryId, runAt }));
 }
 
 async function sendDeliveryForUser(user, deliveryId, { force = true } = {}) {
@@ -1459,6 +1646,8 @@ module.exports = {
   buildPreviews,
   renderTemplate,
   getDeliveryId,
+  getDeliveryById,
+  scheduleDeliverySendSoon,
   sanitizeDelivery,
   getTableName,
   getSchedulerConfig,

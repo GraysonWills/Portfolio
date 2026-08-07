@@ -14,6 +14,7 @@ const DEFAULT_TABLE = 'portfolio-mcp-control';
 const DEFAULT_READ_LIMIT = 100;
 const DEFAULT_DRAFT_MUTATION_LIMIT = 20;
 const DEFAULT_APPROVAL_LIMIT = 10;
+const DEFAULT_EXTERNAL_MUTATION_LIMIT = 30;
 const AUDIT_TTL_DAYS = 90;
 const APPROVAL_TTL_DAYS = 7;
 const IDEMPOTENCY_TTL_DAYS = 2;
@@ -55,6 +56,7 @@ const DEFAULT_SCOPES = [
   'social:read',
   'social:write:draft',
   'social:propose',
+  'google:read',
 ];
 
 const AUTO_EXECUTE_ACTIONS = [
@@ -222,6 +224,7 @@ function normalizeLimits(input = {}) {
     read: Math.max(1, Math.min(5000, Number(input.read || input.readToolsPerDay || DEFAULT_READ_LIMIT) || DEFAULT_READ_LIMIT)),
     draftMutation: Math.max(1, Math.min(1000, Number(input.draftMutation || input.draftMutationsPerDay || DEFAULT_DRAFT_MUTATION_LIMIT) || DEFAULT_DRAFT_MUTATION_LIMIT)),
     approvalMutation: Math.max(1, Math.min(1000, Number(input.approvalMutation || input.approvalRequestsPerDay || DEFAULT_APPROVAL_LIMIT) || DEFAULT_APPROVAL_LIMIT)),
+    externalMutation: Math.max(1, Math.min(1000, Number(input.externalMutation || input.externalSendsPerDay || DEFAULT_EXTERNAL_MUTATION_LIMIT) || DEFAULT_EXTERNAL_MUTATION_LIMIT)),
   };
 }
 
@@ -435,6 +438,7 @@ function limitForCategory(client, category) {
   if (category === 'read') return limits.read;
   if (category === 'draftMutation') return limits.draftMutation;
   if (category === 'approvalMutation') return limits.approvalMutation;
+  if (category === 'externalMutation') return limits.externalMutation;
   return limits.read;
 }
 

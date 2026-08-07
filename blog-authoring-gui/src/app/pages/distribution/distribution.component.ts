@@ -200,7 +200,7 @@ export class DistributionComponent implements OnInit, OnDestroy {
       destinationOptions: [
         { label: 'Feed post', value: 'feed-post', requiresMedia: true },
         { label: 'Story', value: 'story', requiresMedia: true },
-        { label: 'Reel caption', value: 'reel-caption', requiresMedia: true }
+        { label: 'Reel', value: 'reel', requiresMedia: true }
       ],
       destination: 'story',
       selected: true

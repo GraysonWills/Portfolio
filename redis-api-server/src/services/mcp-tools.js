@@ -2,11 +2,13 @@ const crypto = require('crypto');
 const path = require('path');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { z } = require('zod');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { v4: uuidv4 } = require('uuid');
 
 const blogPosts = require('./blog-posts');
 const comments = require('./comments');
+const googleAdvisor = require('./google-advisor');
 const mcpControl = require('./mcp-control');
 const socialAuth = require('./social-auth');
 const socialDistribution = require('./social-distribution');
@@ -41,6 +43,17 @@ const ALLOWED_REMOTE_IMAGE_TYPES = new Set([
   'image/gif',
   'image/avif',
 ]);
+// Presigned-PUT uploads (media.request_upload_url): the path large media must
+// take — base64 through the Lambda caps out near the payload limit, while
+// Instagram reels run to 1GB and ingest only from public HTTPS URLs.
+const ALLOWED_MEDIA_UPLOAD_TYPES = new Set([
+  ...ALLOWED_REMOTE_IMAGE_TYPES,
+  'video/mp4',
+  'video/quicktime',
+]);
+const MAX_MEDIA_UPLOAD_BYTES = 1024 * 1024 * 1024;
+const MEDIA_UPLOAD_PRESIGN_EXPIRES_SECONDS = Math.min(3600, Math.max(60, Number(process.env.MEDIA_UPLOAD_PRESIGN_EXPIRES_SECONDS || 900)));
+const ALLOWED_VIDEO_BASE64_TYPES = new Set(['video/mp4', 'video/quicktime']);
 
 let s3Client = null;
 let s3Region = '';
@@ -413,6 +426,192 @@ async function uploadImageFromBase64(input = {}, client) {
   return { asset };
 }
 
+function mediaExtensionFor(contentType, filename) {
+  const parsed = path.extname(String(filename || '')).toLowerCase();
+  if (parsed) return parsed;
+  return {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/avif': '.avif',
+    'video/mp4': '.mp4',
+    'video/quicktime': '.mov',
+  }[contentType] || '.bin';
+}
+
+async function requestMediaUploadUrl(input = {}, client) {
+  const contentType = String(input.contentType || '').split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_MEDIA_UPLOAD_TYPES.has(contentType)) {
+    throw httpError(400, `Unsupported media type: ${contentType || 'unknown'}`);
+  }
+  const sizeBytes = Number(input.sizeBytes || 0);
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_MEDIA_UPLOAD_BYTES) {
+    throw httpError(400, `sizeBytes must be between 1 and ${MAX_MEDIA_UPLOAD_BYTES}`);
+  }
+  const cfg = getPhotoAssetConfig();
+  const assetId = `asset-${uuidv4()}`;
+  const now = new Date();
+  const yyyy = String(now.getUTCFullYear());
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(now.getUTCDate()).padStart(2, '0');
+  const ext = mediaExtensionFor(contentType, input.filename);
+  const filename = String(input.filename || `upload${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || `upload${ext}`;
+  const key = `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
+  const publicUrl = publicUrlForKey(cfg, key);
+  const timestamp = now.toISOString();
+
+  await createPendingPhotoAsset({
+    asset_id: assetId,
+    owner: String(client.ownerSub || 'mcp').toLowerCase(),
+    status: 'pending',
+    storage_bucket: cfg.bucket,
+    storage_key: key,
+    public_url: publicUrl,
+    original_filename: filename,
+    content_type: contentType,
+    size_bytes: sizeBytes,
+    usage: String(input.usage || 'social').slice(0, 40),
+    tags: Array.isArray(input.tags) ? input.tags.map(String).slice(0, 20) : ['mcp'],
+    alt_text: String(input.altText || '').slice(0, 240),
+    caption: String(input.caption || '').slice(0, 1000),
+    metadata: {
+      source: 'mcp_presigned_upload',
+      clientId: client.clientId,
+    },
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+
+  const uploadUrl = await getSignedUrl(
+    getS3Client(cfg.region),
+    new PutObjectCommand({
+      Bucket: cfg.bucket,
+      Key: key,
+      ContentType: contentType,
+      CacheControl: 'public,max-age=31536000,immutable',
+    }),
+    { expiresIn: MEDIA_UPLOAD_PRESIGN_EXPIRES_SECONDS },
+  );
+
+  return {
+    upload: {
+      assetId,
+      uploadUrl,
+      publicUrl,
+      key,
+      expiresIn: MEDIA_UPLOAD_PRESIGN_EXPIRES_SECONDS,
+    },
+  };
+}
+
+async function confirmMediaUpload(input = {}, client) {
+  const assetId = String(input.assetId || '').trim();
+  if (!assetId) throw httpError(400, 'assetId is required');
+  const record = await getPhotoAssetById(assetId);
+  if (!record) throw httpError(404, 'Upload grant not found');
+  if (String(record.owner || '') !== String(client.ownerSub || 'mcp').toLowerCase()) {
+    throw httpError(403, 'Upload grant belongs to another owner');
+  }
+  if (record.status === 'ready') {
+    return { asset: { assetId, publicUrl: record.public_url, contentType: record.content_type, sizeBytes: record.size_bytes } };
+  }
+  const cfg = getPhotoAssetConfig();
+  let head;
+  try {
+    head = await getS3Client(cfg.region).send(new HeadObjectCommand({
+      Bucket: record.storage_bucket || cfg.bucket,
+      Key: record.storage_key,
+    }));
+  } catch {
+    throw httpError(409, 'The media object has not been uploaded yet');
+  }
+  const asset = await markPhotoAssetReady(assetId, {
+    ready_at: new Date().toISOString(),
+    public_url: record.public_url,
+    content_type: record.content_type,
+    size_bytes: Number(head.ContentLength || record.size_bytes || 0),
+  });
+  return {
+    asset: {
+      assetId,
+      publicUrl: asset?.public_url || record.public_url,
+      contentType: record.content_type,
+      sizeBytes: Number(head.ContentLength || record.size_bytes || 0),
+    },
+  };
+}
+
+async function uploadVideoFromBase64(input = {}, client) {
+  const b64 = String(input.data || '').trim();
+  if (!b64) throw httpError(400, 'Base64 video data is required');
+  const contentType = String(input.contentType || 'video/mp4').split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_VIDEO_BASE64_TYPES.has(contentType)) {
+    throw httpError(400, `Unsupported video type: ${contentType || 'unknown'}`);
+  }
+  let bytes;
+  try {
+    bytes = Buffer.from(b64, 'base64');
+  } catch {
+    throw httpError(400, 'Video data is not valid base64');
+  }
+  if (!bytes.length) throw httpError(400, 'Video data decoded to zero bytes');
+  if (bytes.length > MAX_REMOTE_IMAGE_BYTES) {
+    // The Lambda payload cap makes anything larger impossible inline anyway;
+    // large videos take media.request_upload_url instead.
+    throw httpError(400, `Inline video is too large; use media.request_upload_url for files over ${MAX_REMOTE_IMAGE_BYTES} bytes`);
+  }
+
+  const cfg = getPhotoAssetConfig();
+  const checksum = sha256Hex(bytes);
+  const assetId = `asset-${uuidv4()}`;
+  const now = new Date();
+  const yyyy = String(now.getUTCFullYear());
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(now.getUTCDate()).padStart(2, '0');
+  const ext = contentType === 'video/quicktime' ? '.mov' : '.mp4';
+  const filename = String(input.filename || `upload${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || `upload${ext}`;
+  const key = `${cfg.prefix}${yyyy}/${mm}/${dd}/${assetId}/${filename}`;
+  const publicUrl = publicUrlForKey(cfg, key);
+  const timestamp = now.toISOString();
+
+  await createPendingPhotoAsset({
+    asset_id: assetId,
+    owner: String(client.ownerSub || 'mcp').toLowerCase(),
+    status: 'pending',
+    storage_bucket: cfg.bucket,
+    storage_key: key,
+    public_url: publicUrl,
+    original_filename: filename,
+    content_type: contentType,
+    size_bytes: bytes.length,
+    checksum_sha256: checksum,
+    usage: 'social',
+    tags: ['mcp'],
+    metadata: { source: 'mcp_video_base64', clientId: client.clientId },
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+
+  await getS3Client(cfg.region).send(new PutObjectCommand({
+    Bucket: cfg.bucket,
+    Key: key,
+    Body: bytes,
+    ContentType: contentType,
+    CacheControl: 'public,max-age=31536000,immutable',
+  }));
+
+  const asset = await markPhotoAssetReady(assetId, {
+    ready_at: new Date().toISOString(),
+    public_url: publicUrl,
+    content_type: contentType,
+    size_bytes: bytes.length,
+    checksum_sha256: checksum,
+  });
+
+  return { asset };
+}
+
 async function executeApproval(approvalId, reviewerUser) {
   const approval = await mcpControl.getApproval(approvalId);
   if (!approval) throw httpError(404, 'Approval not found');
@@ -494,6 +693,11 @@ async function executeApproval(approvalId, reviewerUser) {
         deliveryId: payload.deliveryId,
         force: true,
       });
+    } else if (approval.action === 'google.gmail.request_send') {
+      result = await googleAdvisor.sendGmailDraft(
+        { ownerSub: approval.ownerSub },
+        payload.draftId
+      );
     } else {
       throw httpError(400, `Unsupported approval action: ${approval.action}`);
     }
@@ -725,10 +929,63 @@ function buildMcpServer(client) {
   }, async () => ({ providers: await socialAuth.getProviderStatus(ownerUser(client)) }));
 
   registerTool(server, client, 'social.list_deliveries', {
-    description: 'List social delivery queue records.',
+    description: 'List social delivery queue records, or fetch one exact record by deliveryId (the poll target for async Instagram sends).',
     scope: 'social:read',
-    inputSchema: { limit: z.number().optional() },
-  }, async (args) => socialDistribution.listDeliveries(ownerUser(client), { limit: args.limit || 100 }));
+    inputSchema: { limit: z.number().optional(), deliveryId: z.string().optional() },
+  }, async (args) => {
+    const deliveryId = String(args.deliveryId || '').trim();
+    if (deliveryId) {
+      const record = await socialDistribution.getDeliveryById({
+        userSub: ownerUser(client).sub,
+        deliveryId,
+      });
+      return { deliveries: record ? [socialDistribution.sanitizeDelivery(record)] : [] };
+    }
+    return socialDistribution.listDeliveries(ownerUser(client), { limit: args.limit || 100 });
+  });
+
+  registerTool(server, client, 'google.get_status', {
+    description: 'Show the connected Google account and its advisor capabilities. OAuth tokens are never returned.',
+    scope: 'google:read',
+    inputSchema: {},
+  }, async () => googleAdvisor.getStatus(client));
+
+  registerTool(server, client, 'google.gmail.search', {
+    description: 'Search Gmail and return metadata plus short snippets only; message bodies and attachments are excluded.',
+    scope: 'google:gmail:read',
+    inputSchema: {
+      query: z.string().optional(),
+      maxResults: z.number().int().min(1).max(25).optional(),
+    },
+  }, async (args) => googleAdvisor.searchGmail(client, args));
+
+  registerTool(server, client, 'google.gmail.get_thread', {
+    description: 'Read safe metadata and snippets for one Gmail thread.',
+    scope: 'google:gmail:read',
+    inputSchema: { threadId: z.string() },
+  }, async (args) => googleAdvisor.getGmailThread(client, args));
+
+  registerTool(server, client, 'google.drive.list_files', {
+    description: 'List files visible to the connected Drive file grant.',
+    scope: 'google:drive:read',
+    inputSchema: {
+      search: z.string().optional(),
+      pageSize: z.number().int().min(1).max(50).optional(),
+    },
+  }, async (args) => googleAdvisor.listDriveFiles(client, args));
+
+  registerTool(server, client, 'google.analytics.run_report', {
+    description: 'Run a bounded GA4 report using an allowlist of advisor-safe dimensions and metrics.',
+    scope: 'google:analytics:read',
+    inputSchema: {
+      propertyId: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      dimensions: z.array(z.string()).max(5).optional(),
+      metrics: z.array(z.string()).max(5).optional(),
+      limit: z.number().int().min(1).max(250).optional(),
+    },
+  }, async (args) => googleAdvisor.runAnalyticsReport(client, args));
 
   registerTool(server, client, 'google.gmail.search', {
     description: 'Search Gmail and return bounded message metadata. Message bodies are not returned.',
@@ -946,6 +1203,30 @@ function buildMcpServer(client) {
     },
   }, async (args) => uploadImageFromBase64(args, client));
 
+  registerTool(server, client, 'media.request_upload_url', {
+    description: 'Grant a presigned S3 PUT for one media file (images or video up to 1GB) and return the public URL it will have. Upload the bytes, then call media.confirm_upload.',
+    scope: 'media:write:draft',
+    category: 'draftMutation',
+    inputSchema: {
+      filename: z.string(),
+      contentType: z.string(),
+      sizeBytes: z.number(),
+      usage: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      altText: z.string().optional(),
+      caption: z.string().optional(),
+    },
+  }, async (args) => requestMediaUploadUrl(args, client));
+
+  registerTool(server, client, 'media.confirm_upload', {
+    description: 'Confirm a presigned media upload landed in S3 and mark the asset ready. Returns the public URL.',
+    scope: 'media:write:draft',
+    category: 'draftMutation',
+    inputSchema: {
+      assetId: z.string(),
+    },
+  }, async (args) => confirmMediaUpload(args, client));
+
   registerTool(server, client, 'social.schedule_delivery', {
     description: 'Create AND immediately send a social delivery through the connected account, bypassing the studio review queue. Grant social:write:send only to automation that already gates posts upstream (e.g. the mesh, which reviews everything in Mission Control before calling this).',
     scope: 'social:write:send',
@@ -957,6 +1238,10 @@ function buildMcpServer(client) {
       mediaUrl: z.string().optional(),
       imageBase64: z.string().optional(),
       imageContentType: z.string().optional(),
+      videoBase64: z.string().optional(),
+      videoContentType: z.string().optional(),
+      videoFilename: z.string().optional(),
+      providerOptions: z.object({}).passthrough().optional(),
       destination: z.string().optional(),
       postUrl: z.string().optional(),
       title: z.string().optional(),
@@ -978,12 +1263,21 @@ function buildMcpServer(client) {
       }, client);
       mediaUrl = String(stored.asset?.public_url || '').trim();
     }
+    if (!mediaUrl && args.videoBase64) {
+      const stored = await uploadVideoFromBase64({
+        data: args.videoBase64,
+        contentType: args.videoContentType,
+        filename: args.videoFilename,
+      }, client);
+      mediaUrl = String(stored.asset?.public_url || '').trim();
+    }
     const draft = await socialDistribution.createDeliveryDraftForUser(ownerUser(client), {
       deliveryId: effectIdentity,
       idempotencyRequestHash: effectRequestHash,
       provider: args.provider,
       caption: args.caption,
       mediaUrl,
+      providerOptions: args.providerOptions,
       destination: args.destination,
       postUrl: args.postUrl,
       title: args.title || 'Mesh social post',
@@ -991,6 +1285,30 @@ function buildMcpServer(client) {
       ruleId: 'mesh-single-gate',
       ruleName: 'Mesh pre-gated delivery',
     });
+    // Instagram video and carousel containers can process on Meta's side far
+    // past the API Gateway window, so those run async: a near-immediate
+    // EventBridge schedule fires the internal-event Lambda and the caller
+    // polls social.list_deliveries. Everything else stays synchronous.
+    const igOptions = args.providerOptions?.instagram || {};
+    const igMediaType = String(igOptions.igMediaType || '').toLowerCase();
+    const igHasVideo = (Array.isArray(igOptions.items) ? igOptions.items : [])
+      .some((item) => String(item?.mediaType || '').startsWith('video/'))
+      || /\.(mp4|mov)(?:$|[?#])/i.test(mediaUrl);
+    const runAsync = String(args.provider || '').toLowerCase() === 'instagram'
+      && (igMediaType === 'carousel' || igHasVideo);
+    if (runAsync) {
+      if (String(draft.status || '') === 'sent') {
+        return { delivery: draft };
+      }
+      // No immediate provider round-trip will surface failure on this path,
+      // so verify the credential is currently postable before scheduling.
+      await socialAuth.getPostingCredential(args.provider, { sub: ownerUser(client).sub });
+      const delivery = await socialDistribution.scheduleDeliverySendSoon({
+        userSub: ownerUser(client).sub,
+        deliveryId: draft.deliveryId,
+      });
+      return { delivery };
+    }
     const delivery = await socialDistribution.sendDeliveryById({
       userSub: ownerUser(client).sub,
       deliveryId: draft.deliveryId,
@@ -1170,6 +1488,22 @@ function buildMcpServer(client) {
     summary: `Send social delivery ${args.deliveryId}`,
     targetIds: [args.deliveryId],
   }));
+
+  createApprovalTool(server, client, 'google.gmail.request_send', 'google:gmail:propose', {
+    draftId: z.string(),
+  }, async (args) => {
+    const draft = await googleAdvisor.getGmailDraft(client, args.draftId);
+    const subject = draft.message?.subject || '(no subject)';
+    const to = draft.message?.to || '(unknown recipient)';
+    return mcpControl.createApproval({
+      client,
+      action: 'google.gmail.request_send',
+      payload: { draftId: args.draftId },
+      summary: `Send Gmail draft "${subject}" to ${to}`,
+      targetIds: [args.draftId],
+      diff: { draft },
+    });
+  });
 
   return server;
 }
