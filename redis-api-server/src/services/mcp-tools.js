@@ -950,15 +950,6 @@ function buildMcpServer(client) {
     inputSchema: {},
   }, async () => googleAdvisor.getStatus(client));
 
-  registerTool(server, client, 'google.gmail.search', {
-    description: 'Search Gmail and return metadata plus short snippets only; message bodies and attachments are excluded.',
-    scope: 'google:gmail:read',
-    inputSchema: {
-      query: z.string().optional(),
-      maxResults: z.number().int().min(1).max(25).optional(),
-    },
-  }, async (args) => googleAdvisor.searchGmail(client, args));
-
   registerTool(server, client, 'google.gmail.get_thread', {
     description: 'Read safe metadata and snippets for one Gmail thread.',
     scope: 'google:gmail:read',
