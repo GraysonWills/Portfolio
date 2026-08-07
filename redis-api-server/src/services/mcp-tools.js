@@ -8,7 +8,6 @@ const { v4: uuidv4 } = require('uuid');
 
 const blogPosts = require('./blog-posts');
 const comments = require('./comments');
-const googleAdvisor = require('./google-advisor');
 const mcpControl = require('./mcp-control');
 const socialAuth = require('./social-auth');
 const socialDistribution = require('./social-distribution');
@@ -693,11 +692,6 @@ async function executeApproval(approvalId, reviewerUser) {
         deliveryId: payload.deliveryId,
         force: true,
       });
-    } else if (approval.action === 'google.gmail.request_send') {
-      result = await googleAdvisor.sendGmailDraft(
-        { ownerSub: approval.ownerSub },
-        payload.draftId
-      );
     } else {
       throw httpError(400, `Unsupported approval action: ${approval.action}`);
     }
@@ -943,40 +937,6 @@ function buildMcpServer(client) {
     }
     return socialDistribution.listDeliveries(ownerUser(client), { limit: args.limit || 100 });
   });
-
-  registerTool(server, client, 'google.get_status', {
-    description: 'Show the connected Google account and its advisor capabilities. OAuth tokens are never returned.',
-    scope: 'google:read',
-    inputSchema: {},
-  }, async () => googleAdvisor.getStatus(client));
-
-  registerTool(server, client, 'google.gmail.get_thread', {
-    description: 'Read safe metadata and snippets for one Gmail thread.',
-    scope: 'google:gmail:read',
-    inputSchema: { threadId: z.string() },
-  }, async (args) => googleAdvisor.getGmailThread(client, args));
-
-  registerTool(server, client, 'google.drive.list_files', {
-    description: 'List files visible to the connected Drive file grant.',
-    scope: 'google:drive:read',
-    inputSchema: {
-      search: z.string().optional(),
-      pageSize: z.number().int().min(1).max(50).optional(),
-    },
-  }, async (args) => googleAdvisor.listDriveFiles(client, args));
-
-  registerTool(server, client, 'google.analytics.run_report', {
-    description: 'Run a bounded GA4 report using an allowlist of advisor-safe dimensions and metrics.',
-    scope: 'google:analytics:read',
-    inputSchema: {
-      propertyId: z.string().optional(),
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-      dimensions: z.array(z.string()).max(5).optional(),
-      metrics: z.array(z.string()).max(5).optional(),
-      limit: z.number().int().min(1).max(250).optional(),
-    },
-  }, async (args) => googleAdvisor.runAnalyticsReport(client, args));
 
   registerTool(server, client, 'google.gmail.search', {
     description: 'Search Gmail and return bounded message metadata. Message bodies are not returned.',
@@ -1479,22 +1439,6 @@ function buildMcpServer(client) {
     summary: `Send social delivery ${args.deliveryId}`,
     targetIds: [args.deliveryId],
   }));
-
-  createApprovalTool(server, client, 'google.gmail.request_send', 'google:gmail:propose', {
-    draftId: z.string(),
-  }, async (args) => {
-    const draft = await googleAdvisor.getGmailDraft(client, args.draftId);
-    const subject = draft.message?.subject || '(no subject)';
-    const to = draft.message?.to || '(unknown recipient)';
-    return mcpControl.createApproval({
-      client,
-      action: 'google.gmail.request_send',
-      payload: { draftId: args.draftId },
-      summary: `Send Gmail draft "${subject}" to ${to}`,
-      targetIds: [args.draftId],
-      diff: { draft },
-    });
-  });
 
   return server;
 }
