@@ -269,6 +269,35 @@ function createApp() {
     return writeLimiter(req, res, next);
   };
 
+  // Same read/write split for the social routes: the studio's Social Accounts
+  // page fans out a dozen GET status/settings reads on load, which used to
+  // exhaust the 30/15min write budget and mask connection state behind a 429.
+  // OAuth callbacks are GETs that create external state, so they alone stay
+  // on the write budget.
+  const socialWriteLimiter = (req, res, next) => {
+    const method = String(req.method || '').toUpperCase();
+    const isRead = ['GET', 'HEAD', 'OPTIONS'].includes(method);
+    const isOAuthCallback = /\/callback(?:\/|$)/.test(String(req.path || ''));
+    if (isRead && !isOAuthCallback) {
+      return next();
+    }
+    return writeLimiter(req, res, next);
+  };
+
+  // MCP is bearer-authenticated machine traffic with its own per-client daily
+  // quotas (mcp-control), and every MCP call — reads included — is a POST, so
+  // the blanket 30-writes budget starved legitimate bridge traffic (e.g. the
+  // mesh polling an async Instagram delivery). Higher IP ceiling here; real
+  // enforcement stays with auth + per-client limits.
+  const mcpLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.MCP_IP_RATE_LIMIT_PER_15MIN || 300),
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
+    message: { error: 'MCP rate limit exceeded. Please try again later.' }
+  });
+
   // Analytics endpoint has its own higher-throughput limiter and stays public.
   const analyticsLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -326,10 +355,10 @@ function createApp() {
   app.use('/api/photo-assets', writeLimiter, lazyRouter(() => require('./routes/photo-assets')));
   app.use('/api/resume', resumeLimiter, lazyRouter(() => require('./routes/resume')));
   app.use('/api/comments', lazyRouter(() => require('./routes/comments')));
-  app.use('/api/social-auth', writeLimiter, lazyRouter(() => require('./routes/social-auth')));
-  app.use('/api/social-distribution', writeLimiter, lazyRouter(() => require('./routes/social-distribution')));
+  app.use('/api/social-auth', socialWriteLimiter, lazyRouter(() => require('./routes/social-auth')));
+  app.use('/api/social-distribution', socialWriteLimiter, lazyRouter(() => require('./routes/social-distribution')));
   app.use('/api/blog', blogWriteLimiter, lazyRouter(() => require('./routes/blog')));
-  app.use('/api/mcp', writeLimiter, lazyRouter(() => require('./routes/mcp')));
+  app.use('/api/mcp', mcpLimiter, lazyRouter(() => require('./routes/mcp')));
   app.use('/media', lazyRouter(() => require('./routes/media')));
 
   app.get('/', (req, res) => {
