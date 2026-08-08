@@ -13,6 +13,7 @@ const {
   isContentDdbEnabled,
 } = require('./content-ddb');
 const { normalizeMetadata } = require('./content-read-model');
+const { normalizeSlug } = require('../utils/blog-slug');
 
 const BLOG_PAGE_ID = 3;
 const BLOG_ITEM_CONTENT_ID = 3;
@@ -57,16 +58,6 @@ function normalizeString(value, max = 1000) {
     .replace(/\r\n/g, '\n')
     .trim()
     .slice(0, max);
-}
-
-function normalizeSlug(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
 }
 
 function normalizeStringList(value, maxItems = 40, maxChars = 80) {

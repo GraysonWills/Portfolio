@@ -39,6 +39,7 @@ const {
 const { rewriteContentItemMediaUrls } = require('../utils/media-url');
 const {
   BLOG_PAGE_ID,
+  BLOG_ITEM_CONTENT_ID,
   BLOG_IMAGE_CONTENT_ID,
   clampLimit,
   parsePageSort,
@@ -61,6 +62,7 @@ const {
   encodeOffsetToken,
   decodeOffsetToken
 } = require('../utils/pagination-token');
+const { normalizeSlug } = require('../utils/blog-slug');
 const {
   CONTENT_IDS,
   LANDING_PAGE_ID,
@@ -563,6 +565,77 @@ router.post('/v3/projects/items', async (req, res) => {
       normalized[key] = normalizeContentArray(rows, req);
     }
     return res.json({ itemsByCategoryId: normalized });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/content/v3/blog/resolve/:value
+ * Resolve a public blog route value to a canonical post identity.
+ *
+ * The public site links posts as /blog/<slug>, and its SSR renderer turns a
+ * failure here into a real HTTP 404 with noindex headers - so without this
+ * route every shared permalink is a dead link. Accepts either a slug or a
+ * listItemID, since older permalinks were minted with the raw id.
+ *
+ * Registered before /v3/blog/:listItemId so the intent stays obvious; the two
+ * cannot collide anyway because a :param never spans the extra path segment.
+ */
+router.get('/v3/blog/resolve/:value', async (req, res) => {
+  const startedAt = process.hrtime.bigint();
+  try {
+    const raw = String(req.params.value || '').trim();
+    if (!raw) {
+      return res.status(400).json({ error: 'Invalid blog route value' });
+    }
+
+    // PageContentID 3 is the one metadata record per post, so this reads about
+    // one row per post via the PageIndex rather than scanning the table.
+    const blogItems = await readContentByPageAndContent(BLOG_PAGE_ID, BLOG_ITEM_CONTENT_ID);
+
+    // Reuse the public card pipeline so visibility here can never disagree with
+    // what /v2/blog/cards lists: drafts, scheduled, and future-dated posts are
+    // filtered out identically.
+    const visible = filterBlogCards(buildBlogCardsFromPageItems(blogItems), {
+      status: 'published',
+      includeFuture: false
+    });
+
+    const requestedSlug = normalizeSlug(raw);
+    let match = visible.find((card) => card.listItemID === raw);
+    let routeKind = match ? 'legacy-id' : '';
+
+    if (!match && requestedSlug) {
+      match = visible.find((card) => card.slug === requestedSlug);
+      if (match) routeKind = 'canonical';
+    }
+
+    if (!match) {
+      return res.status(404).json({ error: 'Blog post not found' });
+    }
+
+    const slug = match.slug || match.listItemID;
+    const canonicalPath = `/blog/${slug}`;
+    const source = blogItems
+      .map(normalizeContentItem)
+      .find((item) => String(item?.ListItemID || '').trim() === match.listItemID);
+
+    logV2Metric('/v3/blog/resolve/:value', startedAt, {
+      listItemID: match.listItemID,
+      routeKind
+    });
+
+    return res.json({
+      listItemID: match.listItemID,
+      slug,
+      canonicalPath,
+      // Ask the client to correct the URL only when it actually differs, so a
+      // canonical hit never triggers a pointless redirect.
+      redirect: canonicalPath !== `/blog/${raw}`,
+      routeKind,
+      dateModified: source?.UpdatedAt || source?.CreatedAt || null
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }

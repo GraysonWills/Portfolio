@@ -1,3 +1,5 @@
+const { normalizeSlug } = require('../utils/blog-slug');
+
 const BLOG_PAGE_ID = 3;
 const BLOG_ITEM_CONTENT_ID = 3;
 const BLOG_IMAGE_CONTENT_ID = 5;
@@ -180,6 +182,9 @@ function toBlogCard(item) {
   const publishTs = toMillis(publishDateRaw);
   return {
     listItemID: String(item?.ListItemID || '').trim(),
+    // Posts published before slugs were persisted have none stored; their
+    // permalinks were minted from the title, so derive the same way here.
+    slug: normalizeSlug(metadata.slug) || normalizeSlug(metadata.title || item?.Text),
     title: String(metadata.title || item?.Text || 'Untitled'),
     summary: String(metadata.summary || ''),
     publishDate: publishDateRaw ? new Date(publishDateRaw).toISOString() : null,
@@ -304,6 +309,7 @@ function pageSlice(items, offset, limit) {
 
 module.exports = {
   BLOG_PAGE_ID,
+  BLOG_ITEM_CONTENT_ID,
   BLOG_IMAGE_CONTENT_ID,
   clampLimit,
   parsePageSort,

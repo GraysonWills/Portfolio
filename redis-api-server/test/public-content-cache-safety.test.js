@@ -221,6 +221,44 @@ test('public blog reads enforce visibility and error cache safety', async (t) =>
   assert.equal(forbiddenResponse.status, 403);
   assertNoStore(forbiddenResponse);
 
+  // The public site links posts as /blog/<slug> and its SSR renderer turns a
+  // failed resolve into a hard 404 with noindex headers, so this route is what
+  // stands between a shared permalink and a dead link.
+  const bySlugResponse = await fetch(
+    `${baseUrl}/api/content/v3/blog/resolve/visible-post`,
+    { headers: edgeHeaders }
+  );
+  assert.equal(bySlugResponse.status, 200);
+  const bySlug = await bySlugResponse.json();
+  assert.equal(bySlug.listItemID, 'visible');
+  assert.equal(bySlug.slug, 'visible-post');
+  assert.equal(bySlug.canonicalPath, '/blog/visible-post');
+  assert.equal(bySlug.routeKind, 'canonical');
+  assert.equal(bySlug.redirect, false);
+
+  // Permalinks minted before slugs existed used the raw id; they must still
+  // resolve, and point the client at the canonical slug URL.
+  const byIdResponse = await fetch(
+    `${baseUrl}/api/content/v3/blog/resolve/visible`,
+    { headers: edgeHeaders }
+  );
+  assert.equal(byIdResponse.status, 200);
+  const byId = await byIdResponse.json();
+  assert.equal(byId.listItemID, 'visible');
+  assert.equal(byId.routeKind, 'legacy-id');
+  assert.equal(byId.canonicalPath, '/blog/visible-post');
+  assert.equal(byId.redirect, true);
+
+  // Resolve must not become a side door around post visibility.
+  for (const hidden of ['draft', 'scheduled', 'future', 'no-such-post']) {
+    const hiddenResponse = await fetch(
+      `${baseUrl}/api/content/v3/blog/resolve/${hidden}`,
+      { headers: edgeHeaders }
+    );
+    assert.equal(hiddenResponse.status, 404, `expected ${hidden} to 404`);
+    assertNoStore(hiddenResponse);
+  }
+
   const originalSend = memory.ddb.send.bind(memory.ddb);
   memory.ddb.send = async (command) => {
     const values = command?.input?.ExpressionAttributeValues || {};
