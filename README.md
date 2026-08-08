@@ -154,13 +154,20 @@ When adding any new authoring page/route, include hotkeys by default:
   - `GET /api/content/v3/work`
   - `GET /api/content/v3/projects/categories`
   - `POST /api/content/v3/projects/items`
+  - `GET /api/content/v3/blog/resolve/:value`
   - `GET /api/content/v3/blog/:listItemId`
   - `GET /api/content/v3/admin/dashboard`
   - `GET /api/content/v3/admin/content`
+- Generated crawler feeds (public paths are mapped onto these by `portfolio-app/server.ts`):
+  - `GET /api/discovery/sitemap.xml`, `/rss.xml`, `/feed.json`, `/llms.txt`, `/robots.txt`
 - Dynamic API reads now return `Cache-Control: no-store`; old in-process GET response caching was removed
 - Full API details:
-  - `/Users/grayson/Desktop/Portfolio/docs/content-v2-streaming.md`
-  - `/Users/grayson/Desktop/Portfolio/docs/no-cache-performance-rollout.md`
+  - `docs/content-v2-streaming.md`
+  - `docs/no-cache-performance-rollout.md`
+  - `docs/public-blog-routing-and-discovery.md` — how `/blog/<slug>` resolves, slug
+    ownership, and the discovery feeds. **Read before adding any `portfolio-app` →
+    API call:** the two deploy separately with no contract test, so a frontend can
+    ship against a route that does not exist and both pipelines stay green.
 - Subscription lifecycle:
   - request/confirm/unsubscribe/preferences
   - atomic duplicate prevention (`ALREADY_SUBSCRIBED`, `ALREADY_PENDING`) so concurrent signup retries do not create duplicate subscriber rows or duplicate confirmation sends

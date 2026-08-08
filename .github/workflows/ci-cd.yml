@@ -176,9 +176,12 @@ jobs:
 
       - name: Invalidate CloudFront shell paths
         run: |
+          # robots.txt and sitemap.xml are uploaded above and served from the S3
+          # origin with s-maxage=3600, so without invalidating them a change to
+          # either sits stale at the edge for up to an hour after deploy.
           aws cloudfront create-invalidation \
             --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
-            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*" "/account"
+            --paths "/index.html" "/favicon.ico" "/favicon.png" "/" "/work" "/projects" "/blog" "/blog/*" "/notifications/*" "/account" "/robots.txt" "/sitemap.xml"
 
   deploy_blog_authoring:
     needs: [blog_authoring]
