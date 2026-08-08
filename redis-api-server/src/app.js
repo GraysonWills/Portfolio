@@ -351,6 +351,9 @@ function createApp() {
   // cold start does not initialize unrelated admin and worker dependencies.
   app.use('/api/health', lazyRouter(() => require('./routes/health')));
   app.use('/api/content', lazyRouter(() => require('./routes/content')));
+  // Crawler-facing feeds. portfolio-app/server.ts serves /sitemap.xml, /rss.xml,
+  // /feed.json, /llms.txt, and /robots.txt from here.
+  app.use('/api/discovery', lazyRouter(() => require('./routes/discovery')));
   app.use('/api/upload', writeLimiter, lazyRouter(() => require('./routes/upload')));
   app.use('/api/admin', readSplitWriteLimiter, lazyRouter(() => require('./routes/admin')));
   app.use('/api/subscriptions', subscriptionsWriteLimiter, lazyRouter(() => require('./routes/subscriptions')));

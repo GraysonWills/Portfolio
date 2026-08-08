@@ -1,42 +1,49 @@
 User-agent: *
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: OAI-SearchBot
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: ChatGPT-User
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: Claude-SearchBot
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: Claude-User
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: PerplexityBot
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 
 User-agent: Perplexity-User
 Allow: /
 Allow: /api/content/
+Allow: /api/discovery/
 Disallow: /account
 Disallow: /api/
 

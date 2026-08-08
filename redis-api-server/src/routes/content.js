@@ -63,6 +63,7 @@ const {
   decodeOffsetToken
 } = require('../utils/pagination-token');
 const { normalizeSlug } = require('../utils/blog-slug');
+const { readContentByPageAndContent } = require('../services/content-source');
 const {
   CONTENT_IDS,
   LANDING_PAGE_ID,
@@ -182,25 +183,6 @@ async function readContentAcrossPages(pageIds) {
     if (!isContentDdbEnabled()) throw err;
     const groups = await Promise.all(ids.map((pageId) => ddbGetContentByPageId(pageId)));
     return groups.flat();
-  }
-}
-
-async function readContentByPageAndContent(pageId, contentId) {
-  const safePageId = Number(pageId);
-  const safeContentId = Number(contentId);
-  if (!Number.isFinite(safePageId) || !Number.isFinite(safeContentId)) return [];
-
-  if (useDdbAsPrimary) {
-    return ddbGetContentByPageAndContentId(safePageId, safeContentId);
-  }
-
-  try {
-    return await getContentWhere(
-      (item) => Number(item.PageID) === safePageId && Number(item.PageContentID) === safeContentId
-    );
-  } catch (err) {
-    if (!isContentDdbEnabled()) throw err;
-    return ddbGetContentByPageAndContentId(safePageId, safeContentId);
   }
 }
 
