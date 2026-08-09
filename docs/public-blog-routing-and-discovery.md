@@ -97,8 +97,15 @@ Three schemes exist historically, and all still resolve:
 | `mesh-<ulid>` | mesh pipeline, `workers/publisher/handler.py` |
 
 `buildRecordsFromInput` honours a caller-supplied `input.listItemID` and only
-generates one when it is absent, which is why mesh posts keep their own ids.
-This is cosmetic — resolution works by slug regardless of id shape.
+generates one when it is absent. The mesh pipeline used to synthesize
+`mesh-<ulid>` on first publish, which is why posts from it read as a separate
+species; as of 2026-08-08 it omits the field so the API mints the id
+(total-agentic-workflow `3e049a0`). Existing `mesh-*` posts keep their ids and
+resolve normally — slug resolution does not care about id shape.
+
+Retry safety there rides on `idempotencyKey`, not on a guessable id. If you are
+tempted to make an id deterministic for idempotency, check whether an
+idempotency key already covers it.
 
 ## Discovery feeds
 
@@ -146,6 +153,12 @@ about one row per post instead of scanning the table.
 
 ## Test coverage
 
+- `test/frontend-api-contract.test.js` — **the guard against this whole bug
+  class.** Scrapes every `/api/...` URL out of `portfolio-app` (services and
+  `server.ts`), probes each against a booted app, and fails when the server
+  answers with its app-level `Not found` catch-all. A handler's own 404, a 401,
+  a 400, even a 500 all count as wired up — the only claim is that the route
+  exists. Files whose `apiUrl` names a third party (mailchimp) are skipped.
 - `test/public-content-cache-safety.test.js` — resolve by slug and by legacy id,
   plus draft/scheduled/future/unknown all 404.
 - `test/discovery.test.js` — all five feeds, XML escaping, newest-first
@@ -154,6 +167,10 @@ about one row per post instead of scanning the table.
 Before this work the only v3 blog test hit the single-segment
 `/api/content/v3/blog/missing`, which is precisely why an entirely missing
 route went unnoticed for 18 days.
+
+If the contract test fails, it names the calling file. Either implement the
+route or fix the caller — do not add the path to an ignore list unless it
+genuinely belongs to another origin.
 
 ## Verifying in production
 
