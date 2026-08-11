@@ -730,6 +730,52 @@ async function postToX(credential, delivery) {
   };
 }
 
+function linkedInMentionAttributes(delivery) {
+  const caption = String(delivery.caption || '');
+  const characters = Array.from(caption);
+  const raw = delivery.providerOptions?.linkedin?.mentions;
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > 50) {
+    throw new Error('LinkedIn mentions must be an array containing at most 50 entries');
+  }
+  const mentions = raw.map((item) => {
+    const entityType = String(item?.entityType || item?.entity_type || '');
+    const urn = String(item?.urn || '').trim();
+    const displayText = String(item?.displayText || item?.display_text || '');
+    const start = Number(item?.start);
+    const length = Number(item?.length);
+    if (!['person', 'organization'].includes(entityType)) {
+      throw new Error('LinkedIn mention entityType must be person or organization');
+    }
+    const expectedPrefix = `urn:li:${entityType}:`;
+    const identifier = urn.startsWith(expectedPrefix) ? urn.slice(expectedPrefix.length) : '';
+    if (
+      !identifier
+      || (entityType === 'organization' && !/^\d+$/.test(identifier))
+      || (entityType === 'person' && !/^[A-Za-z0-9_-]+$/.test(identifier))
+    ) {
+      throw new Error(`LinkedIn ${entityType} mention has an invalid URN`);
+    }
+    if (!Number.isInteger(start) || start < 0 || !Number.isInteger(length) || length <= 0) {
+      throw new Error('LinkedIn mention ranges must use non-negative code-point offsets');
+    }
+    const visible = characters.slice(start, start + length).join('');
+    if (visible !== displayText || start + length > characters.length) {
+      throw new Error(`LinkedIn mention no longer matches ${JSON.stringify(displayText)} in the caption`);
+    }
+    return { entityType, urn, displayText, start, length };
+  }).sort((left, right) => left.start - right.start);
+  let previousEnd = 0;
+  return mentions.map((mention) => {
+    if (mention.start < previousEnd) throw new Error('LinkedIn mentions cannot overlap');
+    previousEnd = mention.start + mention.length;
+    const value = mention.entityType === 'organization'
+      ? { 'com.linkedin.common.CompanyAttributedEntity': { company: mention.urn } }
+      : { 'com.linkedin.common.MemberAttributedEntity': { member: mention.urn } };
+    return { start: mention.start, length: mention.length, value };
+  });
+}
+
 async function postToLinkedIn(credential, delivery) {
   const accessToken = assertAccessToken(credential);
   const personId = credential.accountId || credential.account?.id;
@@ -739,6 +785,7 @@ async function postToLinkedIn(credential, delivery) {
   const isVideo = /\.mp4(?:$|[?#])/i.test(mediaUrl);
   const mediaKind = isVideo ? 'video' : 'image';
   const mediaCategory = isVideo ? 'VIDEO' : 'IMAGE';
+  const mentionAttributes = linkedInMentionAttributes(delivery);
   let mediaAsset = '';
 
   if (/^https?:\/\//i.test(mediaUrl)) {
@@ -816,7 +863,10 @@ async function postToLinkedIn(credential, delivery) {
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: delivery.caption },
+          shareCommentary: {
+            text: delivery.caption,
+            ...(mentionAttributes.length ? { attributes: mentionAttributes } : {})
+          },
           shareMediaCategory: mediaAsset ? mediaCategory : 'NONE',
           ...(mediaAsset ? {
             media: [
@@ -1655,6 +1705,7 @@ module.exports = {
   __private: {
     claimDeliveryForSend,
     postToX,
+    linkedInMentionAttributes,
     postToLinkedIn,
     postToInstagram,
     postToTikTok,
