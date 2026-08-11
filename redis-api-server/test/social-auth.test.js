@@ -246,6 +246,28 @@ test('builds LinkedIn provider config with profile and posting scopes', () => {
   assert.deepEqual(config.scopes, ['openid', 'profile', 'email', 'r_profile_basicinfo', 'w_member_social']);
 });
 
+test('accepts the approved Community Management LinkedIn scope set', (t) => {
+  const previous = process.env.SOCIAL_LINKEDIN_SCOPES;
+  t.after(() => {
+    if (previous === undefined) delete process.env.SOCIAL_LINKEDIN_SCOPES;
+    else process.env.SOCIAL_LINKEDIN_SCOPES = previous;
+  });
+  process.env.SOCIAL_LINKEDIN_SCOPES = [
+    'r_basicprofile',
+    'r_organization_followers',
+    'w_member_social',
+    'w_organization_social'
+  ].join(' ');
+
+  const config = socialAuth.getProviderConfig('linkedin');
+  assert.deepEqual(config.scopes, [
+    'r_basicprofile',
+    'r_organization_followers',
+    'w_member_social',
+    'w_organization_social'
+  ]);
+});
+
 test('builds Google provider config with broad API scopes and offline OAuth params', () => {
   const config = socialAuth.getProviderConfig('google');
   assert.equal(config.id, 'google');

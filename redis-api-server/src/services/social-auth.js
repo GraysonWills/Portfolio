@@ -48,6 +48,7 @@ const PROVIDERS = {
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
     scopes: ['openid', 'profile', 'email', 'r_profile_basicinfo', 'w_member_social'],
+    scopeEnv: ['SOCIAL_LINKEDIN_SCOPES'],
     pkce: false
   },
   facebook: {
@@ -960,7 +961,11 @@ async function fetchAccountLabel(config, accessToken) {
   if (!accessToken) return '';
   let url = '';
   if (config.family === 'x') url = 'https://api.twitter.com/2/users/me?user.fields=username';
-  if (config.family === 'linkedin') url = 'https://api.linkedin.com/v2/userinfo';
+  if (config.family === 'linkedin') {
+    url = config.scopes.includes('openid')
+      ? 'https://api.linkedin.com/v2/userinfo'
+      : 'https://api.linkedin.com/v2/me';
+  }
   if (config.family === 'meta') url = 'https://graph.facebook.com/v22.0/me?fields=id,name';
   if (config.family === 'instagram') url = 'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name';
   if (config.family === 'threads') url = 'https://graph.threads.net/v1.0/me?fields=id,username,name';
@@ -982,7 +987,10 @@ async function fetchAccountLabel(config, accessToken) {
   });
 
   if (config.family === 'x') return payload?.data?.username ? `@${payload.data.username}` : '';
-  if (config.family === 'linkedin') return payload?.name || payload?.email || '';
+  if (config.family === 'linkedin') {
+    return payload?.name || payload?.email
+      || [payload?.localizedFirstName, payload?.localizedLastName].filter(Boolean).join(' ');
+  }
   if (config.family === 'meta') return payload?.name || '';
   if (config.family === 'instagram') return payload?.username ? `@${payload.username}` : payload?.name || '';
   if (config.family === 'threads') return payload?.username ? `@${payload.username}` : payload?.name || '';
@@ -1046,15 +1054,29 @@ async function fetchProviderProfile(config, accessToken) {
   }
 
   if (config.family === 'linkedin') {
-    const payload = await fetchJson('https://api.linkedin.com/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
+    const usesOpenId = config.scopes.includes('openid');
+    const payload = await fetchJson(
+      usesOpenId ? 'https://api.linkedin.com/v2/userinfo' : 'https://api.linkedin.com/v2/me',
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      }
+    );
+    const name = payload?.name || payload?.email
+      || [payload?.localizedFirstName, payload?.localizedLastName].filter(Boolean).join(' ');
+    const vanityName = String(payload?.vanityName || '');
     return {
-      id: String(payload?.sub || ''),
-      label: String(payload?.name || payload?.email || 'LinkedIn profile'),
-      handle: payload?.email ? String(payload.email) : '',
+      id: String(payload?.sub || payload?.id || ''),
+      label: String(name || 'LinkedIn profile'),
+      handle: payload?.email ? String(payload.email) : vanityName,
       platform: config.id,
-      picture: payload?.picture || ''
+      picture: payload?.picture || '',
+      extra: {
+        vanityName,
+        profileUrl: vanityName ? `https://www.linkedin.com/in/${vanityName}` : ''
+      }
     };
   }
 

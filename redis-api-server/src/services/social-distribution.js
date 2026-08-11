@@ -730,109 +730,239 @@ async function postToX(credential, delivery) {
   };
 }
 
-async function postToLinkedIn(credential, delivery) {
-  const accessToken = assertAccessToken(credential);
+const DEFAULT_LINKEDIN_API_VERSION = '202607';
+
+function linkedInApiVersion() {
+  const value = String(process.env.SOCIAL_LINKEDIN_API_VERSION || DEFAULT_LINKEDIN_API_VERSION).trim();
+  if (!/^20\d{4}$/.test(value)) {
+    throw new Error('SOCIAL_LINKEDIN_API_VERSION must use LinkedIn YYYYMM format');
+  }
+  return value;
+}
+
+function linkedInApiHeaders(accessToken) {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'Linkedin-Version': linkedInApiVersion(),
+    'X-Restli-Protocol-Version': '2.0.0'
+  };
+}
+
+function linkedInMentions(delivery) {
+  const caption = String(delivery.caption || '');
+  const characters = Array.from(caption);
+  const raw = delivery.providerOptions?.linkedin?.mentions;
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > 50) {
+    throw new Error('LinkedIn mentions must be an array containing at most 50 entries');
+  }
+  const mentions = raw.map((item) => {
+    const entityType = String(item?.entityType || item?.entity_type || '');
+    const urn = String(item?.urn || '').trim();
+    const displayText = String(item?.displayText || item?.display_text || '');
+    const start = Number(item?.start);
+    const length = Number(item?.length);
+    if (!['person', 'organization'].includes(entityType)) {
+      throw new Error('LinkedIn mention entityType must be person or organization');
+    }
+    const expectedPrefix = `urn:li:${entityType}:`;
+    const identifier = urn.startsWith(expectedPrefix) ? urn.slice(expectedPrefix.length) : '';
+    if (!identifier || (entityType === 'organization' && !/^\d+$/.test(identifier))) {
+      throw new Error(`LinkedIn ${entityType} mention has an invalid URN`);
+    }
+    if (!Number.isInteger(start) || start < 0 || !Number.isInteger(length) || length <= 0) {
+      throw new Error('LinkedIn mention ranges must use non-negative code-point offsets');
+    }
+    const visible = characters.slice(start, start + length).join('');
+    if (visible !== displayText || start + length > characters.length) {
+      throw new Error(`LinkedIn mention no longer matches ${JSON.stringify(displayText)} in the caption`);
+    }
+    return { entityType, urn, displayText, start, length };
+  }).sort((left, right) => left.start - right.start);
+  let previousEnd = 0;
+  return mentions.map((mention) => {
+    if (mention.start < previousEnd) throw new Error('LinkedIn mentions cannot overlap');
+    previousEnd = mention.start + mention.length;
+    return mention;
+  });
+}
+
+function linkedInCommentary(delivery) {
+  const characters = Array.from(String(delivery.caption || ''));
+  const mentions = linkedInMentions(delivery);
+  if (!mentions.length) return characters.join('');
+  const parts = [];
+  let cursor = 0;
+  for (const mention of mentions) {
+    parts.push(characters.slice(cursor, mention.start).join(''));
+    parts.push(`@[${mention.displayText}](${mention.urn})`);
+    cursor = mention.start + mention.length;
+  }
+  parts.push(characters.slice(cursor).join(''));
+  return parts.join('');
+}
+
+function linkedInAuthorUrn(credential, delivery) {
+  const requested = String(
+    delivery.providerOptions?.linkedin?.authorUrn
+    || delivery.providerOptions?.linkedin?.author_urn
+    || ''
+  ).trim();
+  if (requested) {
+    const validPerson = /^urn:li:person:[A-Za-z0-9_-]+$/.test(requested);
+    const validOrganization = /^urn:li:organization:\d+$/.test(requested);
+    if (!validPerson && !validOrganization) {
+      throw new Error('LinkedIn authorUrn must be a person or organization URN');
+    }
+    return requested;
+  }
   const personId = credential.accountId || credential.account?.id;
   if (!personId) throw new Error('LinkedIn profile id is missing');
-  const author = `urn:li:person:${personId}`;
-  const mediaUrl = String(delivery.mediaUrl || '').trim();
-  const isVideo = /\.mp4(?:$|[?#])/i.test(mediaUrl);
-  const mediaKind = isVideo ? 'video' : 'image';
-  const mediaCategory = isVideo ? 'VIDEO' : 'IMAGE';
-  let mediaAsset = '';
+  return `urn:li:person:${personId}`;
+}
 
-  if (/^https?:\/\//i.test(mediaUrl)) {
-    const registered = await fetchJson('https://api.linkedin.com/v2/assets?action=registerUpload', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-Restli-Protocol-Version': '2.0.0'
-      },
-      body: JSON.stringify({
-        registerUploadRequest: {
-          recipes: [`urn:li:digitalmediaRecipe:feedshare-${mediaKind}`],
-          owner: author,
-          serviceRelationships: [
-            {
-              relationshipType: 'OWNER',
-              identifier: 'urn:li:userGeneratedContent'
-            }
-          ]
-        }
-      })
-    });
-    const uploadMechanism = registered?.value?.uploadMechanism
-      ?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'];
-    const uploadUrl = String(uploadMechanism?.uploadUrl || '');
-    mediaAsset = String(registered?.value?.asset || '');
-    if (!uploadUrl || !mediaAsset) throw new Error(`LinkedIn did not provide a ${mediaKind} upload target`);
-
-    const mediaResponse = await fetch(mediaUrl);
-    if (!mediaResponse.ok) throw new Error(`Unable to download LinkedIn ${mediaKind} (HTTP ${mediaResponse.status})`);
-    const contentType = String(mediaResponse.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
-    const allowedContentTypes = isVideo
-      ? ['video/mp4']
-      : ['image/jpeg', 'image/png', 'image/gif'];
-    if (!allowedContentTypes.includes(contentType)) {
-      throw new Error(isVideo
-        ? 'LinkedIn video must be MP4'
-        : 'LinkedIn image must be JPEG, PNG, or GIF');
-    }
-    const maximumBytes = (isVideo ? 500 : 10) * 1024 * 1024;
-    const contentLength = Number(mediaResponse.headers?.get?.('content-length') || 0);
-    if (contentLength > maximumBytes) {
-      throw new Error(`LinkedIn ${mediaKind} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
-    }
-    const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
-    if (!mediaBuffer.length) throw new Error(`LinkedIn ${mediaKind} download was empty`);
-    if (mediaBuffer.length > maximumBytes) {
-      throw new Error(`LinkedIn ${mediaKind} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
-    }
-
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': contentType
-      },
-      body: mediaBuffer
-    });
-    if (!uploadResponse.ok) {
-      const details = await uploadResponse.text().catch(() => '');
-      throw new Error(details || `LinkedIn ${mediaKind} upload failed (HTTP ${uploadResponse.status})`);
-    }
+async function downloadLinkedInMedia(mediaUrl) {
+  const mediaResponse = await fetch(mediaUrl);
+  if (!mediaResponse.ok) {
+    throw new Error(`Unable to download LinkedIn media (HTTP ${mediaResponse.status})`);
   }
+  const contentType = String(mediaResponse.headers?.get?.('content-type') || '')
+    .split(';')[0].trim().toLowerCase();
+  const isVideo = contentType === 'video/mp4';
+  const allowedContentTypes = isVideo
+    ? ['video/mp4']
+    : ['image/jpeg', 'image/png', 'image/gif'];
+  if (!allowedContentTypes.includes(contentType)) {
+    throw new Error('LinkedIn media must be an MP4 video or JPEG, PNG, or GIF image');
+  }
+  const maximumBytes = (isVideo ? 500 : 10) * 1024 * 1024;
+  const contentLength = Number(mediaResponse.headers?.get?.('content-length') || 0);
+  if (contentLength > maximumBytes) {
+    throw new Error(`LinkedIn ${isVideo ? 'video' : 'image'} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
+  }
+  const buffer = Buffer.from(await mediaResponse.arrayBuffer());
+  if (!buffer.length) throw new Error(`LinkedIn ${isVideo ? 'video' : 'image'} download was empty`);
+  if (buffer.length > maximumBytes) {
+    throw new Error(`LinkedIn ${isVideo ? 'video' : 'image'} exceeds the ${isVideo ? '500' : '10'} MB upload limit`);
+  }
+  return { buffer, contentType, isVideo };
+}
 
-  const response = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+async function uploadLinkedInImage(accessToken, author, media) {
+  const initialized = await fetchJson('https://api.linkedin.com/rest/images?action=initializeUpload', {
     method: 'POST',
+    headers: linkedInApiHeaders(accessToken),
+    body: JSON.stringify({ initializeUploadRequest: { owner: author } })
+  });
+  const uploadUrl = String(initialized?.value?.uploadUrl || '');
+  const imageUrn = String(initialized?.value?.image || '');
+  if (!uploadUrl || !imageUrn) throw new Error('LinkedIn did not provide an image upload target');
+  const uploaded = await fetch(uploadUrl, {
+    method: 'PUT',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'X-Restli-Protocol-Version': '2.0.0'
+      'Content-Type': media.contentType
     },
+    body: media.buffer
+  });
+  if (!uploaded.ok) {
+    const details = await uploaded.text().catch(() => '');
+    throw new Error(details || `LinkedIn image upload failed (HTTP ${uploaded.status})`);
+  }
+  return imageUrn;
+}
+
+async function uploadLinkedInVideo(accessToken, author, media) {
+  const initialized = await fetchJson('https://api.linkedin.com/rest/videos?action=initializeUpload', {
+    method: 'POST',
+    headers: linkedInApiHeaders(accessToken),
+    body: JSON.stringify({
+      initializeUploadRequest: {
+        owner: author,
+        fileSizeBytes: media.buffer.length,
+        uploadCaptions: false,
+        uploadThumbnail: false
+      }
+    })
+  });
+  const value = initialized?.value || {};
+  const videoUrn = String(value.video || '');
+  const uploadToken = String(value.uploadToken || '');
+  const instructions = Array.isArray(value.uploadInstructions) ? value.uploadInstructions : [];
+  if (!videoUrn || !instructions.length) throw new Error('LinkedIn did not provide a video upload target');
+
+  const uploadedPartIds = [];
+  for (const instruction of instructions) {
+    const uploadUrl = String(instruction?.uploadUrl || '');
+    const firstByte = Number(instruction?.firstByte);
+    const lastByte = Math.min(Number(instruction?.lastByte), media.buffer.length - 1);
+    if (!uploadUrl || !Number.isInteger(firstByte) || !Number.isInteger(lastByte)
+      || firstByte < 0 || lastByte < firstByte || firstByte >= media.buffer.length) {
+      throw new Error('LinkedIn returned invalid video upload instructions');
+    }
+    const uploaded = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: media.buffer.subarray(firstByte, lastByte + 1)
+    });
+    if (!uploaded.ok) {
+      const details = await uploaded.text().catch(() => '');
+      throw new Error(details || `LinkedIn video upload failed (HTTP ${uploaded.status})`);
+    }
+    const partId = String(uploaded.headers?.get?.('etag') || '');
+    if (!partId) throw new Error('LinkedIn video upload response did not include an ETag');
+    uploadedPartIds.push(partId);
+  }
+
+  await fetchJson('https://api.linkedin.com/rest/videos?action=finalizeUpload', {
+    method: 'POST',
+    headers: linkedInApiHeaders(accessToken),
+    body: JSON.stringify({
+      finalizeUploadRequest: { video: videoUrn, uploadToken, uploadedPartIds }
+    })
+  });
+  return videoUrn;
+}
+
+async function postToLinkedIn(credential, delivery) {
+  const accessToken = assertAccessToken(credential);
+  const author = linkedInAuthorUrn(credential, delivery);
+  const mediaUrl = String(delivery.mediaUrl || '').trim();
+  let mediaUrn = '';
+  let isVideo = false;
+
+  if (/^https?:\/\//i.test(mediaUrl)) {
+    const media = await downloadLinkedInMedia(mediaUrl);
+    isVideo = media.isVideo;
+    mediaUrn = isVideo
+      ? await uploadLinkedInVideo(accessToken, author, media)
+      : await uploadLinkedInImage(accessToken, author, media);
+  }
+
+  const title = String(delivery.title || (isVideo ? 'LinkedIn video' : 'LinkedIn image'));
+  const response = await fetch('https://api.linkedin.com/rest/posts', {
+    method: 'POST',
+    headers: linkedInApiHeaders(accessToken),
     body: JSON.stringify({
       author,
-      lifecycleState: 'PUBLISHED',
-      specificContent: {
-        'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: delivery.caption },
-          shareMediaCategory: mediaAsset ? mediaCategory : 'NONE',
-          ...(mediaAsset ? {
-            media: [
-              {
-                status: 'READY',
-                description: { text: String(delivery.title || `LinkedIn ${mediaKind}`) },
-                media: mediaAsset,
-                title: { text: String(delivery.title || `LinkedIn ${mediaKind}`) }
-              }
-            ]
-          } : {})
-        }
+      commentary: linkedInCommentary(delivery),
+      visibility: 'PUBLIC',
+      distribution: {
+        feedDistribution: 'MAIN_FEED',
+        targetEntities: [],
+        thirdPartyDistributionChannels: []
       },
-      visibility: {
-        'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'
-      }
+      ...(mediaUrn ? {
+        content: {
+          media: {
+            id: mediaUrn,
+            ...(isVideo ? { title } : { altText: title })
+          }
+        }
+      } : {}),
+      lifecycleState: 'PUBLISHED',
+      isReshareDisabledByAuthor: false
     })
   });
 
@@ -851,7 +981,10 @@ async function postToLinkedIn(credential, delivery) {
   }
 
   const id = String(response.headers?.get?.('x-restli-id') || payload?.id || '');
-  return { providerPostId: id, providerPostUrl: '' };
+  return {
+    providerPostId: id,
+    providerPostUrl: id ? `https://www.linkedin.com/feed/update/${id}` : ''
+  };
 }
 
 async function postToFacebook(credential, delivery) {
@@ -1655,6 +1788,13 @@ module.exports = {
   __private: {
     claimDeliveryForSend,
     postToX,
+    linkedInApiVersion,
+    linkedInMentions,
+    linkedInCommentary,
+    linkedInAuthorUrn,
+    downloadLinkedInMedia,
+    uploadLinkedInImage,
+    uploadLinkedInVideo,
     postToLinkedIn,
     postToInstagram,
     postToTikTok,

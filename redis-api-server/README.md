@@ -122,7 +122,23 @@ The callback URLs to register with each provider app are:
 
 X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are `tweet.read`, `tweet.write`, `users.read`, `dm.read`, `dm.write`, and `offline.access`. The short-lived X access token is renewed server-side with the stored encrypted refresh token before status checks and posting. Direct Message scopes are only credential capability at this point: the platform does not auto-send DMs, and any future DM send/read tooling should remain behind explicit UI and approval controls.
 
-LinkedIn uses OAuth 2.0 with OpenID Connect profile scopes plus member posting. The requested scopes are `openid`, `profile`, `email`, `r_profile_basicinfo`, and `w_member_social`. `w_member_social` enables personal-profile posting. `r_profile_basicinfo` is used only for richer basic profile metadata where LinkedIn makes it available; reading historical member posts still requires restricted LinkedIn permissions such as `r_member_social`.
+LinkedIn uses OAuth 2.0 and publishes through the versioned Posts, Images, and
+Videos APIs. The default self-service connection requests `openid`, `profile`,
+`email`, `r_profile_basicinfo`, and `w_member_social` for personal-profile
+posting. Set `SOCIAL_LINKEDIN_API_VERSION` to a supported `YYYYMM` Marketing API
+version when rolling the monthly API version; the current default is `202607`.
+
+After the Community Management app is approved, set
+`SOCIAL_LINKEDIN_SCOPES="r_basicprofile r_organization_followers w_member_social w_organization_social"`,
+install that app's client ID and secret, and reconnect LinkedIn so the stored
+token contains the new grants. `r_organization_followers` enables the restricted
+People Typeahead lookup used to discover member URNs for mentions;
+`w_organization_social` enables Page-authored posts. The delivery contract may
+set `providerOptions.linkedin.authorUrn` to a verified Page URN such as
+`urn:li:organization:130413923`; otherwise publishing continues from the
+connected personal profile. Mention anchors in
+`providerOptions.linkedin.mentions` are validated against the approved caption
+and serialized into LinkedIn commentary annotations at send time.
 
 Instagram uses Instagram API with Instagram Login. Register the Instagram callback URL in the Instagram product OAuth settings and grant at least `instagram_business_basic` and `instagram_business_content_publish` for creator/business publishing.
 
@@ -315,6 +331,8 @@ Production resources:
 | `SOCIAL_AUTH_ALLOWED_RETURN_ORIGINS` | optional comma-separated return URL allowlist |
 | `SOCIAL_X_CLIENT_ID` / `SOCIAL_X_CLIENT_SECRET` | X/Twitter OAuth app credentials |
 | `SOCIAL_LINKEDIN_CLIENT_ID` / `SOCIAL_LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth app credentials |
+| `SOCIAL_LINKEDIN_SCOPES` | optional whitespace/comma-separated LinkedIn OAuth scopes; use the Community Management grants only after approval |
+| `SOCIAL_LINKEDIN_API_VERSION` | optional LinkedIn Marketing API `YYYYMM` version; defaults to `202607` |
 | `SOCIAL_META_CLIENT_ID` / `SOCIAL_META_CLIENT_SECRET` | Meta app credentials for Facebook Page OAuth |
 | `SOCIAL_INSTAGRAM_CLIENT_ID` / `SOCIAL_INSTAGRAM_CLIENT_SECRET` | Instagram App credentials for direct Instagram Login |
 | `SOCIAL_THREADS_CLIENT_ID` / `SOCIAL_THREADS_CLIENT_SECRET` | Threads OAuth app credentials |

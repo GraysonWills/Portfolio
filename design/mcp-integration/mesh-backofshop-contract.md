@@ -25,6 +25,21 @@ Required inputs:
 Optional media and link fields are part of the idempotency payload. Reusing a
 key with changed content is a `409` error.
 
+For LinkedIn, `providerOptions.linkedin` accepts:
+
+- `mentions`: zero or more exact `{ entityType, urn, displayText, start,
+  length }` anchors. Offsets are Unicode code points in the approved plain-text
+  caption. The back-of-shop revalidates every range and converts it to the
+  Posts API commentary annotation syntax immediately before publishing.
+- `authorUrn`: an optional `urn:li:person:…` or `urn:li:organization:…` author.
+  When omitted, the connected member profile remains the author. Organization
+  authors require an OAuth token with `w_organization_social` and a LinkedIn
+  Page role accepted by the API.
+
+The provider adapter uses LinkedIn's versioned `/rest/posts`, `/rest/images`,
+and `/rest/videos` APIs. `SOCIAL_LINKEDIN_API_VERSION` controls the required
+`Linkedin-Version` header and defaults to `202607`.
+
 The back-of-shop derives one deterministic delivery ID from MCP client, tool,
 and idempotency key. DynamoDB conditionally creates that delivery record before
 the provider call, then conditionally moves it to `sending`. Consequently:

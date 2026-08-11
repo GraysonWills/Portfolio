@@ -177,21 +177,6 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
     if (calls.length === 1) {
       return {
         ok: true,
-        text: async () => JSON.stringify({
-          value: {
-            uploadMechanism: {
-              'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest': {
-                uploadUrl: 'https://media-upload.example.test/image'
-              }
-            },
-            asset: 'urn:li:digitalmediaAsset:image-1'
-          }
-        })
-      };
-    }
-    if (calls.length === 2) {
-      return {
-        ok: true,
         headers: {
           get: (name) => ({
             'content-type': 'image/jpeg',
@@ -199,6 +184,17 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
           }[String(name).toLowerCase()] || null)
         },
         arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
+      };
+    }
+    if (calls.length === 2) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          value: {
+            uploadUrl: 'https://media-upload.example.test/image',
+            image: 'urn:li:image:image-1'
+          }
+        })
       };
     }
     if (calls.length === 3) {
@@ -220,23 +216,58 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
     accountId: 'person-1',
     token: { access_token: 'linkedin-token' }
   }, {
-    caption: 'I have been publishing to my blog.',
+    caption: 'Built 😀 with OpenAI.',
     title: "Want It, Don't Need It",
-    mediaUrl: 'https://images.example.test/cover.jpg'
+    mediaUrl: 'https://images.example.test/cover.jpg',
+    providerOptions: {
+      linkedin: {
+        mentions: [{
+          entityType: 'organization',
+          urn: 'urn:li:organization:12345',
+          displayText: 'OpenAI',
+          start: 13,
+          length: 6
+        }]
+      }
+    }
   });
 
   assert.equal(result.providerPostId, 'ugc-post-1');
+  assert.equal(result.providerPostUrl, 'https://www.linkedin.com/feed/update/ugc-post-1');
   assert.equal(calls.length, 4);
-  assert.equal(calls[0].url, 'https://api.linkedin.com/v2/assets?action=registerUpload');
-  assert.equal(calls[1].url, 'https://images.example.test/cover.jpg');
+  assert.equal(calls[0].url, 'https://images.example.test/cover.jpg');
+  assert.equal(calls[1].url, 'https://api.linkedin.com/rest/images?action=initializeUpload');
   assert.equal(calls[2].url, 'https://media-upload.example.test/image');
   assert.equal(calls[2].options.method, 'PUT');
-  assert.equal(calls[3].url, 'https://api.linkedin.com/v2/ugcPosts');
+  assert.equal(calls[3].url, 'https://api.linkedin.com/rest/posts');
+  assert.equal(calls[1].options.headers['Linkedin-Version'], '202607');
+  assert.equal(calls[3].options.headers['Linkedin-Version'], '202607');
   const postBody = JSON.parse(calls[3].options.body);
-  const share = postBody.specificContent['com.linkedin.ugc.ShareContent'];
   assert.equal(postBody.author, 'urn:li:person:person-1');
-  assert.equal(share.shareMediaCategory, 'IMAGE');
-  assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:image-1');
+  assert.equal(postBody.commentary, 'Built 😀 with @[OpenAI](urn:li:organization:12345).');
+  assert.equal(postBody.content.media.id, 'urn:li:image:image-1');
+  assert.equal(postBody.content.media.altText, "Want It, Don't Need It");
+  assert.deepEqual(postBody.distribution, {
+    feedDistribution: 'MAIN_FEED',
+    targetEntities: [],
+    thirdPartyDistributionChannels: []
+  });
+});
+
+test('rejects stale or overlapping LinkedIn mention anchors before publishing', () => {
+  assert.throws(
+    () => socialDistribution.__private.linkedInCommentary({
+      caption: 'Hello OpenAI',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'organization',
+        urn: 'urn:li:organization:12345',
+        displayText: 'OpenAI',
+        start: 5,
+        length: 6
+      }] } }
+    }),
+    /no longer matches/
+  );
 });
 
 test('uploads an MP4 before creating a LinkedIn personal-profile video post', async (t) => {
@@ -251,21 +282,6 @@ test('uploads an MP4 before creating a LinkedIn personal-profile video post', as
     if (calls.length === 1) {
       return {
         ok: true,
-        text: async () => JSON.stringify({
-          value: {
-            uploadMechanism: {
-              'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest': {
-                uploadUrl: 'https://media-upload.example.test/video'
-              }
-            },
-            asset: 'urn:li:digitalmediaAsset:video-1'
-          }
-        })
-      };
-    }
-    if (calls.length === 2) {
-      return {
-        ok: true,
         headers: {
           get: (name) => ({
             'content-type': 'video/mp4',
@@ -275,10 +291,35 @@ test('uploads an MP4 before creating a LinkedIn personal-profile video post', as
         arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
       };
     }
+    if (calls.length === 2) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          value: {
+            video: 'urn:li:video:video-1',
+            uploadToken: 'upload-token',
+            uploadInstructions: [{
+              uploadUrl: 'https://media-upload.example.test/video',
+              firstByte: 0,
+              lastByte: 3
+            }]
+          }
+        })
+      };
+    }
     if (calls.length === 3) {
       return {
         ok: true,
+        headers: {
+          get: (name) => String(name).toLowerCase() === 'etag' ? 'video-part-1' : null
+        },
         text: async () => ''
+      };
+    }
+    if (calls.length === 4) {
+      return {
+        ok: true,
+        text: async () => '{}'
       };
     }
     return {
@@ -300,19 +341,38 @@ test('uploads an MP4 before creating a LinkedIn personal-profile video post', as
   });
 
   assert.equal(result.providerPostId, 'ugc-video-post-1');
-  assert.equal(calls.length, 4);
-  const registerBody = JSON.parse(calls[0].options.body);
-  assert.deepEqual(
-    registerBody.registerUploadRequest.recipes,
-    ['urn:li:digitalmediaRecipe:feedshare-video']
-  );
-  assert.equal(calls[1].url, 'https://cdn.example.test/focus-locker.mp4');
+  assert.equal(result.providerPostUrl, 'https://www.linkedin.com/feed/update/ugc-video-post-1');
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0].url, 'https://cdn.example.test/focus-locker.mp4');
+  assert.equal(calls[1].url, 'https://api.linkedin.com/rest/videos?action=initializeUpload');
+  const initializeBody = JSON.parse(calls[1].options.body);
+  assert.equal(initializeBody.initializeUploadRequest.fileSizeBytes, 4);
   assert.equal(calls[2].url, 'https://media-upload.example.test/video');
-  assert.equal(calls[2].options.headers['Content-Type'], 'video/mp4');
-  const postBody = JSON.parse(calls[3].options.body);
-  const share = postBody.specificContent['com.linkedin.ugc.ShareContent'];
-  assert.equal(share.shareMediaCategory, 'VIDEO');
-  assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:video-1');
+  assert.equal(calls[2].options.headers['Content-Type'], 'application/octet-stream');
+  assert.equal(calls[3].url, 'https://api.linkedin.com/rest/videos?action=finalizeUpload');
+  const finalizeBody = JSON.parse(calls[3].options.body);
+  assert.deepEqual(finalizeBody.finalizeUploadRequest.uploadedPartIds, ['video-part-1']);
+  assert.equal(calls[4].url, 'https://api.linkedin.com/rest/posts');
+  const postBody = JSON.parse(calls[4].options.body);
+  assert.equal(postBody.content.media.id, 'urn:li:video:video-1');
+  assert.equal(postBody.content.media.title, 'Focus Locker');
+});
+
+test('supports an explicit organization author for Community Management posting', () => {
+  assert.equal(
+    socialDistribution.__private.linkedInAuthorUrn(
+      { accountId: 'person-1' },
+      { providerOptions: { linkedin: { authorUrn: 'urn:li:organization:130413923' } } }
+    ),
+    'urn:li:organization:130413923'
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInAuthorUrn(
+      { accountId: 'person-1' },
+      { providerOptions: { linkedin: { authorUrn: 'urn:li:organization:not-an-id' } } }
+    ),
+    /person or organization URN/
+  );
 });
 
 function instagramGraphMock(calls, { permalink = 'https://www.instagram.com/p/ABC123/' } = {}) {
