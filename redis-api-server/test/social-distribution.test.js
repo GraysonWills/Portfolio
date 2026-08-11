@@ -259,7 +259,7 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
   }]);
 });
 
-test('rejects stale or overlapping LinkedIn mention anchors before publishing', () => {
+test('rejects invalid LinkedIn mention metadata before publishing', () => {
   assert.throws(
     () => socialDistribution.__private.linkedInMentionAttributes({
       caption: 'Hello OpenAI',
@@ -272,6 +272,54 @@ test('rejects stale or overlapping LinkedIn mention anchors before publishing', 
       }] } }
     }),
     /no longer matches/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: 'Hello OpenAI',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'organization',
+        urn: 'urn:li:organization:not-numeric',
+        displayText: 'OpenAI',
+        start: 6,
+        length: 6
+      }] } }
+    }),
+    /invalid URN/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: '',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'person',
+        urn: 'urn:li:person:jane',
+        displayText: 'Jane',
+        start: 0,
+        length: 4
+      }] } }
+    }),
+    /no longer matches/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: 'OpenAI',
+      providerOptions: { linkedin: { mentions: [
+        {
+          entityType: 'organization',
+          urn: 'urn:li:organization:12345',
+          displayText: 'OpenAI',
+          start: 0,
+          length: 6
+        },
+        {
+          entityType: 'person',
+          urn: 'urn:li:person:open',
+          displayText: 'Open',
+          start: 0,
+          length: 4
+        }
+      ] } }
+    }),
+    /cannot overlap/
   );
 });
 

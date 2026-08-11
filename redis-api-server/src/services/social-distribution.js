@@ -11,6 +11,7 @@ const POSTING_PROVIDERS = new Set([
   'x', 'linkedin', 'facebook', 'instagram', 'threads', 'tiktok', 'reddit',
   'pinterest', 'mastodon', 'tumblr', 'medium', 'google', 'discord'
 ]);
+const MAX_LINKEDIN_MENTIONS = 50;
 
 function getTableName() {
   return String(
@@ -735,8 +736,8 @@ function linkedInMentionAttributes(delivery) {
   const characters = Array.from(caption);
   const raw = delivery.providerOptions?.linkedin?.mentions;
   if (raw == null) return [];
-  if (!Array.isArray(raw) || raw.length > 50) {
-    throw new Error('LinkedIn mentions must be an array containing at most 50 entries');
+  if (!Array.isArray(raw) || raw.length > MAX_LINKEDIN_MENTIONS) {
+    throw new Error(`LinkedIn mentions must be an array containing at most ${MAX_LINKEDIN_MENTIONS} entries`);
   }
   const mentions = raw.map((item) => {
     const entityType = String(item?.entityType || item?.entity_type || '');

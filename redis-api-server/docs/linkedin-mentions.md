@@ -27,7 +27,19 @@ The caption itself contains the visible entity name without an `@` prefix.
 
 The service also accepts snake-case `entity_type` and `display_text` for
 compatibility. Ranges use Unicode code points, not JavaScript UTF-16 code
-units. Before any provider request, the service rejects:
+units.
+
+| Field | Required format |
+| --- | --- |
+| `entityType` | `organization` or `person` |
+| `urn` | `urn:li:organization:<numeric-id>` or `urn:li:person:<id>` |
+| `displayText` | Exact caption substring; no `@` is added |
+| `start` | Non-negative integer code-point offset |
+| `length` | Positive integer code-point length |
+
+For example, an organization URN ending in a vanity slug, a range that starts
+one character before `OpenAI`, or a display value absent from the caption is
+invalid. Before any provider request, the service rejects:
 
 - more than 50 mentions;
 - entity types other than `person` or `organization`;
