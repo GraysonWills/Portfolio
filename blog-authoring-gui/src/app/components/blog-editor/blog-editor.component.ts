@@ -99,6 +99,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
   private cleanupHotkeys: (() => void) | null = null;
   private socialAutomationSettings: SocialAutomationSettings | null = null;
   private linkedSocialAutomation: LinkedBlogSocialAutomation | null = null;
+  private postSignatureSnapshot: BlogSignature | null = null;
   private draftChangesSubscription: Subscription | null = null;
   private nativeAppStateSubscription: Subscription | null = null;
   private draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -176,6 +177,10 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
    * Load initial data for editing
    */
   private loadInitialData(): void {
+    this.postSignatureSnapshot = this.normalizePostSignature(
+      this.initialData.signatureSnapshot,
+      this.initialData.signatureId
+    );
     this.linkedSocialAutomation = this.normalizeLinkedSocialAutomation(
       this.initialData.socialAutomation
     );
@@ -188,7 +193,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       publishDate: this.initialData.publishDate || new Date(),
       status: this.initialData.status || 'published',
       category: this.initialData.category || '',
-      signatureId: this.initialData.signatureId || this.initialData.signatureSnapshot?.id || '',
+      signatureId: this.postSignatureSnapshot?.id || this.initialData.signatureId || '',
       socialCopy: this.linkedSocialAutomation?.copy || {},
       sendEmailUpdate: this.initialData.sendEmailUpdate ?? true
     });
@@ -203,7 +208,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
     this.publicTags = this.normalizeTagList(this.initialData.tags || []);
     this.privateSeoTags = this.normalizeTagList(this.initialData.privateSeoTags || []);
     this.uploadedImage = this.initialData.image || null;
-    this.draftSignatureName = this.initialData.signatureSnapshot?.signOffName || 'Grayson Wills';
+    this.draftSignatureName = this.postSignatureSnapshot?.signOffName || 'Grayson Wills';
   }
 
   onPublicTagInputChange(value: string): void {
@@ -550,7 +555,12 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       label: `${sig.label}${this.signatureSettings.defaultSignatureId === sig.id ? ' (Default)' : ''}`,
       value: sig.id
     }));
-    return [{ label: 'Use default signature', value: '' }, ...options];
+    const hasPostSnapshot = this.postSignatureSnapshot
+      && !options.some((option) => option.value === this.postSignatureSnapshot?.id);
+    const postOption = hasPostSnapshot
+      ? [{ label: `${this.postSignatureSnapshot!.label} (This post)`, value: this.postSignatureSnapshot!.id }]
+      : [];
+    return [{ label: 'Use default signature', value: '' }, ...postOption, ...options];
   }
 
   getLibrarySignatureOptions(): Array<{ label: string; value: string; quote: string; quoteAuthor: string; isDefault: boolean }> {
@@ -574,10 +584,9 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
 
   getSelectedSignature(): BlogSignature | null {
     const signatures = this.signatureSettings.signatures || [];
-    if (!signatures.length) return null;
-
     const selectedId = String(this.blogForm.get('signatureId')?.value || '').trim();
     if (selectedId) {
+      if (this.postSignatureSnapshot?.id === selectedId) return this.postSignatureSnapshot;
       const selected = signatures.find((sig) => sig.id === selectedId);
       if (selected) return selected;
     }
@@ -1192,7 +1201,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         this.signatureSettings = settings;
 
         const existingSelection = String(this.blogForm.get('signatureId')?.value || '').trim();
-        const initialSelection = String(this.initialData?.signatureId || this.initialData?.signatureSnapshot?.id || '').trim();
+        const initialSelection = String(this.postSignatureSnapshot?.id || this.initialData?.signatureId || '').trim();
         const defaultSelection = settings.defaultSignatureId || settings.signatures?.[0]?.id || '';
         const nextSelection = existingSelection || initialSelection || defaultSelection;
 
@@ -1202,10 +1211,41 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
       error: () => {
         this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
         const fallbackSelection = this.signatureSettings.defaultSignatureId || this.signatureSettings.signatures?.[0]?.id || '';
-        this.blogForm.patchValue({ signatureId: fallbackSelection }, { emitEvent: false });
+        const existingSelection = String(this.blogForm.get('signatureId')?.value || '').trim();
+        this.blogForm.patchValue({
+          signatureId: existingSelection || this.postSignatureSnapshot?.id || fallbackSelection
+        }, { emitEvent: false });
         this.ensureLibrarySignatureSelection(fallbackSelection);
       }
     });
+  }
+
+  private normalizePostSignature(value: any, signatureId?: string): BlogSignature | null {
+    if (!value || typeof value !== 'object') return null;
+
+    const quote = String(value.quote || '').trim();
+    const quoteAuthor = String(value.quoteAuthor || '').trim()
+      || String(value.quote_author || '').trim();
+    if (!quote || !quoteAuthor) return null;
+
+    const listItemId = String(this.initialData?.listItemID || 'current')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]+/g, '-');
+    const id = String(value.id || '').trim()
+      || String(signatureId || '').trim()
+      || `post-signature-${listItemId}`;
+    const label = String(value.label || '').trim() || `Quote by ${quoteAuthor}`;
+    const signOffName = String(value.signOffName || '').trim()
+      || String(value.sign_off_name || '').trim()
+      || 'Grayson Wills';
+
+    return {
+      id,
+      label,
+      quote,
+      quoteAuthor,
+      signOffName
+    };
   }
 
   private persistSignatureSettings(settings: BlogSignatureSettings, successDetail: string): void {
