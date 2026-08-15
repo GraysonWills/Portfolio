@@ -79,6 +79,47 @@ describe('BlogEditorComponent mobile draft safety', () => {
 });
 
 describe('BlogEditorComponent post signature snapshots', () => {
+  it('ignores a null post snapshot and uses the library default', () => {
+    const librarySignature = {
+      id: 'library-default',
+      label: 'Library default',
+      quote: 'A saved quote',
+      quoteAuthor: 'Saved Author',
+      signOffName: 'Grayson Wills'
+    };
+    const component = createComponent({
+      listItemID: 'post-with-null-snapshot',
+      signatureSnapshot: null
+    }, {
+      enabled: true,
+      defaultSignatureId: librarySignature.id,
+      signatures: [librarySignature]
+    });
+
+    component.ngOnInit();
+
+    expect(component.getSelectedSignature()).toEqual(librarySignature);
+    component.ngOnDestroy();
+  });
+
+  it('ignores a malformed post snapshot instead of inventing missing quote data', () => {
+    const component = createComponent({
+      listItemID: 'post-with-malformed-snapshot',
+      signatureSnapshot: {
+        id: 'broken-snapshot',
+        quote: 'The author field is missing.'
+      }
+    });
+
+    component.ngOnInit();
+
+    expect(component.getSelectedSignature()).toBeNull();
+    expect(component.getSignatureOptions()).not.toContain(jasmine.objectContaining({
+      value: 'broken-snapshot'
+    }));
+    component.ngOnDestroy();
+  });
+
   it('preserves a Mesh signature snapshot that is not in the global library', () => {
     const component = createComponent({
       listItemID: 'mesh-blog-123',
