@@ -124,6 +124,11 @@ X/Twitter uses OAuth 2.0 Authorization Code with PKCE. The requested scopes are 
 
 LinkedIn uses OAuth 2.0 with OpenID Connect profile scopes plus member posting. The requested scopes are `openid`, `profile`, `email`, `r_profile_basicinfo`, and `w_member_social`. `w_member_social` enables personal-profile posting. `r_profile_basicinfo` is used only for richer basic profile metadata where LinkedIn makes it available; reading historical member posts still requires restricted LinkedIn permissions such as `r_member_social`.
 
+LinkedIn deliveries can include exact person or organization mentions under
+`providerOptions.linkedin.mentions`. The service validates Unicode
+code-point anchors against the final caption and emits LinkedIn UGC attributed
+entities before posting. See [LinkedIn mention delivery](docs/linkedin-mentions.md).
+
 Instagram uses Instagram API with Instagram Login. Register the Instagram callback URL in the Instagram product OAuth settings and grant at least `instagram_business_basic` and `instagram_business_content_publish` for creator/business publishing.
 
 Instagram, Threads, and Mastodon support a token-only fallback for the

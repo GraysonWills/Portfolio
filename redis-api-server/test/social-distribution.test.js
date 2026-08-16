@@ -220,9 +220,20 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
     accountId: 'person-1',
     token: { access_token: 'linkedin-token' }
   }, {
-    caption: 'I have been publishing to my blog.',
+    caption: 'Built 😀 with OpenAI.',
     title: "Want It, Don't Need It",
-    mediaUrl: 'https://images.example.test/cover.jpg'
+    mediaUrl: 'https://images.example.test/cover.jpg',
+    providerOptions: {
+      linkedin: {
+        mentions: [{
+          entityType: 'organization',
+          urn: 'urn:li:organization:12345',
+          displayText: 'OpenAI',
+          start: 13,
+          length: 6
+        }]
+      }
+    }
   });
 
   assert.equal(result.providerPostId, 'ugc-post-1');
@@ -237,6 +248,79 @@ test('uploads an image before creating a LinkedIn personal-profile post', async 
   assert.equal(postBody.author, 'urn:li:person:person-1');
   assert.equal(share.shareMediaCategory, 'IMAGE');
   assert.equal(share.media[0].media, 'urn:li:digitalmediaAsset:image-1');
+  assert.deepEqual(share.shareCommentary.attributes, [{
+    start: 13,
+    length: 6,
+    value: {
+      'com.linkedin.common.CompanyAttributedEntity': {
+        company: 'urn:li:organization:12345'
+      }
+    }
+  }]);
+});
+
+test('rejects invalid LinkedIn mention metadata before publishing', () => {
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: 'Hello OpenAI',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'organization',
+        urn: 'urn:li:organization:12345',
+        displayText: 'OpenAI',
+        start: 5,
+        length: 6
+      }] } }
+    }),
+    /no longer matches/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: 'Hello OpenAI',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'organization',
+        urn: 'urn:li:organization:not-numeric',
+        displayText: 'OpenAI',
+        start: 6,
+        length: 6
+      }] } }
+    }),
+    /invalid URN/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: '',
+      providerOptions: { linkedin: { mentions: [{
+        entityType: 'person',
+        urn: 'urn:li:person:jane',
+        displayText: 'Jane',
+        start: 0,
+        length: 4
+      }] } }
+    }),
+    /no longer matches/
+  );
+  assert.throws(
+    () => socialDistribution.__private.linkedInMentionAttributes({
+      caption: 'OpenAI',
+      providerOptions: { linkedin: { mentions: [
+        {
+          entityType: 'organization',
+          urn: 'urn:li:organization:12345',
+          displayText: 'OpenAI',
+          start: 0,
+          length: 6
+        },
+        {
+          entityType: 'person',
+          urn: 'urn:li:person:open',
+          displayText: 'Open',
+          start: 0,
+          length: 4
+        }
+      ] } }
+    }),
+    /cannot overlap/
+  );
 });
 
 test('uploads an MP4 before creating a LinkedIn personal-profile video post', async (t) => {

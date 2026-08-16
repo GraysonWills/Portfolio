@@ -12,6 +12,8 @@ This package sketches a quiet social distribution layer for the blog authoring s
 - `figma-handoff.md`: frame and implementation notes for a future Figma pass.
 - `approval-checklist.md`: review gate before production implementation.
 - `blog-authoring-improvements.md`: current-system integration notes.
+- `../../redis-api-server/docs/linkedin-mentions.md`: runtime input,
+  validation, and LinkedIn UGC serialization contract.
 
 ## Authoring App Placement
 
