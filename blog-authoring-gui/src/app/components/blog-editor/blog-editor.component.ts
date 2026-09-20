@@ -136,7 +136,7 @@ export class BlogEditorComponent implements OnInit, OnDestroy {
         mastodon: ['', [Validators.maxLength(450)]],
         threads: ['', [Validators.maxLength(450)]]
       }),
-      sendEmailUpdate: [false]
+      sendEmailUpdate: [true]
     });
     this.signatureSettings = this.blogApi.getDefaultSignatureSettings();
   }
