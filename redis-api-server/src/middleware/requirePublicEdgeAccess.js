@@ -63,12 +63,14 @@ function isAllowedPublicEdgeRoute(req) {
 
 function requirePublicEdgeAccess(req, res, next) {
   const sharedSecret = normalizeSecret(process.env.PUBLIC_EDGE_SHARED_SECRET);
-  if (!sharedSecret) {
+  const previousSharedSecret = normalizeSecret(process.env.PUBLIC_EDGE_SHARED_SECRET_PREVIOUS);
+  const acceptedSecrets = [sharedSecret, previousSharedSecret].filter(Boolean);
+  if (!acceptedSecrets.length) {
     return next();
   }
 
   const provided = normalizeSecret(req.headers['x-portfolio-edge-secret']);
-  if (provided && provided === sharedSecret) {
+  if (provided && acceptedSecrets.includes(provided)) {
     if (!req.headers.authorization && !isAllowedPublicEdgeRoute(req)) {
       return res.status(403).json({ error: 'Forbidden' });
     }

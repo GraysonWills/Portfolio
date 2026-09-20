@@ -79,6 +79,52 @@ test('allows preview session fetches through the public edge secret gate', () =>
   }
 });
 
+test('accepts the previous edge secret during a zero-downtime rotation', () => {
+  const previousCurrentSecret = process.env.PUBLIC_EDGE_SHARED_SECRET;
+  const previousRotationSecret = process.env.PUBLIC_EDGE_SHARED_SECRET_PREVIOUS;
+  process.env.PUBLIC_EDGE_SHARED_SECRET = 'new-edge-secret';
+  process.env.PUBLIC_EDGE_SHARED_SECRET_PREVIOUS = 'previous-edge-secret';
+
+  let authCalls = 0;
+  const { middleware, restore } = loadMiddlewareWithAuthStub(() => {
+    authCalls += 1;
+  });
+
+  const req = {
+    method: 'GET',
+    baseUrl: '/api/content',
+    path: '/v3/bootstrap',
+    headers: {
+      'x-portfolio-edge-secret': 'previous-edge-secret'
+    }
+  };
+  const res = createResRecorder();
+  let nextCalls = 0;
+
+  try {
+    middleware(req, res, () => {
+      nextCalls += 1;
+    });
+
+    assert.equal(nextCalls, 1);
+    assert.equal(authCalls, 0);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body, undefined);
+  } finally {
+    restore();
+    if (typeof previousCurrentSecret === 'undefined') {
+      delete process.env.PUBLIC_EDGE_SHARED_SECRET;
+    } else {
+      process.env.PUBLIC_EDGE_SHARED_SECRET = previousCurrentSecret;
+    }
+    if (typeof previousRotationSecret === 'undefined') {
+      delete process.env.PUBLIC_EDGE_SHARED_SECRET_PREVIOUS;
+    } else {
+      process.env.PUBLIC_EDGE_SHARED_SECRET_PREVIOUS = previousRotationSecret;
+    }
+  }
+});
+
 test('allows preview session fetches when only originalUrl carries the full route', () => {
   const previousSecret = process.env.PUBLIC_EDGE_SHARED_SECRET;
   process.env.PUBLIC_EDGE_SHARED_SECRET = 'preview-secret';
