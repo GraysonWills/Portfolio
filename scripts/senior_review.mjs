@@ -1,106 +1,180 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-function sh(cmd, opts = {}) {
-  return execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', ...opts }).trim();
+const ENDPOINT = 'https://api.openai.com/v1/responses';
+const EFFORTS = new Set(['low', 'medium', 'high']);
+
+function legacyModel(model) {
+  return /^gpt-4(?:o|\.|$)/.test(model);
 }
 
-function safeSh(cmd, opts = {}) {
-  try {
-    return { ok: true, out: sh(cmd, opts) };
-  } catch (err) {
-    const stderr = err?.stderr?.toString?.() ?? '';
-    return { ok: false, out: '', err: String(err?.message ?? err), stderr };
+function integerSetting(value, name, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
+  const text = String(value ?? '').trim();
+  if (!text) return fallback;
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < min || Number(text) > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`);
   }
+  return Number(text);
 }
 
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-function truncate(str, maxChars) {
-  if (str.length <= maxChars) return { text: str, truncated: false };
+export function getReviewConfig(env = process.env) {
+  const model = env.OPENAI_REVIEW_MODEL?.trim() || 'gpt-6-astra';
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(model)) throw new Error('OPENAI_REVIEW_MODEL must be a valid model identifier');
+  const legacy = legacyModel(model);
+  const effort = env.OPENAI_REVIEW_REASONING_EFFORT?.trim() || 'low';
+  if (!EFFORTS.has(effort)) throw new Error('OPENAI_REVIEW_REASONING_EFFORT must be low, medium, or high');
   return {
-    text: `${str.slice(0, maxChars)}\n\n[TRUNCATED: diff exceeded ${maxChars} characters]`,
-    truncated: true,
+    model,
+    reasoningEffort: legacy ? null : effort,
+    maxOutputTokens: integerSetting(env.OPENAI_REVIEW_MAX_TOKENS, 'OPENAI_REVIEW_MAX_TOKENS', legacy ? 1400 : 25000),
+    timeoutMs: integerSetting(env.OPENAI_REVIEW_TIMEOUT_MS, 'OPENAI_REVIEW_TIMEOUT_MS', 120000, 1, 600000),
+    maxRetries: integerSetting(env.OPENAI_REVIEW_MAX_RETRIES, 'OPENAI_REVIEW_MAX_RETRIES', 1, 0, 3),
   };
 }
 
+function sanitize(value, apiKey = '', max = 500) {
+  let text = String(value ?? '');
+  if (apiKey) text = text.split(apiKey).join('[REDACTED]');
+  return text.replace(/Bearer\s+[^\s"',;]+/gi, 'Bearer [REDACTED]').replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]').slice(0, max);
+}
+
+function usageDetails(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const result = {};
+  for (const key of ['input_tokens', 'output_tokens', 'total_tokens']) {
+    if (Number.isFinite(usage[key]) && usage[key] >= 0) result[key] = usage[key];
+  }
+  for (const [key, field] of [['input_tokens_details', 'cached_tokens'], ['output_tokens_details', 'reasoning_tokens']]) {
+    if (Number.isFinite(usage[key]?.[field]) && usage[key][field] >= 0) result[key] = { [field]: usage[key][field] };
+  }
+  return result;
+}
+
+function providerError(json, apiKey) {
+  if (!json?.error || typeof json.error !== 'object') return null;
+  const error = {};
+  for (const field of ['type', 'code', 'param', 'message']) {
+    if (typeof json.error[field] === 'string') error[field] = sanitize(json.error[field], apiKey);
+  }
+  return error;
+}
+
 function parseResponsesText(json) {
-  const output = Array.isArray(json?.output) ? json.output : [];
+  if (!Array.isArray(json?.output)) return { text: '', malformed: true, refused: false };
   const parts = [];
-  for (const message of output) {
-    const content = Array.isArray(message?.content) ? message.content : [];
-    for (const item of content) {
-      if (item?.type === 'output_text' && typeof item?.text === 'string') {
+  let refused = false;
+  for (const message of json.output) {
+    if (message?.type !== 'message') continue;
+    if (!Array.isArray(message.content)) return { text: '', malformed: true, refused: false };
+    for (const item of message.content) {
+      if (item?.type === 'refusal') refused = true;
+      if (item?.type === 'output_text') {
+        if (typeof item.text !== 'string') return { text: '', malformed: true, refused };
         parts.push(item.text);
       }
     }
   }
-  return parts.join('\n').trim();
+  return { text: parts.join('\n').trim(), malformed: false, refused };
 }
 
-async function openaiReview({ apiKey, model, system, user, maxOutputTokens }) {
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  };
-
-  // Prefer the Responses API, fall back to Chat Completions.
-  const responsesBody = {
+export async function openaiReview({ apiKey, model, system, user, maxOutputTokens, reasoningEffort = 'low', timeoutMs = 120000, maxRetries = 1, fetchImpl = globalThis.fetch, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+  const started = Date.now();
+  const legacy = legacyModel(model);
+  const request = {
     model,
-    input: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    temperature: 0.2,
+    input: [{ role: 'system', content: system }, { role: 'user', content: user }],
     max_output_tokens: maxOutputTokens,
+    ...(legacy ? { temperature: 0.2 } : { reasoning: { effort: reasoningEffort } }),
   };
-
-  const responsesResp = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(responsesBody),
-  });
-
-  if (responsesResp.ok) {
-    const json = await responsesResp.json();
-    const text = parseResponsesText(json);
-    if (text) return text;
-    // If schema changes, still fall back.
-  }
-
-  const chatBody = {
-    model,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    temperature: 0.2,
-    max_tokens: maxOutputTokens,
+  const telemetry = {
+    model, requestedModel: model, reasoningEffort: legacy ? null : reasoningEffort,
+    maxOutputTokens, usage: null, requestId: null, responseId: null,
+    attempts: 0, endpoint: ENDPOINT, httpStatus: null,
   };
-
-  const chatResp = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(chatBody),
-  });
-
-  if (!chatResp.ok) {
-    const text = await chatResp.text();
-    throw new Error(`OpenAI API request failed (${chatResp.status}): ${text.slice(0, 500)}`);
+  const failure = (message, code, status = 'failed', extra = {}) => {
+    const err = new Error(sanitize(message, apiKey));
+    err.details = { ...telemetry, status, code, ...extra, durationMs: Date.now() - started };
+    return err;
+  };
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const remaining = timeoutMs - (Date.now() - started);
+    if (remaining <= 0) throw failure('OpenAI review exceeded its request deadline', 'timeout');
+    telemetry.attempts += 1;
+    const controller = new AbortController();
+    let timer;
+    let response;
+    let json;
+    try {
+      const call = async () => {
+        response = await fetchImpl(ENDPOINT, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+        telemetry.httpStatus = response.status;
+        telemetry.requestId = sanitize(response.headers?.get?.('x-request-id'), apiKey, 200) || null;
+        // Parse inside the deadline: a stalled response body must also time out.
+        try { json = JSON.parse(await response.text()); } catch (err) {
+          if (controller.signal.aborted) throw err;
+          json = null;
+        }
+      };
+      await Promise.race([
+        call(),
+        new Promise((_, reject) => { timer = setTimeout(() => {
+          controller.abort();
+          reject(failure('OpenAI review exceeded its request deadline', 'timeout'));
+        }, remaining); }),
+      ]);
+    } catch (err) {
+      if (err?.details) throw err;
+      throw failure(controller.signal.aborted ? 'OpenAI review exceeded its request deadline' : `OpenAI request failed: ${sanitize(err?.message ?? err, apiKey)}`, controller.signal.aborted ? 'timeout' : 'network_error');
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) {
+      const originalError = providerError(json, apiKey);
+      const error = failure(`OpenAI API request failed (${response.status})${originalError?.message ? `: ${originalError.message}` : ''}`, 'provider_error', 'failed', { providerError: originalError });
+      if ((response.status === 429 || response.status >= 500 && response.status <= 599) && attempt < maxRetries) {
+        const retryAfter = response.headers?.get?.('retry-after')?.trim();
+        const retryAfterMs = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter)
+          ? Number(retryAfter) * 1000
+          : retryAfter ? Date.parse(retryAfter) - Date.now() : 0;
+        const fallbackDelay = Math.min(5000, 1000 * 2 ** attempt);
+        const delay = Math.max(fallbackDelay, Number.isFinite(retryAfterMs) ? retryAfterMs : 0);
+        if (Date.now() - started + delay >= timeoutMs) throw error;
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+    if (!json || typeof json !== 'object' || Array.isArray(json)) throw failure('OpenAI returned a malformed JSON response', 'malformed_response');
+    telemetry.responseId = sanitize(json.id, apiKey, 200) || null;
+    telemetry.model = typeof json.model === 'string' ? sanitize(json.model, apiKey, 200) : model;
+    telemetry.usage = usageDetails(json.usage);
+    if (json.status === 'incomplete') throw failure('OpenAI review was incomplete', 'incomplete_response', 'incomplete', { incompleteReason: sanitize(json.incomplete_details?.reason, apiKey, 200) || null });
+    if (json.status !== 'completed') throw failure(`OpenAI review did not complete (status: ${sanitize(json.status ?? 'missing', apiKey, 100)})`, 'response_not_completed', 'failed', { providerStatus: sanitize(json.status, apiKey, 100) || null, providerError: providerError(json, apiKey) });
+    const parsed = parseResponsesText(json);
+    if (parsed.refused) throw failure('OpenAI declined to produce the review', 'refusal', 'refused');
+    if (parsed.malformed) throw failure('OpenAI returned malformed review output', 'malformed_response');
+    if (!parsed.text) throw failure('OpenAI returned an empty review', 'empty_response');
+    return { text: parsed.text, status: 'completed', ...telemetry, durationMs: Date.now() - started };
   }
-
-  const json = await chatResp.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('OpenAI API returned empty response');
-  }
-  return content.trim();
+  throw failure('OpenAI review did not run', 'invalid_configuration');
 }
 
-function buildPrompt({ changedFiles, diffText }) {
+function truncate(str, maxChars, label = 'diff') {
+  if (str.length <= maxChars) return { text: str, truncated: false };
+  return { text: `${str.slice(0, maxChars)}\n\n[TRUNCATED: ${label} exceeded ${maxChars} characters]`, truncated: true };
+}
+
+function git(args, cwd) {
+  return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' }).trim();
+}
+export function buildPrompt({ changedFiles, diffText }) {
   const system = [
     'You are a senior software engineer doing a rigorous, industry-standard code review.',
     'Priorities: correctness, maintainability, clarity, testability, performance, security hygiene.',
@@ -129,118 +203,90 @@ function buildPrompt({ changedFiles, diffText }) {
   return { system, user };
 }
 
-async function main() {
-  const artifactsDir = process.env.REVIEW_ARTIFACTS_DIR || 'artifacts';
-  ensureDir(artifactsDir);
-
-  const baseSha = process.env.REVIEW_BASE_SHA?.trim();
-  const headSha = process.env.REVIEW_HEAD_SHA?.trim();
-
-  const head = headSha || safeSh('git rev-parse HEAD').out;
-  const base = baseSha && !/^0+$/.test(baseSha.replace(/[^0-9a-f]/gi, '')) ? baseSha : safeSh('git rev-parse HEAD~1').out;
-
-  const changedFilesResult = safeSh(`git diff --name-only ${base} ${head}`);
-  const changedFiles = changedFilesResult.ok && changedFilesResult.out
-    ? changedFilesResult.out.split('\n').map((s) => s.trim()).filter(Boolean)
-    : [];
-
-  const diffResult = safeSh(`git diff --no-color ${base} ${head}`);
-  const rawDiff = diffResult.ok ? diffResult.out : '';
-
-  const maxDiffChars = parseInt(process.env.REVIEW_MAX_DIFF_CHARS || '180000', 10);
-  const { text: diffText, truncated: diffTruncated } = truncate(rawDiff || '[no diff produced]', maxDiffChars);
-
+export async function main({ env = process.env, fetchImpl = globalThis.fetch, sleep, cwd = process.cwd(), stdout = process.stdout } = {}) {
+  const artifactsDir = path.resolve(cwd, env.REVIEW_ARTIFACTS_DIR || 'artifacts');
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  const started = Date.now();
+  let config;
+  let base = '';
+  let head = '';
+  let changedFiles = [];
+  let rawDiff = '';
+  let diffText = '[no diff produced]';
+  let diffTruncated = false;
+  let maxDiffChars = 180000;
+  let reviewText = '';
+  let result;
+  try {
+    config = getReviewConfig(env);
+    maxDiffChars = integerSetting(env.REVIEW_MAX_DIFF_CHARS, 'REVIEW_MAX_DIFF_CHARS', 180000);
+    const baseRef = env.REVIEW_BASE_SHA?.trim();
+    head = git(['rev-parse', '--verify', '--end-of-options', `${env.REVIEW_HEAD_SHA?.trim() || 'HEAD'}^{commit}`], cwd);
+    base = git(['rev-parse', '--verify', '--end-of-options', `${baseRef && !/^0+$/.test(baseRef) ? baseRef : 'HEAD~1'}^{commit}`], cwd);
+    changedFiles = git(['diff', '--name-only', base, head, '--'], cwd).split('\n').filter(Boolean);
+    rawDiff = git(['diff', '--no-color', base, head, '--'], cwd);
+    ({ text: diffText, truncated: diffTruncated } = truncate(rawDiff || '[no diff produced]', maxDiffChars));
+    if (!apiKey) {
+      result = { status: 'skipped', code: 'missing_api_key', model: config.model, requestedModel: config.model, reasoningEffort: config.reasoningEffort, maxOutputTokens: config.maxOutputTokens, attempts: 0, endpoint: ENDPOINT, durationMs: 0, usage: null, requestId: null, responseId: null };
+    } else {
+      const response = await openaiReview({ apiKey, ...config, ...buildPrompt({ changedFiles, diffText }), fetchImpl, sleep });
+      ({ text: reviewText, ...result } = response);
+    }
+  } catch (err) {
+    result = {
+      status: 'failed', code: config ? 'input_error' : 'invalid_configuration',
+      model: config?.model ?? null, requestedModel: config?.model ?? null,
+      reasoningEffort: config?.reasoningEffort ?? null, maxOutputTokens: config?.maxOutputTokens ?? null,
+      attempts: 0, endpoint: ENDPOINT, durationMs: Date.now() - started,
+      usage: null, requestId: null, responseId: null,
+      ...err?.details, error: sanitize(err?.message ?? err, apiKey),
+    };
+  }
+  result = { ...result, base, head, changedFiles, inputChars: rawDiff.length, diffTruncated, maxDiffChars };
   const metadata = [
-    `- Base: \`${base}\``,
-    `- Head: \`${head}\``,
-    `- Files changed: ${changedFiles.length}`,
-    diffTruncated ? `- Diff: truncated to ${maxDiffChars} chars` : `- Diff: full`,
+    `- Base: \`${base}\``, `- Head: \`${head}\``, `- Files changed: ${changedFiles.length}`,
+    diffTruncated ? `- Diff: truncated to ${maxDiffChars} chars` : '- Diff: full',
+    `- Model: \`${result.model || 'unconfigured'}\``, `- Reasoning effort: ${result.reasoningEffort || 'not applicable'}`,
+    `- Review status: **${result.status}**`,
   ].join('\n');
-
+  const outcome = result.status === 'skipped'
+    ? 'AI review skipped: `OPENAI_API_KEY` not configured in repo secrets.'
+    : reviewText || `AI review ${result.status}: ${result.error || 'unknown error'}`;
   const reportPath = path.join(artifactsDir, 'senior-review-report.md');
   const commentPath = path.join(artifactsDir, 'senior-review-pr-comment.md');
-
-  let reviewText = '';
-  let reviewError = '';
-
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  const model = (process.env.OPENAI_REVIEW_MODEL || 'gpt-4o-mini').trim();
-  const maxOutputTokens = parseInt(process.env.OPENAI_REVIEW_MAX_TOKENS || '1400', 10);
-
-  if (apiKey) {
-    const { system, user } = buildPrompt({ changedFiles, diffText });
-    try {
-      reviewText = await openaiReview({
-        apiKey,
-        model,
-        system,
-        user,
-        maxOutputTokens,
-      });
-    } catch (err) {
-      reviewError = String(err?.message ?? err);
-    }
+  const resultPath = path.join(artifactsDir, 'senior-review-result.json');
+  const report = [
+    '# Senior Engineer Review', '', '## Context', metadata, '', '## Changed Files',
+    ...(changedFiles.length ? changedFiles.map((file) => `- ${file}`) : ['- (none detected)']),
+    '', '## Review', outcome, '', '## Diff (for reference)', '```diff', diffText, '```', '',
+  ];
+  fs.writeFileSync(reportPath, `${report.join('\n')}\n`, 'utf8');
+  const comment = [
+    '<!-- senior-review -->', '## Senior Engineer Review', '', metadata, '',
+    result.status === 'skipped' ? 'AI review skipped (no `OPENAI_API_KEY` configured). See workflow artifacts for the full report.' : truncate(outcome, 9000, 'review').text,
+    ...(reviewText ? ['', '_Full report is attached as a workflow artifact._'] : []),
+  ];
+  fs.writeFileSync(commentPath, `${comment.join('\n')}\n`, 'utf8');
+  fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  if (env.GITHUB_STEP_SUMMARY) {
+    fs.appendFileSync(env.GITHUB_STEP_SUMMARY, `## Senior Engineer Review\n\n${metadata}\n- Attempts: ${result.attempts}\n- Duration: ${result.durationMs} ms\n${result.error ? `- Error: ${result.error}\n` : ''}\n`);
   }
-
-  const reportLines = [];
-  reportLines.push('# Senior Engineer Review');
-  reportLines.push('');
-  reportLines.push('## Context');
-  reportLines.push(metadata);
-  reportLines.push('');
-  reportLines.push('## Changed Files');
-  if (changedFiles.length === 0) {
-    reportLines.push('- (none detected)');
-  } else {
-    for (const f of changedFiles) reportLines.push(`- ${f}`);
+  if (env.GITHUB_OUTPUT) {
+    fs.appendFileSync(env.GITHUB_OUTPUT, `review_status=${result.status}\nreview_model=${String(result.model || '').replace(/[\r\n]/g, '')}\nreview_attempts=${result.attempts}\n`);
   }
-  reportLines.push('');
-  reportLines.push('## Review');
-  if (!apiKey) {
-    reportLines.push('AI review skipped: `OPENAI_API_KEY` not configured in repo secrets.');
-  } else if (reviewText) {
-    reportLines.push(reviewText);
-  } else {
-    reportLines.push(`AI review failed: ${reviewError || 'unknown error'}`);
+  stdout.write(`Wrote review report: ${reportPath}\nWrote PR comment body: ${commentPath}\nReview status: ${result.status}\n`);
+  if (env.REVIEW_REQUIRE_SUCCESS?.trim().toLowerCase() === 'true' && result.status !== 'completed') {
+    const err = new Error(`Required AI review did not complete (status: ${result.status})`);
+    err.details = result;
+    throw err;
   }
-  reportLines.push('');
-  reportLines.push('## Diff (for reference)');
-  reportLines.push('```diff');
-  reportLines.push(diffText);
-  reportLines.push('```');
-  reportLines.push('');
-
-  fs.writeFileSync(reportPath, `${reportLines.join('\n')}\n`, 'utf8');
-
-  // PR comment: keep it short and updateable.
-  const commentLines = [];
-  commentLines.push('<!-- senior-review -->');
-  commentLines.push('## Senior Engineer Review');
-  commentLines.push('');
-  commentLines.push(metadata);
-  commentLines.push('');
-  if (!apiKey) {
-    commentLines.push('AI review skipped (no `OPENAI_API_KEY` configured). See workflow artifacts for the full report.');
-  } else if (reviewText) {
-    // GitHub comments have size limits; keep it bounded.
-    const maxCommentChars = 9000;
-    const { text: shortReview } = truncate(reviewText, maxCommentChars);
-    commentLines.push(shortReview);
-    commentLines.push('');
-    commentLines.push('_Full report is attached as a workflow artifact._');
-  } else {
-    commentLines.push(`AI review failed: ${reviewError || 'unknown error'}`);
-  }
-
-  fs.writeFileSync(commentPath, `${commentLines.join('\n')}\n`, 'utf8');
-
-  // Also emit a small stdout note for logs.
-  process.stdout.write(`Wrote review report: ${reportPath}\n`);
-  process.stdout.write(`Wrote PR comment body: ${commentPath}\n`);
+  return result;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err.message);
+    process.exitCode = 1;
+  });
+}
